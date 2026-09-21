@@ -32,6 +32,11 @@ from .db_bootstrap import (
     _quote_hash,
 )
 
+# Module-level lock serializes concurrent AssertionStore.__init__ calls
+# so that _init_db (migrations + ensure_assertion_tables + marker write)
+# is atomic across threads sharing the same database file.
+_init_db_lock = threading.Lock()
+
 
 CURRENT_EXTRACTION_VERSION = "assertions-v1"
 
@@ -226,7 +231,8 @@ class AssertionStore:
         self._write_lock = threading.RLock()
         self._conn = self._open_connection()
         try:
-            self._init_db()
+            with _init_db_lock:
+                self._init_db()
         except Exception:
             self._conn.close()
             self._conn = None  # type: ignore[assignment]
