@@ -30,10 +30,13 @@ def _message_identity_hash(session_id: str, role: str, content: str, timestamp: 
 
 from .db_bootstrap import (
     ExternalContentFtsSpec,
+    SQLITE_BUSY_TIMEOUT_SECONDS,
     add_column_if_missing,
     configure_connection,
     ensure_external_content_fts,
+    is_fts_corruption_error,
     refuse_schema_version_too_new,
+    repair_external_content_fts,
     run_versioned_migrations,
 )
 from .config import LCMConfig
@@ -362,7 +365,7 @@ class MessageStore:
         self._init_db()
 
     def _init_db(self):
-        self._conn = sqlite3.connect(str(self.db_path), timeout=5.0, check_same_thread=False)
+        self._conn = sqlite3.connect(str(self.db_path), timeout=SQLITE_BUSY_TIMEOUT_SECONDS, check_same_thread=False)
         refuse_schema_version_too_new(self._conn)
         configure_connection(self._conn)
         if not self._is_memory_database:
@@ -479,7 +482,7 @@ class MessageStore:
         ingested_at = time.time()
         identity_hash = _message_identity_hash(session_id, msg.get("role", "unknown"), msg.get("content", ""), ingested_at)
 
-        with self._write_lock:
+        def _insert_single() -> int:
             cur = self._conn.execute(
                 """INSERT OR IGNORE INTO messages
                    (session_id, source, conversation_id, role, content, tool_call_id, tool_calls,
@@ -505,7 +508,6 @@ class MessageStore:
                 ),
             )
             self._conn.commit()
-            # If the INSERT was ignored, return the existing store_id
             if cur.rowcount == 0:
                 existing = self._conn.execute(
                     "SELECT store_id FROM messages WHERE identity_hash = ?",
@@ -513,6 +515,23 @@ class MessageStore:
                 ).fetchone()
                 return existing[0] if existing else cur.lastrowid
             return cur.lastrowid
+
+        with self._write_lock:
+            try:
+                return _insert_single()
+            except sqlite3.DatabaseError as exc:
+                if not is_fts_corruption_error(exc):
+                    raise
+                logger.warning(
+                    "Detected database/FTS corruption during message append (%s). Triggering self-healing repair and retrying...",
+                    exc,
+                )
+                repair_external_content_fts(
+                    self._conn,
+                    build_message_fts_spec(),
+                    force=True,
+                )
+                return _insert_single()
 
     def append_batch(self, session_id: str,
                      messages: List[Dict[str, Any]],
@@ -549,48 +568,66 @@ class MessageStore:
         if token_estimates is None:
             token_estimates = [0] * len(messages)
 
-        ids = []
-        with self._write_lock, self._conn:
-            for msg, est in zip(messages, token_estimates):
-                tc = msg.get("tool_calls")
-                tc_json = json.dumps(tc) if tc else None
-                ts = time.time()
-                observed_at = _normalize_observed_at(msg.get("timestamp"))
-                identity_hash = _message_identity_hash(session_id, msg.get("role", "unknown"), msg.get("content", ""), ts)
-                cur = self._conn.execute(
-                    """INSERT OR IGNORE INTO messages
-                       (session_id, source, conversation_id, role, content, tool_call_id, tool_calls,
-                        tool_name, timestamp, token_estimate, pinned, ingested_at,
-                        observed_at, observed_at_source, identity_hash)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        session_id,
-                        _normalize_source_value(source),
-                        _normalize_conversation_id_value(conversation_id),
-                        msg.get("role", "unknown"),
-                        _normalize_content_value(msg.get("content")),
-                        msg.get("tool_call_id"),
-                        tc_json,
-                        msg.get("tool_name"),
-                        ts,
-                        est,
-                        0,
-                        ts,
-                        observed_at,
-                        "host_message_timestamp" if observed_at is not None else None,
-                        identity_hash,
-                    ),
+        def _execute_batch():
+            batch_ids = []
+            with self._conn:
+                for msg, est in zip(messages, token_estimates):
+                    tc = msg.get("tool_calls")
+                    tc_json = json.dumps(tc) if tc else None
+                    ts = time.time()
+                    observed_at = _normalize_observed_at(msg.get("timestamp"))
+                    identity_hash = _message_identity_hash(session_id, msg.get("role", "unknown"), msg.get("content", ""), ts)
+                    cur = self._conn.execute(
+                        """INSERT OR IGNORE INTO messages
+                           (session_id, source, conversation_id, role, content, tool_call_id, tool_calls,
+                            tool_name, timestamp, token_estimate, pinned, ingested_at,
+                            observed_at, observed_at_source, identity_hash)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            session_id,
+                            _normalize_source_value(source),
+                            _normalize_conversation_id_value(conversation_id),
+                            msg.get("role", "unknown"),
+                            _normalize_content_value(msg.get("content")),
+                            msg.get("tool_call_id"),
+                            tc_json,
+                            msg.get("tool_name"),
+                            ts,
+                            est,
+                            0,
+                            ts,
+                            observed_at,
+                            "host_message_timestamp" if observed_at is not None else None,
+                            identity_hash,
+                        ),
+                    )
+                    if cur.rowcount > 0:
+                        batch_ids.append(cur.lastrowid)
+                    else:
+                        existing = self._conn.execute(
+                            "SELECT store_id FROM messages WHERE identity_hash = ?",
+                            (identity_hash,)
+                        ).fetchone()
+                        if existing:
+                            batch_ids.append(existing[0])
+            return batch_ids
+
+        with self._write_lock:
+            try:
+                return _execute_batch()
+            except sqlite3.DatabaseError as exc:
+                if not is_fts_corruption_error(exc):
+                    raise
+                logger.warning(
+                    "Detected database/FTS corruption during message batch append (%s). Triggering self-healing repair and retrying...",
+                    exc,
                 )
-                if cur.rowcount > 0:
-                    ids.append(cur.lastrowid)
-                else:
-                    existing = self._conn.execute(
-                        "SELECT store_id FROM messages WHERE identity_hash = ?",
-                        (identity_hash,)
-                    ).fetchone()
-                    if existing:
-                        ids.append(existing[0])
-        return ids
+                repair_external_content_fts(
+                    self._conn,
+                    build_message_fts_spec(),
+                    force=True,
+                )
+                return _execute_batch()
 
     def reassign_session_messages(self, old_session_id: str, new_session_id: str) -> int:
         """Move all persisted messages from one session_id to another."""
