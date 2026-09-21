@@ -25,6 +25,12 @@ from hermes_lcm.externalize import externalize_ingest_payload
 from hermes_lcm.tokens import count_message_tokens, count_messages_tokens, count_tokens
 
 
+def _install_codex_900k_variant_predicate(monkeypatch):
+    host_metadata = ModuleType("agent.model_metadata")
+    host_metadata.is_codex_context_variant = lambda model: model.endswith("-900k")
+    monkeypatch.setitem(sys.modules, "agent.model_metadata", host_metadata)
+
+
 @pytest.fixture
 def engine(tmp_path):
     config = LCMConfig()
@@ -425,7 +431,7 @@ def test_codex_900k_variant_preserves_named_window(
 ):
     host_metadata = ModuleType("agent.model_metadata")
     host_metadata.is_codex_context_variant = (
-        lambda model: model == "gpt-5.6-sol-900k"
+        lambda model: model.endswith("-900k")
     )
     monkeypatch.setitem(sys.modules, "agent.model_metadata", host_metadata)
 
@@ -672,7 +678,8 @@ def test_non_codex_gpt55_keeps_host_context_window(engine):
         "gpt-5.6-luna-900k",
     ],
 )
-def test_exact_codex_900k_routes_cap_higher_host_context(engine, model):
+def test_exact_codex_900k_routes_cap_higher_host_context(engine, model, monkeypatch):
+    _install_codex_900k_variant_predicate(monkeypatch)
     engine.update_model(
         model=model,
         provider="openai-codex",
