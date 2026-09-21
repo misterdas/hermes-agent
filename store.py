@@ -9,7 +9,6 @@ row identity (`store_id`) for DAG/source lookup.
 """
 
 
-import hashlib
 import json
 import logging
 import math
@@ -21,12 +20,6 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
-
-
-def _message_identity_hash(session_id: str, role: str, content: str, timestamp: float) -> str:
-    """Generate a content-identity hash for dedup. Same content = same hash."""
-    raw = f"{session_id}\x00{role}\x00{content}\x00{timestamp}"
-    return hashlib.sha256(raw.encode()).hexdigest()
 
 from .db_bootstrap import (
     ExternalContentFtsSpec,
@@ -480,15 +473,14 @@ class MessageStore:
         tc_json = json.dumps(tool_calls) if tool_calls else None
         observed_at = _normalize_observed_at(msg.get("timestamp"))
         ingested_at = time.time()
-        identity_hash = _message_identity_hash(session_id, msg.get("role", "unknown"), msg.get("content", ""), ingested_at)
 
         def _insert_single() -> int:
             cur = self._conn.execute(
-                """INSERT OR IGNORE INTO messages
+                """INSERT INTO messages
                    (session_id, source, conversation_id, role, content, tool_call_id, tool_calls,
                     tool_name, timestamp, token_estimate, pinned, ingested_at,
-                    observed_at, observed_at_source, identity_hash)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    observed_at, observed_at_source)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     _normalize_source_value(source),
@@ -504,16 +496,9 @@ class MessageStore:
                     ingested_at,
                     observed_at,
                     "host_message_timestamp" if observed_at is not None else None,
-                    identity_hash,
                 ),
             )
             self._conn.commit()
-            if cur.rowcount == 0:
-                existing = self._conn.execute(
-                    "SELECT store_id FROM messages WHERE identity_hash = ?",
-                    (identity_hash,)
-                ).fetchone()
-                return existing[0] if existing else cur.lastrowid
             return cur.lastrowid
 
         with self._write_lock:
@@ -576,13 +561,12 @@ class MessageStore:
                     tc_json = json.dumps(tc) if tc else None
                     ts = time.time()
                     observed_at = _normalize_observed_at(msg.get("timestamp"))
-                    identity_hash = _message_identity_hash(session_id, msg.get("role", "unknown"), msg.get("content", ""), ts)
                     cur = self._conn.execute(
-                        """INSERT OR IGNORE INTO messages
+                        """INSERT INTO messages
                            (session_id, source, conversation_id, role, content, tool_call_id, tool_calls,
                             tool_name, timestamp, token_estimate, pinned, ingested_at,
-                            observed_at, observed_at_source, identity_hash)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            observed_at, observed_at_source)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
                             session_id,
                             _normalize_source_value(source),
@@ -598,18 +582,9 @@ class MessageStore:
                             ts,
                             observed_at,
                             "host_message_timestamp" if observed_at is not None else None,
-                            identity_hash,
                         ),
                     )
-                    if cur.rowcount > 0:
-                        batch_ids.append(cur.lastrowid)
-                    else:
-                        existing = self._conn.execute(
-                            "SELECT store_id FROM messages WHERE identity_hash = ?",
-                            (identity_hash,)
-                        ).fetchone()
-                        if existing:
-                            batch_ids.append(existing[0])
+                    batch_ids.append(cur.lastrowid)
             return batch_ids
 
         with self._write_lock:
