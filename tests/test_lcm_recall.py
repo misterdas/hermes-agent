@@ -1292,7 +1292,7 @@ def test_recall_operator_mode_semantics_preserved_after_scheduling_fix(recall_en
     AND/OR/NOT/NEAR preserved through the FTS arm.
     """
     recall_engine._config.recall_query_timeout_s = 8.0
-    target = recall_engine._store.append(
+    recall_engine._store.append(
         CURRENT, {"role": "user", "content": "alpha only here"}
     )
 
