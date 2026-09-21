@@ -692,7 +692,8 @@ def test_exact_codex_900k_routes_cap_higher_host_context(engine, model, monkeypa
     assert engine.effective_context_length_reason == "codex_oauth_context_cap"
 
 
-def test_exact_codex_900k_session_context_uses_lower_host_bound(tmp_path):
+def test_exact_codex_900k_session_context_uses_lower_host_bound(tmp_path, monkeypatch):
+    _install_codex_900k_variant_predicate(monkeypatch)
     config = LCMConfig(database_path=str(tmp_path / "codex-900k-session.db"))
     engine = LCMEngine(config=config)
     try:
