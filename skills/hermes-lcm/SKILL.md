@@ -44,6 +44,11 @@ These bugs have been identified and fixed in the upstream repo but may persist i
 - **#599/#606 — Storage duplicate re-ingest**: Without `identity_hash`, replayed/compacted messages re-INSERT as duplicates (65% duplicate rows in production, 608K→1.31M session doubling). Fixed: `identity_hash` column + `INSERT OR IGNORE` on SHA-256 of session+role+content+timestamp. Auto-migrates existing databases.
 - **#614 circuit breaker**: Rejected results (valid LLM output too large) were recorded as circuit-breaker failures, opening circuits prematurely. Fixed: `record_failure` only fires on actual LLM errors (exception/None), not size-rejected results.
 
+### CI Test Environment Pitfalls
+
+- **SQLite directory ownership check (`sqlite_util.py`)**: `_open_private_sqlite_directory` verifies `st_uid == os.getuid()` (not `st_mode & 0o022`). A shell umask of `0002` creates group-writable `0o775` dirs, which the old mode-bit check falsely rejected. Always check directory OWNER, not mode bits.
+- **Low-FD pytest**: CI runs `ulimit -n 1024; python -m pytest tests/ -q`. If tests fail under low FD, check `sqlite_util.py` ownership logic and temp-directory permissions — `tmp_path` + `Path.mkdir()` with umask `0002` triggers the old `0o022` check.
+
 ### Upstream open issues (monitor before upgrading)
 
 The `hermes-lcm` repo at `misterdas/hermes-lcm` has ~30 open issues including:
