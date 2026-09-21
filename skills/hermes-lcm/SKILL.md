@@ -10,10 +10,11 @@ Use this skill when a task concerns Hermes-LCM setup, operation, compaction, dia
 Start here:
 
 1. Confirm that the `hermes-lcm` plugin is enabled and `context.engine` is `lcm`.
-2. For exact historical claims, use the recall workflow instead of trusting a compacted summary.
-3. Use `lcm_status`, `lcm_inspect`, and `lcm_doctor` before changing configuration or attempting repair.
-4. Treat slash-command apply paths as mutations: preview first, keep backups, and require the user's authorization.
-5. Load the relevant reference rather than guessing arguments or lifecycle semantics.
+2. If you intend to use `/lcm` slash commands, verify they are enabled: set `LCM_ENABLE_SLASH_COMMAND=1` (e.g., in `~/.hermes/.env`). This maps to `config.slash_commands_enabled` via `LCMConfig.from_env()`. Without it, `/lcm` commands are silently not registered — `lcm_status`, `lcm_inspect`, and `lcm_doctor` still work via the context-engine tool layer.
+3. For exact historical claims, use the recall workflow instead of trusting a compacted summary.
+4. Use `lcm_status`, `lcm_inspect`, and `lcm_doctor` before changing configuration or attempting repair.
+5. Treat slash-command apply paths as mutations: preview first, keep backups, and require the user's authorization.
+6. Load the relevant reference rather than guessing arguments or lifecycle semantics.
 
 Reference map:
 

@@ -456,6 +456,7 @@ ENV_FIELD_SPECS: tuple[_EnvFieldSpec, ...] = (
     _EnvFieldSpec("embedding_query_spend_backoff_seconds", "LCM_EMBEDDING_QUERY_SPEND_BACKOFF_SECONDS", float),
     _EnvFieldSpec("new_session_retain_depth", "LCM_NEW_SESSION_RETAIN_DEPTH", int),
     _EnvFieldSpec("doctor_clean_apply_enabled", "LCM_DOCTOR_CLEAN_APPLY_ENABLED", bool),
+    _EnvFieldSpec("slash_commands_enabled", "LCM_ENABLE_SLASH_COMMAND", bool),
     _EnvFieldSpec("empty_lifecycle_gc_enabled", "LCM_EMPTY_LIFECYCLE_GC_ENABLED", bool),
     _EnvFieldSpec("empty_lifecycle_gc_threshold", "LCM_EMPTY_LIFECYCLE_GC_THRESHOLD", int),
     _EnvFieldSpec("temporal_rollups_enabled", "LCM_TEMPORAL_ROLLUPS_ENABLED", bool),
@@ -797,6 +798,9 @@ class LCMConfig:
     new_session_retain_depth: int = 2
     # Safety gate: destructive `/lcm doctor clean apply` workflow is disabled by default.
     doctor_clean_apply_enabled: bool = False
+    # Enable the optional `/lcm` slash command surface (requires
+    # `LCM_ENABLE_SLASH_COMMAND=1` in the environment).
+    slash_commands_enabled: bool = False
 
     # -- Lifecycle GC ---
     # Enables automatic pruning of lifecycle rows for sessions that never

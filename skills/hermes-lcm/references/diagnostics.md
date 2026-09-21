@@ -10,7 +10,7 @@ Use read-only product tools before changing configuration or running an apply pa
 4. `lcm_inspect`: inspect current-session lineage, frontiers, fresh tail, externalized-ref readability, and skip/no-op reasons without retrieving content.
 5. `lcm_doctor`: run database, FTS, lifecycle, configuration, and context-pressure diagnostics.
 
-If optional slash commands are enabled, `/lcm status` and `/lcm doctor` expose the corresponding operator views.
+If optional slash commands are enabled, `/lcm status` and `/lcm doctor` expose the corresponding operator views. To enable: set `LCM_ENABLE_SLASH_COMMAND=1` in the environment. Without it, the `/lcm` slash commands are silently not registered.
 
 ## Safe mutation order
 

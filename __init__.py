@@ -544,7 +544,8 @@ def register(ctx):
         )
 
     register_command = getattr(ctx, "register_command", None)
-    slash_enabled = _env_flag_enabled("LCM_ENABLE_SLASH_COMMAND", default=False)
+    config = getattr(engine, "_config", None)
+    slash_enabled = bool(getattr(config, "slash_commands_enabled", False))
     if callable(register_command) and slash_enabled:
         from .command import handle_lcm_command
 

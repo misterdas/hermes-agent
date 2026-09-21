@@ -40,6 +40,6 @@ Use `docs/operator-guide.md` as the complete current source. Start with:
 - `LCM_IGNORE_SESSION_PATTERNS` and `LCM_STATELESS_SESSION_PATTERNS`: storage ownership boundaries;
 - summary/embedding provider settings only after confirming credentials, cost, and data handling.
 
-Optional slash commands are disabled by default with `LCM_ENABLE_SLASH_COMMAND=false`. Destructive cleanup apply is separately guarded. Do not enable mutation surfaces merely to diagnose a problem.
+Optional slash commands are disabled by default (`LCM_ENABLE_SLASH_COMMAND=false`, mapped to `config.slash_commands_enabled`). To enable the `/lcm` operator surface, set `LCM_ENABLE_SLASH_COMMAND=1` in `~/.hermes/.env` (or set `slash_commands_enabled: true` in `config.yaml` if supported). Destructive cleanup apply is separately guarded. Do not enable mutation surfaces merely to diagnose a problem.
 
 Change one tuning variable at a time, then re-check `lcm_status`, context pressure, summary health, latency, and actual answer quality.

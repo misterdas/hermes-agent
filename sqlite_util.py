@@ -51,8 +51,8 @@ def _open_private_sqlite_directory(path: Path) -> int:
     expected = os.stat(directory, follow_symlinks=False)
     if not stat.S_ISDIR(expected.st_mode):
         raise _sqlite_artifact_error(path, "parent is not a regular directory")
-    if expected.st_mode & 0o022:
-        raise _sqlite_artifact_error(path, "parent directory is writable by another user")
+    if expected.st_uid != os.getuid():
+        raise _sqlite_artifact_error(path, "parent directory is not owned by the current user")
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_BINARY", 0)
     directory_fd = os.open(directory, flags)

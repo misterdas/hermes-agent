@@ -6,7 +6,7 @@ Do not promise that `/new` deletes historical LCM data. Earlier rows remain in `
 
 ## `/lcm rotate`
 
-`/lcm rotate` is different from `/new`:
+`/lcm rotate` is different from `/new`. It requires the slash-command surface to be enabled: set `LCM_ENABLE_SLASH_COMMAND=1`. Without it, use the context-engine tool layer (`lcm_rotate` / `lcm_rotate_apply`) instead.
 
 - it keeps the current `session_id` and `conversation_id`;
 - preview is read-only;
