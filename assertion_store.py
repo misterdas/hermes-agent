@@ -226,7 +226,8 @@ class AssertionStore:
         self._write_lock = threading.RLock()
         self._conn = self._open_connection()
         try:
-            self._init_db()
+            with self._write_lock:
+                self._init_db()
         except Exception:
             self._conn.close()
             self._conn = None  # type: ignore[assignment]
