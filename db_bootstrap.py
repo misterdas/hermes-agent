@@ -714,8 +714,16 @@ def ensure_message_origin_columns(conn: sqlite3.Connection) -> None:
         conn, columns, "conversation_id",
         "ALTER TABLE messages ADD COLUMN conversation_id TEXT DEFAULT ''",
     )
+    # Content-identity hash for dedup: prevents replay duplicates (#599)
+    add_column_if_missing(
+        conn, columns, "identity_hash",
+        "ALTER TABLE messages ADD COLUMN identity_hash TEXT",
+    )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_msg_conversation_session ON messages(conversation_id, session_id, store_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_messages_identity_hash ON messages(identity_hash)"
     )
 
 
@@ -2120,7 +2128,8 @@ def _expected_assertion_schema_contract() -> tuple[
                 source TEXT DEFAULT '',
                 role TEXT NOT NULL,
                 content TEXT,
-                timestamp REAL NOT NULL
+                timestamp REAL NOT NULL,
+                identity_hash TEXT
             )
             """
         )

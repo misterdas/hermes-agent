@@ -369,7 +369,9 @@ def _invoke_summary_llm_chain(
             if circuit_breaker is not None:
                 circuit_breaker.record_success(candidate_model)
             return result
-        if circuit_breaker is not None:
+        # Only record circuit-breaker failure for actual LLM errors,
+        # not for results that were valid but exceeded the size limit.
+        if circuit_breaker is not None and not result:
             circuit_breaker.record_failure(candidate_model)
     if skipped == len(chain):
         logger.warning("LCM summary fallback chain exhausted: all routes are temporarily open")
@@ -669,6 +671,8 @@ def summarize_with_escalation(
         return l2_result, 2
 
     # Level 3: deterministic truncation — guaranteed convergence
-    l3_result = _deterministic_truncate(text, l3_truncate_tokens)
+    # Ensure the result is always smaller than the source estimate.
+    l3_max_tokens = min(l3_truncate_tokens, max(1, source_tokens - 1))
+    l3_result = _deterministic_truncate(text, l3_max_tokens)
     logger.debug("L3 deterministic truncation (%d tokens)", count_tokens(l3_result))
     return l3_result, 3
