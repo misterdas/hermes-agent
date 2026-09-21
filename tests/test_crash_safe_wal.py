@@ -368,14 +368,23 @@ class TestSelfHealingAndFallback:
 
         class DummyEngine(CompactionMixin):
             def __init__(self):
+                import threading
+
                 self._last_compression_status = None
                 self._last_compression_noop_reason = ""
+                self._sanitation_claim_lock = threading.RLock()
+                self._pending_sanitation_claim = None
+                self._preflight_cleanup_handoff = None
 
-            def _compress_impl(self, messages, current_tokens=None, focus_topic=None, force=False):
+            def _compress_impl(self, messages, current_tokens=None, focus_topic=None, force=False,
+                               claimed_sanitation=False, claimed_sanitation_handoff=None):
                 raise sqlite3.DatabaseError("database disk image is malformed")
 
             def _compress_lcm_bypassed_session(self, messages, current_tokens=None, focus_topic=None, force=False):
                 return [{"role": "system", "content": "bypassed"}]
+
+            def _bypasses_lcm_context_management(self):
+                return False
 
         engine = DummyEngine()
         messages = [{"role": "user", "content": "test"}]
