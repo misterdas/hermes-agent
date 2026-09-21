@@ -10,12 +10,15 @@ from contextvars import ContextVar
 from types import ModuleType
 from pathlib import Path
 
+import pytest
+
 from hermes_lcm.config import LCMConfig
 from hermes_lcm.engine import LCMEngine
 
 
 def _write_profile_config(home: Path, *, threshold: float, timeout: float) -> None:
-    home.mkdir()
+    home.mkdir(mode=0o700, exist_ok=True)
+    os.chmod(home, 0o700)
     (home / "config.yaml").write_text(
         "\n".join(
             [
@@ -45,7 +48,7 @@ def _load_plugin_module(name: str):
     return module
 
 
-def test_from_env_accepts_routed_home_without_mutating_process_environment(tmp_path, monkeypatch):
+def test_from_env_accepts_routed_home_without_mutating_process_environment(tmp_path, monkeypatch, _clean_lcm_db_env):
     default_home = tmp_path / "default"
     profile_a = tmp_path / "profile-a"
     profile_b = tmp_path / "profile-b"
@@ -77,7 +80,7 @@ def test_from_env_accepts_routed_home_without_mutating_process_environment(tmp_p
     assert override_a.database_path == override_b.database_path == str(tmp_path / "shared.db")
 
 
-def test_context_local_home_is_used_when_host_omits_lifecycle_home(tmp_path, monkeypatch):
+def test_context_local_home_is_used_when_host_omits_lifecycle_home(tmp_path, monkeypatch, _clean_lcm_db_env):
     default_home = tmp_path / "default"
     profile_a = tmp_path / "profile-a"
     profile_b = tmp_path / "profile-b"
@@ -141,7 +144,15 @@ def test_context_local_home_is_used_when_host_omits_lifecycle_home(tmp_path, mon
         engine.shutdown()
 
 
-def test_plugin_registration_uses_context_local_home(tmp_path, monkeypatch):
+@pytest.fixture
+def _clean_lcm_db_env(monkeypatch):
+    """Profile-isolation tests resolve homes explicitly; the session-wide
+    LCM_DATABASE_PATH override (set by conftest to protect the host DB)
+    would otherwise pin every engine to the shared session path."""
+    monkeypatch.delenv("LCM_DATABASE_PATH", raising=False)
+
+
+def test_plugin_registration_uses_context_local_home(tmp_path, monkeypatch, _clean_lcm_db_env):
     default_home = tmp_path / "default"
     profile_b = tmp_path / "profile-b"
     _write_profile_config(default_home, threshold=0.17, timeout=17)
@@ -176,7 +187,7 @@ def test_plugin_registration_uses_context_local_home(tmp_path, monkeypatch):
         engine.shutdown()
 
 
-def test_constructor_reconciles_config_home_with_storage_home(tmp_path, monkeypatch):
+def test_constructor_reconciles_config_home_with_storage_home(tmp_path, monkeypatch, _clean_lcm_db_env):
     profile_a = tmp_path / "profile-a"
     profile_b = tmp_path / "profile-b"
     _write_profile_config(profile_a, threshold=0.27, timeout=27)
@@ -194,7 +205,7 @@ def test_constructor_reconciles_config_home_with_storage_home(tmp_path, monkeypa
         engine.shutdown()
 
 
-def test_distinct_context_local_profiles_can_rebind_concurrently(tmp_path, monkeypatch):
+def test_distinct_context_local_profiles_can_rebind_concurrently(tmp_path, monkeypatch, _clean_lcm_db_env):
     profile_a = tmp_path / "profile-a"
     profile_b = tmp_path / "profile-b"
     _write_profile_config(profile_a, threshold=0.37, timeout=37)
@@ -244,7 +255,7 @@ def test_distinct_context_local_profiles_can_rebind_concurrently(tmp_path, monke
 
 
 def test_cloned_engine_rebinds_profile_config_storage_and_override_precedence(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, _clean_lcm_db_env
 ):
     profile_a = tmp_path / "profile-a"
     profile_b = tmp_path / "profile-b"
