@@ -2,7 +2,7 @@
 
 This repo also publishes GitHub Releases. This file is the repo-root release surface for operators who want the recent release arc without leaving the checkout.
 
-## Unreleased
+## v1.0.0 - 2026-09-21
 
 ### Added
 
@@ -23,7 +23,13 @@ This repo also publishes GitHub Releases. This file is the repo-root release sur
   digest remains re-derivable from every gated result.  Default-off; every
   other mode is byte-identical to its previous behavior.
 
-## v1.0.0-rc.1 - 2026-09-03
+## Unreleased
+
+### Added
+
+- *(No changes yet — this is the new release surface)*
+
+## v1.0.0 - 2026-09-03
 
 ### Highlights
 
@@ -60,7 +66,7 @@ This repo also publishes GitHub Releases. This file is the repo-root release sur
 - Before updating, use `/lcm backup` while Hermes is live, or stop every SQLite
   writer and copy `lcm.db`, `lcm.db-wal`, and `lcm.db-shm` together as one
   quiescent snapshot. Update the plugin, restart Hermes, send one normal
-  message, then verify `plugin_version: 1.0.0-rc.1` and the expected database
+  message, then verify `plugin_version: 1.0.0` and the expected database
   path with `lcm_status`.
 - The core schema remains version 5. No manual migration or embedding backfill
   is required, and a stock/default-off upgrade creates no optional feature
@@ -176,6 +182,6 @@ Release focus: engine isolation, WAL durability, database-path clarity, and star
 
 ## Links
 
-- GitHub Releases: https://github.com/stephenschoettler/hermes-lcm/releases
+- GitHub Releases: https://github.com/misterdas/hermes-lcm/releases
 - Release workflow: [`.github/workflows/release.yml`](.github/workflows/release.yml)
 - Validation expectations: [`CONTRIBUTING.md`](CONTRIBUTING.md)

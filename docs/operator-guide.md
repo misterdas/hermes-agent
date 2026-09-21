@@ -13,14 +13,14 @@ This page holds the detailed install, activation, configuration, diagnostics, an
 Canonical install path: clone `hermes-lcm` as a general user plugin.
 
 ```bash
-git clone https://github.com/stephenschoettler/hermes-lcm \
+git clone https://github.com/misterdas/hermes-lcm \
   ~/.hermes/plugins/hermes-lcm
 ```
 
 For a profile-specific install:
 
 ```bash
-git clone https://github.com/stephenschoettler/hermes-lcm \
+git clone https://github.com/misterdas/hermes-lcm \
   ~/.hermes/profiles/myprofile/plugins/hermes-lcm
 ```
 
@@ -79,7 +79,7 @@ If you installed a symlink from a separate checkout:
 
 Restart Hermes after updating.
 
-## Upgrade from v0.20.0 or v0.21.0-rc2 to v1.0.0-rc.1
+## Upgrade from v0.20.0 or v0.21.0-rc2 to v1.0.0
 
 1. While the old runtime is running, run `/lcm backup`. If Hermes or any other
    SQLite writer may still be running, this is the only supported online backup
@@ -89,9 +89,9 @@ Restart Hermes after updating.
    plus any existing `lcm.db-wal` and `lcm.db-shm` companions together as one
    quiescent snapshot. Do not copy these files separately while a writer is
    live.
-3. Update the plugin checkout to the RC and restart Hermes.
+3. Update the plugin checkout to v1.0.0 and restart Hermes.
 4. Send one normal message, then confirm `lcm_status` reports plugin version
-   `1.0.0-rc.1` and the expected database path.
+   `1.0.0` and the expected database path.
 5. For a migration-shape audit, query that database with
    `SELECT value FROM metadata WHERE key = 'schema_version';`; the expected
    result is `5`.
@@ -103,7 +103,7 @@ additive named feature markers and create their tables only when the
 corresponding store or workflow is invoked. A stock/default-off upgrade
 therefore creates none of those optional tables. For rollback to either
 v0.20.0 or v0.21.0-rc2, restore the pre-upgrade backup rather than opening a
-database modified by v1.0.0-rc.1 with the older plugin.
+database modified by v1.0.0 with the older plugin.
 
 Temporal rollup settings do not change. When rollups are enabled, maintenance
 now runs through bounded eventual background work instead of blocking session
@@ -135,7 +135,7 @@ Typical output:
 
 ```text
 Plugins (1):
-  ✓ hermes-lcm v1.0.0-rc.1 (15 tools)
+  ✓ hermes-lcm v1.0.0 (15 tools)
 
 Provider Plugins:
   Context Engine: lcm

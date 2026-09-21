@@ -3,7 +3,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
-RELEASE_VERSION = "1.0.0-rc.1"
+RELEASE_VERSION = "1.0.0"
 RELEASE_NOTES = REPO_ROOT / ".github" / "release-notes" / f"v{RELEASE_VERSION}.md"
 
 
@@ -63,7 +63,7 @@ def test_upgrade_guide_covers_stable_and_prerelease_paths():
         .split()
     )
 
-    assert "## Upgrade from v0.20.0 or v0.21.0-rc2 to v1.0.0-rc.1" in operator_guide
+    assert "## Upgrade from v0.20.0 or v0.21.0-rc2 to v1.0.0" in operator_guide
     assert (
         "A database created by either v0.20.0 or v0.21.0-rc2 opens in place"
         in operator_guide

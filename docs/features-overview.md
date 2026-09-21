@@ -172,12 +172,12 @@ Ready-made env profiles per agent type live in
 
 The feature families landed as reviewed PR trains with anchor issues
 describing the design space: temporal memory
-([#385](https://github.com/stephenschoettler/hermes-lcm/issues/385), PRs
-[#387](https://github.com/stephenschoettler/hermes-lcm/pull/387)–[#391](https://github.com/stephenschoettler/hermes-lcm/pull/391))
+([#385](https://github.com/misterdas/hermes-lcm/issues/385), PRs
+[#387](https://github.com/misterdas/hermes-lcm/pull/387)–[#391](https://github.com/misterdas/hermes-lcm/pull/391))
 and embeddings
-([#386](https://github.com/stephenschoettler/hermes-lcm/issues/386), PRs
-[#390](https://github.com/stephenschoettler/hermes-lcm/pull/390)–[#395](https://github.com/stephenschoettler/hermes-lcm/pull/395)),
+([#386](https://github.com/misterdas/hermes-lcm/issues/386), PRs
+[#390](https://github.com/misterdas/hermes-lcm/pull/390)–[#395](https://github.com/misterdas/hermes-lcm/pull/395)),
 plus the externalization/context-budget set (PRs
-[#380](https://github.com/stephenschoettler/hermes-lcm/pull/380)–[#384](https://github.com/stephenschoettler/hermes-lcm/pull/384)).
+[#380](https://github.com/misterdas/hermes-lcm/pull/380)–[#384](https://github.com/misterdas/hermes-lcm/pull/384)).
 The benchmark numbers behind the KNN ladder and the adversarial-review
 hardening notes are recorded in those threads.

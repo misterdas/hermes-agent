@@ -5,7 +5,7 @@
 `hermes-lcm` intentionally remains a clone-or-symlink Hermes user plugin for now. The supported install path is:
 
 ```bash
-git clone https://github.com/stephenschoettler/hermes-lcm \
+git clone https://github.com/misterdas/hermes-lcm \
   ~/.hermes/plugins/hermes-lcm
 ```
 

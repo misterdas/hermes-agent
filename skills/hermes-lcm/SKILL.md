@@ -45,7 +45,7 @@ These bugs have been identified and fixed in the upstream repo but may persist i
 
 ### Upstream open issues (monitor before upgrading)
 
-The `hermes-lcm` repo at `stephenschoettler/hermes-lcm` has ~30 open issues including:
+The `hermes-lcm` repo at `misterdas/hermes-lcm` has ~30 open issues including:
 - `#601` — Background rollup corruption (`btreeInitPage` error 11, deleted WAL handles)
 - `#605` — SQLite store lazy reconnect + `__deepcopy__` missing
 - `#589` — APFS concurrency corruption, lock timeouts, FTS self-healing
@@ -60,5 +60,21 @@ Before upgrading, check `git log` for fixes to issues affecting your setup. See 
 ## Version Compatibility
 
 Hermes v0.21.3+ recommended. Earlier versions may have schema incompatibilities with the LCM plugin's auto-migrations.
+
+## Release Procedure
+
+Releasing a new version follows this sequence. Each step is verified before proceeding:
+
+1. **Version bump**: Update `plugin.yaml` `version:` and all hardcoded version strings in tests (`test_lcm_engine.py`, `test_lcm_command.py`, `test_packaging_install.py`, `test_release_workflow.py`), `README.md`, `docs/operator-guide.md`, `CHANGELOG.md`, and `.github/ISSUE_TEMPLATE/bug_report.yml`. Use `grep -rln` to find all occurrences first.
+2. **CHANGELOG restructure**: Move `## Unreleased` to become `## v{VERSION} - {DATE}`, then insert a fresh `## Unreleased` section at the top for future changes.
+3. **Release notes**: Create `.github/release-notes/v{VERSION}.md` from the template. The release workflow at `.github/workflows/release.yml` requires this file to exist and start with `# hermes-lcm v{VERSION}\n`.
+4. **Commit and tag**: `git add -A && git commit -m "Release v{VERSION}" && git tag -a v{VERSION} -m "hermes-lcm v{VERSION} release"`.
+5. **Push**: `git pull --rebase origin main` first (remote may have new commits), then `git push origin main && git push origin v{VERSION}`.
+6. **Verify**: Run `pytest tests/test_release_workflow.py tests/test_lcm_command.py -q` to confirm test consistency.
+
+**Pitfalls**:
+- The tag-driven CI marks tags containing `-` as prereleases and non-`-` tags as `latest`. A stable release must use a tag without `-`.
+- `git reset --hard HEAD~1` destroys uncommitted work — commit before resetting.
+- `.github/release-notes/v{VERSION}.md` must exist before pushing the tag, or the release workflow rejects it.
 
 ## References

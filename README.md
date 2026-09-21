@@ -2,9 +2,9 @@
   <img src="docs/banner.png" alt="HERMES-LCM" width="800">
 </p>
 
-[![CI](https://github.com/stephenschoettler/hermes-lcm/actions/workflows/ci.yml/badge.svg)](https://github.com/stephenschoettler/hermes-lcm/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/stephenschoettler/hermes-lcm)](https://github.com/stephenschoettler/hermes-lcm/releases)
-[![Python 3.11-3.14](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://github.com/stephenschoettler/hermes-lcm/actions/workflows/ci.yml)
+[![CI](https://github.com/misterdas/hermes-lcm/actions/workflows/ci.yml/badge.svg)](https://github.com/misterdas/hermes-lcm/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/misterdas/hermes-lcm)](https://github.com/misterdas/hermes-lcm/releases)
+[![Python 3.11-3.14](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://github.com/misterdas/hermes-lcm/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Lossless Context Management plugin for [Hermes Agent](https://github.com/NousResearch/hermes-agent).**
@@ -18,7 +18,9 @@ messages, and gives the agent tools to recover exact detail after compaction.
 Based on the [LCM paper](https://papers.voltropy.com/LCM) by Ehrlich & Blackman
 (Voltropy PBC, Feb 2026). Inspired by
 [lossless-claw](https://github.com/martian-engineering/lossless-claw) for
-OpenClaw. For an interactive visualization of the LCM idea, see
+OpenClaw.
+
+The original `hermes-lcm` plugin was authored by [@stephenschoettler](https://github.com/stephenschoettler). This repository is a community fork maintained by @misterdas. For an interactive visualization of the LCM idea, see
 [losslesscontext.ai](https://losslesscontext.ai/).
 
 ## Table of contents
@@ -143,14 +145,14 @@ that the host's resolved environment is free of known vulnerabilities.
 Canonical install path: clone `hermes-lcm` as a general user plugin.
 
 ```bash
-git clone https://github.com/stephenschoettler/hermes-lcm \
+git clone https://github.com/misterdas/hermes-lcm \
   ~/.hermes/plugins/hermes-lcm
 ```
 
 For a profile-specific install:
 
 ```bash
-git clone https://github.com/stephenschoettler/hermes-lcm \
+git clone https://github.com/misterdas/hermes-lcm \
   ~/.hermes/profiles/myprofile/plugins/hermes-lcm
 ```
 
@@ -210,7 +212,7 @@ Typical output:
 
 ```text
 Plugins (1):
-  ✓ hermes-lcm v1.0.0-rc.1 (15 tools)
+  ✓ hermes-lcm v1.0.0 (15 tools)
 
 Provider Plugins:
   Context Engine: lcm
@@ -249,7 +251,7 @@ If you installed a symlink from a separate checkout:
 
 Restart Hermes after updating.
 
-For the `v1.0.0-rc.1` line, take a normal backup of `lcm.db` before updating,
+For the `v1.0.0` line, take a normal backup of `lcm.db` before updating,
 then update the checkout and restart Hermes. No manual core migration or
 backfill is required: the core schema remains version 5. New assertion,
 query-view, and adaptive-retrieval state is additive, created only after the
@@ -818,7 +820,7 @@ exposes retrieval tools that can drill back into exact stored sources.
 - [Contributing guide](CONTRIBUTING.md)
 - [Code of conduct](CODE_OF_CONDUCT.md)
 - [Security policy](SECURITY.md)
-- [Releases](https://github.com/stephenschoettler/hermes-lcm/releases)
+- [Releases](https://github.com/misterdas/hermes-lcm/releases)
 
 ## Development
 
@@ -855,7 +857,7 @@ priority. New features should be scoped, backwards-compatible, and tested.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for branch, validation, and PR guidance.
 See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for project conduct expectations
 and [SECURITY.md](SECURITY.md) for vulnerability reporting.
-See the [releases page](https://github.com/stephenschoettler/hermes-lcm/releases)
+See the [releases page](https://github.com/misterdas/hermes-lcm/releases)
 for changelogs.
 
 ## License
@@ -864,10 +866,10 @@ for changelogs.
 
 ## Star history
 
-<a href="https://www.star-history.com/?repos=stephenschoettler%2Fhermes-lcm&type=timeline&legend=top-left">
+<a href="https://www.star-history.com/?repos=misterdas%2Fhermes-lcm&type=timeline&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=stephenschoettler/hermes-lcm&type=timeline&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=stephenschoettler/hermes-lcm&type=timeline&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=misterdas/hermes-lcm&type=timeline&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=misterdas/hermes-lcm&type=timeline&legend=top-left" />
    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=misterdas/hermes-lcm&type=timeline&legend=top-left" />
  </picture>
 </a>
