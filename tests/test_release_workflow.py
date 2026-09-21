@@ -102,7 +102,10 @@ def test_release_candidate_notes_cover_only_the_merged_release_scope():
     assert "## Highlights" in notes
     assert "## Changes" in notes
     assert "## Contributors" in notes
-    assert "release candidate" in notes.lower()
+    if "-" in RELEASE_VERSION:
+        assert "release candidate" in notes.lower()
+    else:
+        assert "stable" in notes.lower()
     assert "disabled by default" in notes
     assert "rollback-journal" in notes
     assert len(notes.splitlines()) <= 60
