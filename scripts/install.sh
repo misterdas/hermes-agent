@@ -116,3 +116,17 @@ else
   echo "  context:"
   echo "    engine: trove"
 fi
+
+# Enable slash commands
+ENV_FILE="$TARGET_ROOT/.env"
+if [[ -f "$ENV_FILE" ]]; then
+  if grep -q "TROVE_ENABLE_SLASH_COMMAND" "$ENV_FILE" 2>/dev/null; then
+    echo "Slash commands already configured in $ENV_FILE"
+  else
+    echo "TROVE_ENABLE_SLASH_COMMAND=1" >> "$ENV_FILE"
+    echo "Added TROVE_ENABLE_SLASH_COMMAND=1 to $ENV_FILE"
+  fi
+else
+  echo "TROVE_ENABLE_SLASH_COMMAND=1" > "$ENV_FILE"
+  echo "Created $ENV_FILE with TROVE_ENABLE_SLASH_COMMAND=1"
+fi
