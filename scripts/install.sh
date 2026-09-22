@@ -84,3 +84,35 @@ Verification:
   3. Confirm the plugin list includes hermes-trove and the selected context engine is trove.
   4. Confirm the available skills include hermes-trove.
 EOF
+
+# Auto-configure config.yaml if needed
+CONFIG="$TARGET_ROOT/config.yaml"
+if [[ -f "$CONFIG" ]]; then
+  needs_update=false
+
+  if ! grep -q "hermes-trove" "$CONFIG" 2>/dev/null; then
+    needs_update=true
+  fi
+
+  if [[ "$needs_update" == "true" ]]; then
+    cat >> "$CONFIG" <<YAML
+
+plugins:
+  enabled:
+    - hermes-trove
+
+context:
+  engine: trove
+YAML
+    echo "Auto-configured $CONFIG"
+  else
+    echo "config.yaml already has hermes-trove activation"
+  fi
+else
+  echo "No config.yaml found at $CONFIG — add manually:"
+  echo "  plugins:"
+  echo "    enabled:"
+  echo "      - hermes-trove"
+  echo "  context:"
+  echo "    engine: trove"
+fi
