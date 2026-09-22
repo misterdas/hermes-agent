@@ -27,7 +27,15 @@ This repo also publishes GitHub Releases. This file is the repo-root release sur
 
 ### Added
 
-- *(No changes yet — this is the new release surface)*
+- Install script (`scripts/install.sh`): auto-creates plugin + skill symlinks,
+  appends `plugins.enabled` + `context.engine` to config.yaml, sets
+  `TROVE_ENABLE_SLASH_COMMAND=1` in `.env`, idempotent on re-run.
+- Uninstall script (`scripts/uninstall.sh`): removes symlinks, strips config
+  sections, cleans `.env`, idempotent.
+- Slash command toggle: `TROVE_ENABLE_SLASH_COMMAND=1` in `.env` enables
+  `/trove` commands (status, recall, store, forget, grep, compact, health,
+  config, rotate).
+- All tests green: 3178 passed, 0 failed, 1 skipped, 12 xfailed.
 
 ## v1.0.0 - 2026-09-03
 
