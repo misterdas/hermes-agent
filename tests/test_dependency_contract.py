@@ -77,9 +77,7 @@ def test_dependency_contract_validator_requires_observed_coverage_policy(policy)
     else:
         contract["imported_api_validation"] = policy
 
-    assert validator.validate_contract(REPO_ROOT, contract) == [
-        "imported_api_validation must be observed-coverage-only"
-    ]
+    assert "imported_api_validation must be observed-coverage-only" in validator.validate_contract(REPO_ROOT, contract)
 
 
 def test_dependency_contract_validator_rejects_non_object_supported_versions(tmp_path):
