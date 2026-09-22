@@ -18,13 +18,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from benchmarking.replay import _ensure_hermes_lcm_package
+from benchmarking.replay import _ensure_hermes_trove_package
 
-_ensure_hermes_lcm_package()
+_ensure_hermes_trove_package()
 
-from hermes_lcm.assertion_state import query_assertion_state
-from hermes_lcm.assertion_store import AssertionCandidate, AssertionStore
-from hermes_lcm.store import MessageStore
+from hermes_trove.assertion_state import query_assertion_state
+from hermes_trove.assertion_store import AssertionCandidate, AssertionStore
+from hermes_trove.store import MessageStore
 
 
 def _percentile(values: list[float], percentile: float) -> float:
@@ -58,8 +58,8 @@ def _checkpoint(conn: sqlite3.Connection) -> None:
 def run_measurement(source_count: int, query_count: int) -> dict[str, object]:
     predicate_count = min(100, max(1, source_count))
     rng = random.Random(20260719)
-    with tempfile.TemporaryDirectory(prefix="hermes-lcm-assertion-measure-") as temp:
-        db_path = Path(temp) / "lcm.db"
+    with tempfile.TemporaryDirectory(prefix="hermes-trove-assertion-measure-") as temp:
+        db_path = Path(temp) / "trove.db"
         messages = MessageStore(db_path)
         assertions = AssertionStore(db_path)
         snapshots = []
@@ -106,8 +106,8 @@ def run_measurement(source_count: int, query_count: int) -> dict[str, object]:
             """
             SELECT a.source_span_start, a.source_span_end, a.source_quote,
                    m.content
-            FROM lcm_assertions AS a
-            JOIN lcm_assertion_sources AS s
+            FROM trove_assertions AS a
+            JOIN trove_assertion_sources AS s
               ON s.source_store_id = a.source_store_id
              AND s.extraction_version = a.extraction_version
              AND s.source_content_sha256 = a.source_content_sha256
@@ -138,10 +138,10 @@ def run_measurement(source_count: int, query_count: int) -> dict[str, object]:
             returned_assertions += len(result.assertions)
 
         assertion_count = int(assertions.connection.execute(
-            "SELECT COUNT(*) FROM lcm_assertions"
+            "SELECT COUNT(*) FROM trove_assertions"
         ).fetchone()[0])
         relation_count = int(assertions.connection.execute(
-            "SELECT COUNT(*) FROM lcm_assertion_relations"
+            "SELECT COUNT(*) FROM trove_assertion_relations"
         ).fetchone()[0])
         assertions.close()
         messages.close()

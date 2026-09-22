@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-from hermes_lcm.chunking import (
+from hermes_trove.chunking import (
     chunk_message,
     group_by_store_id,
     iter_message_chunks,
@@ -159,7 +159,7 @@ class TestFullPolicy:
         assert len(chunks) == 1
 
     def test_giant_message_reduced_to_head_and_error(self, monkeypatch):
-        import hermes_lcm.chunking as chunking
+        import hermes_trove.chunking as chunking
 
         # Force the giant-message path without building a 32k-token string.
         monkeypatch.setattr(chunking, "_FULL_PER_MESSAGE_TOKEN_CAP", 100)

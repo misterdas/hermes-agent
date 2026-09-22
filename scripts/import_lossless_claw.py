@@ -21,7 +21,7 @@ from typing import Any, Iterable
 
 
 PLUGIN_DIR = Path(__file__).resolve().parents[1]
-PACKAGE_NAME = "hermes_lcm"
+PACKAGE_NAME = "hermes_trove"
 
 
 def _ensure_local_package_importable() -> None:
@@ -36,13 +36,13 @@ def _ensure_local_package_importable() -> None:
 
 _ensure_local_package_importable()
 
-from hermes_lcm.config import LCMConfig  # noqa: E402
-from hermes_lcm.dag import build_nodes_fts_spec  # noqa: E402
-from hermes_lcm.db_bootstrap import ensure_external_content_fts  # noqa: E402
-from hermes_lcm.ingest_protection import protect_message_for_ingest  # noqa: E402
-from hermes_lcm.message_content import normalize_content_value  # noqa: E402
-from hermes_lcm.store import MessageStore, _normalize_source_value  # noqa: E402
-from hermes_lcm.tokens import count_message_tokens  # noqa: E402
+from hermes_trove.config import TROVEConfig  # noqa: E402
+from hermes_trove.dag import build_nodes_fts_spec  # noqa: E402
+from hermes_trove.db_bootstrap import ensure_external_content_fts  # noqa: E402
+from hermes_trove.ingest_protection import protect_message_for_ingest  # noqa: E402
+from hermes_trove.message_content import normalize_content_value  # noqa: E402
+from hermes_trove.store import MessageStore, _normalize_source_value  # noqa: E402
+from hermes_trove.tokens import count_message_tokens  # noqa: E402
 
 
 VALID_SESSION_IDENTITIES = frozenset({"session_id", "session_key"})
@@ -276,7 +276,7 @@ def _safe_segment(value: Any, fallback: str) -> str:
 
 
 def _target_source(namespace: str, agent: str, source_session: str) -> str:
-    return f"{_safe_segment(namespace, 'openclaw-lcm')}:agent:{_safe_segment(agent, 'unknown')}:{source_session}"
+    return f"{_safe_segment(namespace, 'openclaw-trove')}:agent:{_safe_segment(agent, 'unknown')}:{source_session}"
 
 
 def _resolve_source_session(
@@ -668,13 +668,13 @@ def _collect_summary_candidates(
 
 
 def _target_has_import_table(conn: sqlite3.Connection) -> bool:
-    return _table_exists(conn, "lcm_imported_messages")
+    return _table_exists(conn, "trove_imported_messages")
 
 
 def _ensure_import_table(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS lcm_imported_messages (
+        CREATE TABLE IF NOT EXISTS trove_imported_messages (
             import_id TEXT NOT NULL,
             source_message_id INTEGER NOT NULL,
             source_message_key TEXT,
@@ -688,22 +688,22 @@ def _ensure_import_table(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         """
-        CREATE INDEX IF NOT EXISTS idx_lcm_imported_messages_target
-            ON lcm_imported_messages(target_store_id)
+        CREATE INDEX IF NOT EXISTS idx_trove_imported_messages_target
+            ON trove_imported_messages(target_store_id)
         """
     )
-    columns = _table_columns(conn, "lcm_imported_messages")
+    columns = _table_columns(conn, "trove_imported_messages")
     if "source_message_key" not in columns:
-        conn.execute("ALTER TABLE lcm_imported_messages ADD COLUMN source_message_key TEXT")
+        conn.execute("ALTER TABLE trove_imported_messages ADD COLUMN source_message_key TEXT")
     conn.execute(
-        """UPDATE lcm_imported_messages
+        """UPDATE trove_imported_messages
            SET source_message_key = CAST(source_message_id AS TEXT)
            WHERE source_message_key IS NULL"""
     )
     conn.execute(
         """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_lcm_imported_messages_key
-            ON lcm_imported_messages(import_id, source_message_key)
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_trove_imported_messages_key
+            ON trove_imported_messages(import_id, source_message_key)
             WHERE source_message_key IS NOT NULL
         """
     )
@@ -744,7 +744,7 @@ def _ensure_summary_nodes_schema(conn: sqlite3.Connection) -> None:
 def _ensure_summary_import_table(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS lcm_imported_summaries (
+        CREATE TABLE IF NOT EXISTS trove_imported_summaries (
             import_id TEXT NOT NULL,
             source_summary_id TEXT NOT NULL,
             source_conversation_id INTEGER NOT NULL,
@@ -757,8 +757,8 @@ def _ensure_summary_import_table(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         """
-        CREATE INDEX IF NOT EXISTS idx_lcm_imported_summaries_target
-            ON lcm_imported_summaries(target_node_id)
+        CREATE INDEX IF NOT EXISTS idx_trove_imported_summaries_target
+            ON trove_imported_summaries(target_node_id)
         """
     )
 
@@ -768,7 +768,7 @@ def _imported_message_map_from_conn(conn: sqlite3.Connection, import_id: str) ->
         return {}
     rows = conn.execute(
         """SELECT source_message_id, target_store_id
-           FROM lcm_imported_messages
+           FROM trove_imported_messages
            WHERE import_id = ?""",
         (import_id,),
     ).fetchall()
@@ -776,11 +776,11 @@ def _imported_message_map_from_conn(conn: sqlite3.Connection, import_id: str) ->
 
 
 def _imported_summary_map_from_conn(conn: sqlite3.Connection, import_id: str) -> dict[str, int]:
-    if not _table_exists(conn, "lcm_imported_summaries"):
+    if not _table_exists(conn, "trove_imported_summaries"):
         return {}
     rows = conn.execute(
         """SELECT source_summary_id, target_node_id
-           FROM lcm_imported_summaries
+           FROM trove_imported_summaries
            WHERE import_id = ?""",
         (import_id,),
     ).fetchall()
@@ -844,7 +844,7 @@ def _insert_summary_node(
     )
     node_id = int(cur.lastrowid)
     conn.execute(
-        """INSERT INTO lcm_imported_summaries
+        """INSERT INTO trove_imported_summaries
            (import_id, source_summary_id, source_conversation_id, source_session,
             target_node_id, imported_at)
            VALUES (?, ?, ?, ?, ?, ?)""",
@@ -948,7 +948,7 @@ def _existing_source_message_ids(target_db: Path, import_id: str) -> set[int]:
         if not _target_has_import_table(conn):
             return set()
         rows = conn.execute(
-            "SELECT source_message_id FROM lcm_imported_messages WHERE import_id = ?",
+            "SELECT source_message_id FROM trove_imported_messages WHERE import_id = ?",
             (import_id,),
         ).fetchall()
         return {int(row[0]) for row in rows}
@@ -963,12 +963,12 @@ def _existing_source_message_keys(target_db: Path, import_id: str) -> set[str]:
     try:
         if not _target_has_import_table(conn):
             return set()
-        columns = _table_columns(conn, "lcm_imported_messages")
+        columns = _table_columns(conn, "trove_imported_messages")
         keys: set[str] = set()
         if "source_message_key" in columns:
             rows = conn.execute(
                 """SELECT source_message_key
-                   FROM lcm_imported_messages
+                   FROM trove_imported_messages
                    WHERE import_id = ? AND source_message_key IS NOT NULL""",
                 (import_id,),
             ).fetchall()
@@ -976,7 +976,7 @@ def _existing_source_message_keys(target_db: Path, import_id: str) -> set[str]:
         if "source_message_id" in columns:
             rows = conn.execute(
                 """SELECT source_message_id
-                   FROM lcm_imported_messages
+                   FROM trove_imported_messages
                    WHERE import_id = ?""",
                 (import_id,),
             ).fetchall()
@@ -1031,7 +1031,7 @@ def _insert_import_candidate(
     *,
     import_id: str,
     candidate: ImportCandidate,
-    protection_config: LCMConfig,
+    protection_config: TROVEConfig,
     target_path: Path,
 ) -> int:
     protected_msg = protect_message_for_ingest(
@@ -1060,7 +1060,7 @@ def _insert_import_candidate(
     )
     store_id = int(cur.lastrowid)
     conn.execute(
-        """INSERT INTO lcm_imported_messages
+        """INSERT INTO trove_imported_messages
            (import_id, source_message_id, source_message_key,
             source_conversation_id, source_session, target_store_id, imported_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
@@ -1176,7 +1176,7 @@ def _process_import_candidates(
 
     target_path.parent.mkdir(parents=True, exist_ok=True)
     backup_path = _backup_target(target_path)
-    protection_config = LCMConfig.from_env()
+    protection_config = TROVEConfig.from_env()
     protection_config.database_path = str(target_path)
     store = MessageStore(
         target_path,
@@ -1245,7 +1245,7 @@ def import_lossless_claw(
     *,
     source_db: str | Path,
     target_db: str | Path,
-    namespace: str = "openclaw-lcm",
+    namespace: str = "openclaw-trove",
     agent: str = "unknown",
     import_id: str | None = None,
     session_identity: str = "session_id",
@@ -2328,7 +2328,7 @@ def _existing_tool_call_ids_by_source_session(target_db: Path, import_id: str) -
     try:
         if not _target_has_import_table(conn) or not _table_exists(conn, "messages"):
             return {}
-        import_columns = _table_columns(conn, "lcm_imported_messages")
+        import_columns = _table_columns(conn, "trove_imported_messages")
         message_columns = _table_columns(conn, "messages")
         if not {"source_session", "target_store_id"}.issubset(import_columns):
             return {}
@@ -2336,7 +2336,7 @@ def _existing_tool_call_ids_by_source_session(target_db: Path, import_id: str) -
             return {}
         rows = conn.execute(
             """SELECT im.source_session, m.tool_calls
-               FROM lcm_imported_messages im
+               FROM trove_imported_messages im
                JOIN messages m ON m.store_id = im.target_store_id
                WHERE im.import_id = ?
                  AND m.tool_calls IS NOT NULL
@@ -3200,9 +3200,9 @@ def import_jsonl_sessions(
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Import raw messages from lossless-claw/OpenClaw sources into hermes-lcm.",
+        description="Import raw messages from lossless-claw/OpenClaw sources into hermes-trove.",
     )
-    parser.add_argument("--source-db", help="Path to the source lossless-claw/OpenClaw LCM SQLite DB")
+    parser.add_argument("--source-db", help="Path to the source lossless-claw/OpenClaw TROVE SQLite DB")
     parser.add_argument(
         "--source-jsonl",
         action="append",
@@ -3215,11 +3215,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Directory containing OpenClaw session JSONL exports. May be repeated.",
     )
-    parser.add_argument("--target-db", required=True, help="Path to the target hermes-lcm SQLite DB")
+    parser.add_argument("--target-db", required=True, help="Path to the target hermes-trove SQLite DB")
     parser.add_argument(
         "--namespace",
         help=(
-            "Provenance namespace for imported rows. Defaults to openclaw-lcm for "
+            "Provenance namespace for imported rows. Defaults to openclaw-trove for "
             "SQLite and openclaw-jsonl for JSONL."
         ),
     )
@@ -3281,7 +3281,7 @@ def main(argv: list[str] | None = None) -> int:
         result = import_lossless_claw(
             source_db=args.source_db,
             target_db=args.target_db,
-            namespace=args.namespace or "openclaw-lcm",
+            namespace=args.namespace or "openclaw-trove",
             agent=args.agent,
             import_id=args.import_id,
             session_identity=args.session_identity,

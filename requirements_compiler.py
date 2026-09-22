@@ -33,7 +33,7 @@ from .reasoning import (
 
 REQUIREMENTS_COMPILER_VERSION = "evidence-contract-compiler-v1"
 _EXACT_REF_RE = re.compile(
-    r"^lcm:(?P<store_id>[1-9]\d*):(?P<start>\d+)-(?P<end>\d+)$"
+    r"^trove:(?P<store_id>[1-9]\d*):(?P<start>\d+)-(?P<end>\d+)$"
 )
 _DIGIT_NUMBER_RE = re.compile(
     r"(?<![\w.])-?(?:\d+(?:,\d{3})*|\d*\.\d+)(?!\w)"
@@ -311,7 +311,7 @@ def _normalize_ref(raw: Any, *, engine: Any, origin: str) -> dict[str, Any] | No
         except (TypeError, ValueError, OverflowError):
             return None
         quote = str(candidate.get("content") or candidate.get("quote") or "")
-        exact_ref = f"lcm:{store_id}:{offset}-{offset + len(quote)}"
+        exact_ref = f"trove:{store_id}:{offset}-{offset + len(quote)}"
     match = _EXACT_REF_RE.fullmatch(exact_ref)
     if match is None:
         return None
@@ -351,7 +351,7 @@ def _normalize_ref(raw: Any, *, engine: Any, origin: str) -> dict[str, Any] | No
         session_date=session_date,
     )
     return {
-        "exact_ref": f"lcm:{store_id}:{start}-{end}",
+        "exact_ref": f"trove:{store_id}:{start}-{end}",
         "store_id": store_id,
         "span_start": start,
         "span_end": end,
@@ -516,7 +516,7 @@ def _numeric_candidates(
         absolute_end = int(source["span_start"]) + phrase_end
         candidate = {
             **source,
-            "exact_ref": f"lcm:{source['store_id']}:{absolute_start}-{absolute_end}",
+            "exact_ref": f"trove:{source['store_id']}:{absolute_start}-{absolute_end}",
             "span_start": absolute_start,
             "span_end": absolute_end,
             "quote": phrase,
@@ -676,7 +676,7 @@ def _date_candidates(
         output.append(
             {
                 **source,
-                "exact_ref": f"lcm:{source['store_id']}:{start}-{end}",
+                "exact_ref": f"trove:{source['store_id']}:{start}-{end}",
                 "span_start": start,
                 "span_end": end,
                 "quote": match.group(0),
@@ -1331,7 +1331,7 @@ def _base_result(
             "provider": "none",
             "model": "none",
             "selector_calls": 0,
-            "storage": "same_lcm_db",
+            "storage": "same_trove_db",
             "baseline_bytes_changed": False,
             "final_prose_cached": False,
         },
@@ -1435,7 +1435,7 @@ def _adjacent_sources(
                 continue
             content = str(row.get("content") or "")[: limits.max_quote_chars]
             raw = {
-                "exact_ref": f"lcm:{store_id}:0-{len(content)}",
+                "exact_ref": f"trove:{store_id}:0-{len(content)}",
                 "quote": content,
             }
             hydrated = _normalize_ref(raw, engine=engine, origin="adjacent_role_partner")
@@ -1787,7 +1787,7 @@ def _finite_enumeration(
             certificate["material_clauses"] += 1
             hydrated = _normalize_ref(
                 {
-                    "exact_ref": f"lcm:{int(row['store_id'])}:{start}-{end}",
+                    "exact_ref": f"trove:{int(row['store_id'])}:{start}-{end}",
                     "quote": clause,
                 },
                 engine=engine,
@@ -1900,13 +1900,13 @@ def _render_fact(candidate: Mapping[str, Any], contract: AnswerContract) -> str:
         stated = str(value or "").strip()
     return "\n".join(
         [
-            f'<lcm-answer-brief version="{REQUIREMENTS_COMPILER_VERSION}">',
+            f'<trove-answer-brief version="{REQUIREMENTS_COMPILER_VERSION}">',
             "Product-validated source-stated answer evidence:",
             f"- source value: {stated}",
             f"- exact evidence: [{candidate['exact_ref']}] {candidate['quote']}",
             f"- answer kind: {contract.answer_kind}",
             "Use only this cited evidence; do not infer exhaustive coverage.",
-            "</lcm-answer-brief>",
+            "</trove-answer-brief>",
         ]
     )
 
@@ -1915,12 +1915,12 @@ def _render_computation(computation: Mapping[str, Any]) -> str:
     refs = [str(item) for item in computation.get("citations") or []]
     return "\n".join(
         [
-            f'<lcm-answer-brief version="{REQUIREMENTS_COMPILER_VERSION}">',
+            f'<trove-answer-brief version="{REQUIREMENTS_COMPILER_VERSION}">',
             "Product-validated canonical computation:",
             f"- result: {computation.get('result')}",
             f"- exact operands: {', '.join(refs)}",
             "Use the canonical result unchanged; do not add or alter operands.",
-            "</lcm-answer-brief>",
+            "</trove-answer-brief>",
         ]
     )
 

@@ -16,7 +16,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from hermes_lcm.trajectory_store import (
+from hermes_trove.trajectory_store import (
     CorpusIdentity,
     TrajectorySource,
     TrajectoryState,
@@ -89,8 +89,8 @@ _QUERY = "widget configuration export"
 def _state_id(store, trajectory_id: str, state_index: int) -> int:
     row = store._conn.execute(
         """
-        SELECT s.state_id FROM lcm_trajectory_states s
-        JOIN lcm_trajectory_sources src ON src.source_id = s.source_id
+        SELECT s.state_id FROM trove_trajectory_states s
+        JOIN trove_trajectory_sources src ON src.source_id = s.source_id
         WHERE src.trajectory_id = ? AND s.state_index = ?
         """,
         (trajectory_id, state_index),
@@ -115,7 +115,7 @@ def _build_invisible_neighbor_store(tmp_path: Path):
     term) while its predecessor seeds; plus a second lexical trajectory."""
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
-    store = TrajectoryStore(tmp_path / "lcm.db", _identity(), asset_root=asset_root)
+    store = TrajectoryStore(tmp_path / "trove.db", _identity(), asset_root=asset_root)
     store.insert(_source(
         asset_root,
         trajectory_id="answerpath",
@@ -199,7 +199,7 @@ def test_pool_incumbents_are_not_readmitted(tmp_path):
     """A neighbor that already entered the pool lexically is never duplicated."""
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
-    store = TrajectoryStore(tmp_path / "lcm.db", _identity(), asset_root=asset_root)
+    store = TrajectoryStore(tmp_path / "trove.db", _identity(), asset_root=asset_root)
     store.insert(_source(
         asset_root,
         trajectory_id="allmatch",
@@ -231,7 +231,7 @@ def test_delivery_unchanged_when_ranked_pool_fills_nucleus(tmp_path):
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     store = TrajectoryStore(
-        tmp_path / "lcm.db",
+        tmp_path / "trove.db",
         _identity(),
         asset_root=asset_root,
         embedding_provider=MagnetProvider(),
@@ -284,7 +284,7 @@ def test_delivery_unchanged_when_ranked_pool_fills_nucleus(tmp_path):
 def test_five_per_trajectory_cap_preserved_at_selection(tmp_path):
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
-    store = TrajectoryStore(tmp_path / "lcm.db", _identity(), asset_root=asset_root)
+    store = TrajectoryStore(tmp_path / "trove.db", _identity(), asset_root=asset_root)
     store.insert(_source(
         asset_root,
         trajectory_id="longtask",

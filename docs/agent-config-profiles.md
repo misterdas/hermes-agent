@@ -1,7 +1,7 @@
 # Agent configuration profiles
 
 Copy-paste starting points for common agent shapes. Every profile below is
-**additive to a stock install** — with none of these variables set, LCM runs
+**additive to a stock install** — with none of these variables set, TROVE runs
 exactly as before. Mix and match: the feature families are independent.
 
 For the full variable table see
@@ -10,25 +10,25 @@ each feature does and why, see [Feature overview](features-overview.md).
 
 ## Where configuration lives
 
-1. **Environment variables (`LCM_*`) are the primary surface** and always win.
+1. **Environment variables (`TROVE_*`) are the primary surface** and always win.
    Set them in the environment that launches Hermes.
 2. **`~/.hermes/config.yaml`** participates in three narrow, deliberate ways:
-   - `plugins.enabled: [hermes-lcm]` + `context.engine: lcm` activate the
+   - `plugins.enabled: [hermes-trove]` + `context.engine: trove` activate the
      plugin (see [Operator guide → Activate](operator-guide.md#activate));
-   - `lcm.context_threshold` is the one LCM key supported in YAML (used only
-     when `LCM_CONTEXT_THRESHOLD` is not set; other keys under `lcm:` are
-     ignored and reported by `/lcm doctor`);
-   - when neither is set, LCM inherits the Hermes global
+   - `trove.context_threshold` is the one TROVE key supported in YAML (used only
+     when `TROVE_CONTEXT_THRESHOLD` is not set; other keys under `trove:` are
+     ignored and reported by `/trove doctor`);
+   - when neither is set, TROVE inherits the Hermes global
      `compression.threshold`.
 3. **Summarization inherits Hermes auxiliary routing.** Rollup builds and
    compaction summaries go through the auxiliary model unless you override
-   `LCM_SUMMARY_MODEL` — so a fully-local Hermes (local auxiliary model) makes
-   every LCM feature below local too, including temporal rollups.
-4. Secrets stay in the environment: the only one LCM ever reads is
-   `VOYAGE_API_KEY`, and only when `LCM_EMBEDDING_PROVIDER=voyage`.
+   `TROVE_SUMMARY_MODEL` — so a fully-local Hermes (local auxiliary model) makes
+   every TROVE feature below local too, including temporal rollups.
+4. Secrets stay in the environment: the only one TROVE ever reads is
+   `VOYAGE_API_KEY`, and only when `TROVE_EMBEDDING_PROVIDER=voyage`.
 
-Check what actually took effect at runtime with `/lcm status` (reports config
-sources) and `/lcm doctor` (flags ignored YAML keys and misconfiguration).
+Check what actually took effect at runtime with `/trove status` (reports config
+sources) and `/trove doctor` (flags ignored YAML keys and misconfiguration).
 
 ## Profile: default chat assistant
 
@@ -38,13 +38,13 @@ Nothing to configure. Enable the plugin and stop:
 # ~/.hermes/config.yaml
 plugins:
   enabled:
-    - hermes-lcm
+    - hermes-trove
 context:
-  engine: lcm
+  engine: trove
 ```
 
 You get bounded active context, the summary DAG, lossless recovery, and the
-full `lcm_*` tool set at their tested defaults.
+full `trove_*` tool set at their tested defaults.
 
 ## Profile: heavy tool-use coding agent
 
@@ -53,26 +53,26 @@ to stop giant tool outputs from monopolizing the prompt while keeping every
 byte recoverable.
 
 ```bash
-# Externalize oversized payloads out of lcm.db into recoverable files
-export LCM_LARGE_OUTPUT_EXTERNALIZATION_ENABLED=true
+# Externalize oversized payloads out of trove.db into recoverable files
+export TROVE_LARGE_OUTPUT_EXTERNALIZATION_ENABLED=true
 
 # Replace token-heavy tool results in the provider-visible prompt with refs
-export LCM_LARGE_OUTPUT_ACTIVE_REPLAY_STUBBING_ENABLED=true
+export TROVE_LARGE_OUTPUT_ACTIVE_REPLAY_STUBBING_ENABLED=true
 # Default stub threshold is 25000 tokens; lower it for chattier tools
-# export LCM_LARGE_OUTPUT_ACTIVE_REPLAY_STUB_THRESHOLD_TOKENS=25000
+# export TROVE_LARGE_OUTPUT_ACTIVE_REPLAY_STUB_THRESHOLD_TOKENS=25000
 
 # Cap the protected fresh tail by tokens (0 = off). Prevents one giant recent
 # tool result from pinning the whole budget; newest message and complete
 # assistant/tool groups are always retained.
-export LCM_FRESH_TAIL_MAX_TOKENS=24000
+export TROVE_FRESH_TAIL_MAX_TOKENS=24000
 
 # Optional: at threshold, drain the whole raw backlog in one bounded sweep
 # (fewer, larger compactions — useful after long unattended runs)
-export LCM_THRESHOLD_FULL_SWEEP_ENABLED=true
+export TROVE_THRESHOLD_FULL_SWEEP_ENABLED=true
 ```
 
-Recovery stays first-class: `lcm_describe`/`lcm_expand` read externalized
-refs, and `lcm_grep(content_scope='both')` searches externalized payloads when
+Recovery stays first-class: `trove_describe`/`trove_expand` read externalized
+refs, and `trove_grep(content_scope='both')` searches externalized payloads when
 the agent needs "which run printed that error?".
 
 ## Profile: long-horizon personal / companion agent
@@ -81,29 +81,29 @@ For agents that live for weeks and get asked "what did we do last Tuesday?"
 and "have we talked about this before?".
 
 ```bash
-# Time-indexed memory: day/week/month rollups + the lcm_recent tool
-export LCM_TEMPORAL_ROLLUPS_ENABLED=true
+# Time-indexed memory: day/week/month rollups + the trove_recent tool
+export TROVE_TEMPORAL_ROLLUPS_ENABLED=true
 
-# Meaning-based recall: semantic + hybrid lcm_grep over summaries
-export LCM_EMBEDDINGS_ENABLED=true
-export LCM_EMBEDDING_PROVIDER=voyage          # or: fastembed / ollama (below)
-export LCM_EMBEDDING_MODEL=voyage-4-lite
+# Meaning-based recall: semantic + hybrid trove_grep over summaries
+export TROVE_EMBEDDINGS_ENABLED=true
+export TROVE_EMBEDDING_PROVIDER=voyage          # or: fastembed / ollama (below)
+export TROVE_EMBEDDING_MODEL=voyage-4-lite
 export VOYAGE_API_KEY=...                     # free key from dash.voyageai.com
 
-# The /lcm operator commands used below are an opt-in surface
-export LCM_ENABLE_SLASH_COMMAND=1
+# The /trove operator commands used below are an opt-in surface
+export TROVE_ENABLE_SLASH_COMMAND=1
 ```
 
 Then, once:
 
 ```
-/lcm embed warmup            # resolve + dimension-lock the profile
-/lcm embed backfill          # dry-run: shows cost/coverage estimate
-/lcm embed backfill --apply  # embed existing summaries
+/trove embed warmup            # resolve + dimension-lock the profile
+/trove embed backfill          # dry-run: shows cost/coverage estimate
+/trove embed backfill --apply  # embed existing summaries
 ```
 
-`lcm_recent` works immediately even before rollups are built (transparent
-leaf-summary fallback), and `lcm_grep` keeps `mode='full_text'` as the
+`trove_recent` works immediately even before rollups are built (transparent
+leaf-summary fallback), and `trove_grep` keeps `mode='full_text'` as the
 byte-compatible default — semantic is per-call opt-in.
 
 ## Profile: fully local / air-gapped
@@ -112,43 +112,43 @@ No bytes leave the machine. Pair with a local Hermes auxiliary model so
 summarization is local too.
 
 ```bash
-export LCM_TEMPORAL_ROLLUPS_ENABLED=true
+export TROVE_TEMPORAL_ROLLUPS_ENABLED=true
 
-export LCM_EMBEDDINGS_ENABLED=true
-export LCM_EMBEDDING_PROVIDER=fastembed       # in-process ONNX, CPU-friendly
+export TROVE_EMBEDDINGS_ENABLED=true
+export TROVE_EMBEDDING_PROVIDER=fastembed       # in-process ONNX, CPU-friendly
 # Default model downloads ~90–130 MB once at warmup (bge-small / MiniLM class)
 
 # Or, if you already run Ollama:
-# export LCM_EMBEDDING_PROVIDER=ollama
-# export LCM_EMBEDDING_MODEL=nomic-embed-text
-# export LCM_OLLAMA_BASE_URL=http://127.0.0.1:11434
+# export TROVE_EMBEDDING_PROVIDER=ollama
+# export TROVE_EMBEDDING_MODEL=nomic-embed-text
+# export TROVE_OLLAMA_BASE_URL=http://127.0.0.1:11434
 ```
 
 Optional: installing `numpy` accelerates KNN on large vector sets; without it
-LCM uses a dependency-free bounded scan that stays correct, just smaller-scale
+TROVE uses a dependency-free bounded scan that stays correct, just smaller-scale
 (see [Embeddings setup](embeddings-setup.md)).
 
 ## Profile: cost-guarded cloud embeddings
 
 Voyage's free tier (200M tokens on the voyage-4 family) is far more than this
-workload typically needs — LCM embeds bounded summaries, not raw transcripts.
+workload typically needs — TROVE embeds bounded summaries, not raw transcripts.
 To keep hard boundaries anyway:
 
 ```bash
-export LCM_EMBEDDINGS_ENABLED=true
-export LCM_EMBEDDING_PROVIDER=voyage
-export LCM_EMBEDDING_MODEL=voyage-4-lite      # cheapest tier, $0.02/M after free
+export TROVE_EMBEDDINGS_ENABLED=true
+export TROVE_EMBEDDING_PROVIDER=voyage
+export TROVE_EMBEDDING_MODEL=voyage-4-lite      # cheapest tier, $0.02/M after free
 export VOYAGE_API_KEY=...
 
 # Interactive queries: hard per-call wall-clock budget (default 3s)
-export LCM_EMBEDDING_QUERY_TIMEOUT_S=3
+export TROVE_EMBEDDING_QUERY_TIMEOUT_S=3
 
 # Bulk backfill: separate per-request deadline (default 120s) — bulk work
 # never inherits the interactive query budget
-export LCM_EMBEDDING_BACKFILL_TIMEOUT_S=120
+export TROVE_EMBEDDING_BACKFILL_TIMEOUT_S=120
 ```
 
-Always dry-run `/lcm embed backfill` first: it reports document counts and
+Always dry-run `/trove embed backfill` first: it reports document counts and
 token estimates with the same eligibility rules apply-mode uses, so the
 estimate is the bill.
 
@@ -158,18 +158,18 @@ estimate is the bill.
 hermes plugins        # plugin + engine loaded
 ```
 
-The `/lcm` operator commands below require the opt-in command surface:
+The `/trove` operator commands below require the opt-in command surface:
 
 ```bash
-export LCM_ENABLE_SLASH_COMMAND=1
+export TROVE_ENABLE_SLASH_COMMAND=1
 ```
 
-(Without it, the `lcm_status` / `lcm_doctor` *agent tools* still cover the
+(Without it, the `trove_status` / `trove_doctor` *agent tools* still cover the
 read-only checks — ask the agent to call them.) Then in a session:
 
 ```
-/lcm status           # effective config + sources, context pressure
-/lcm doctor           # DB health, ignored YAML keys, misconfig warnings
-/lcm rollups          # temporal rollup readiness (when enabled)
-/lcm embed backfill   # dry-run: embedding coverage + cost estimate (when enabled)
+/trove status           # effective config + sources, context pressure
+/trove doctor           # DB health, ignored YAML keys, misconfig warnings
+/trove rollups          # temporal rollup readiness (when enabled)
+/trove embed backfill   # dry-run: embedding coverage + cost estimate (when enabled)
 ```

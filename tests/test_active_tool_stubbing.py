@@ -7,11 +7,11 @@ from unittest.mock import Mock
 
 import pytest
 
-import hermes_lcm.engine as lcm_engine
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.engine import LCMEngine
-from hermes_lcm.externalize import extract_externalized_ref, load_externalized_payload
-from hermes_lcm.message_content import normalize_content_value
+import hermes_trove.engine as trove_engine
+from hermes_trove.config import TROVEConfig
+from hermes_trove.engine import TROVEEngine
+from hermes_trove.externalize import extract_externalized_ref, load_externalized_payload
+from hermes_trove.message_content import normalize_content_value
 
 
 @pytest.fixture
@@ -28,8 +28,8 @@ def make_engine(tmp_path):
             large_output_active_replay_stub_threshold_tokens=5,
         )
         settings.update(overrides)
-        config = LCMConfig(**settings)
-        engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes"))
+        config = TROVEConfig(**settings)
+        engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes"))
         engine_index = len(engines)
         engine.on_session_start(
             f"active-stub-test-{engine_index}",
@@ -85,13 +85,13 @@ def externalized_raw_cleanup_messages():
 
 
 def test_active_stubbing_is_default_off(tmp_path):
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / "default-off.db"),
         fresh_tail_count=2,
         large_output_externalization_enabled=True,
         large_output_externalization_threshold_chars=1,
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes"))
     engine._session_id = "default-off-test"
     payload = "old tool payload " * 100
     tail = tool_pair("old-call", payload) + tool_pair("fresh-call", "fresh result")
@@ -131,7 +131,7 @@ def test_stubs_only_token_heavy_evictable_results_and_preserves_pairing(make_eng
     )
     second_ref = extract_externalized_ref(assembled_tool(second_result, "old-call")["content"])
     assert second_ref == first_ref
-    assert len(list((Path(engine._hermes_home) / "lcm-large-outputs").glob("*.json"))) == 1
+    assert len(list((Path(engine._hermes_home) / "trove-large-outputs").glob("*.json"))) == 1
 
 
 def test_token_threshold_can_force_externalization_below_character_threshold(make_engine):
@@ -154,7 +154,7 @@ def test_token_threshold_can_force_externalization_below_character_threshold(mak
     assert recovered["content"] == payload
     expanded = json.loads(
         engine.handle_tool_call(
-            "lcm_expand",
+            "trove_expand",
             {"externalized_ref": ref, "max_tokens": 1_000},
         )
     )
@@ -245,14 +245,14 @@ def test_externalization_failure_leaves_original_payload_inline(make_engine, mon
     engine = make_engine()
     payload = "must remain inline " * 40
     tail = tool_pair("fail-open-call", payload) + tool_pair("fresh-call", "fresh result")
-    monkeypatch.setattr(lcm_engine, "maybe_externalize_tool_output", lambda *args, **kwargs: None)
+    monkeypatch.setattr(trove_engine, "maybe_externalize_tool_output", lambda *args, **kwargs: None)
 
     result = engine._assemble_context({"role": "system", "content": "system"}, tail)
 
     assert assembled_tool(result, "fail-open-call")["content"] == payload
 
 
-@pytest.mark.parametrize("tool_name", ["lcm_describe", "lcm_expand"])
+@pytest.mark.parametrize("tool_name", ["trove_describe", "trove_expand"])
 def test_recovery_tool_output_is_not_recursively_stubbed(make_engine, tool_name):
     engine = make_engine()
     payload = "recovered full payload " * 100
@@ -407,7 +407,7 @@ def test_flag_off_replay_cleanup_cooldown_publishes_without_summary_llm(
     summary_spy = Mock(
         side_effect=AssertionError("cooldown-limited replay cleanup must not summarize")
     )
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
 
     assert engine.should_compress_preflight(messages) is True
     result = engine.compress(messages, current_tokens=1_000)
@@ -449,7 +449,7 @@ def test_live_stub_cooldown_adoption_skips_eligible_leaf_work(make_engine, monke
     def fail_if_summarized(**_kwargs):
         raise AssertionError("boundary cooldown cleanup must not summarize")
 
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", fail_if_summarized)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", fail_if_summarized)
 
     assert engine.should_compress_preflight(messages) is True
     result = engine.compress(messages, current_tokens=1_000)
@@ -476,7 +476,7 @@ def test_live_stub_below_threshold_adoption_skips_eligible_leaf_work(
         *tool_pair("subthreshold-eligible-call", payload),
     ]
     summary_spy = Mock(return_value=("summary", 1))
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
 
     assert engine.should_compress_preflight(messages) is True
     result = engine.compress(messages, current_tokens=1_000)
@@ -503,7 +503,7 @@ def test_below_threshold_cleanup_handoff_honors_explicit_force(make_engine, monk
     summary_spy = Mock(
         return_value=("forced summary\nExpand for details about: old work", 1)
     )
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
 
     assert engine.should_compress_preflight(messages) is True
     assert engine._preflight_cleanup_only is True
@@ -542,7 +542,7 @@ def test_failed_cleanup_only_ingest_does_not_poison_later_threshold_compaction(
 
     summary_spy = Mock(return_value=("threshold summary", 1))
     monkeypatch.setattr(engine, "_ingest_messages", real_ingest)
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
     engine.threshold_tokens = 1
 
     engine.compress(messages, current_tokens=1_000)
@@ -602,7 +602,7 @@ def test_live_interceptor_is_preserved_after_normal_leaf_compaction(make_engine,
         *tool_pair("normal-call", payload),
     ]
     monkeypatch.setattr(
-        lcm_engine,
+        trove_engine,
         "summarize_with_escalation",
         lambda **_kwargs: ("old work summary\nExpand for details about: old work", 1),
     )
@@ -627,7 +627,7 @@ def test_live_interceptor_keeps_media_and_recovery_results_inline(make_engine):
     messages = [
         {"role": "system", "content": "system"},
         *tool_pair("media-live-call", media_payload),
-        *tool_pair("recovery-live-call", "recovered payload " * 100, tool_name="lcm_expand"),
+        *tool_pair("recovery-live-call", "recovered payload " * 100, tool_name="trove_expand"),
     ]
 
     assert engine.should_compress_preflight(messages) is False

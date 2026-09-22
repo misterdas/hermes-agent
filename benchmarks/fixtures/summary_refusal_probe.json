@@ -6,7 +6,7 @@
     "summary_failure_mode": "llm_refusal_then_truncate"
   },
   "messages": [
-    {"role": "system", "content": "You are a deterministic LCM benchmark agent."},
+    {"role": "system", "content": "You are a deterministic TROVE benchmark agent."},
     {"role": "user", "content": "CANARY_REFUSAL = VALUE_REFUSAL. This replay marks an LLM refusal before deterministic truncation fallback."},
     {"role": "assistant", "content": "Acknowledged refusal anchor."},
     {"role": "user", "content": "Refusal probe backlog segment. refusal_probe_filler_0 refusal_probe_filler_1 refusal_probe_filler_2 refusal_probe_filler_3 refusal_probe_filler_4 refusal_probe_filler_5."},

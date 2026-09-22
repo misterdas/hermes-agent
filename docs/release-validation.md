@@ -1,6 +1,6 @@
 # Release validation
 
-Use `scripts/validate_release.sh` as the local release-confidence lane before tagging or publishing hermes-lcm. The script is offline by default: it does not call model providers, does not mutate live Hermes config, routes Python bytecode/cache artifacts under the validation output directory, and writes validation artifacts under a fresh output directory.
+Use `scripts/validate_release.sh` as the local release-confidence lane before tagging or publishing hermes-trove. The script is offline by default: it does not call model providers, does not mutate live Hermes config, routes Python bytecode/cache artifacts under the validation output directory, and writes validation artifacts under a fresh output directory.
 
 ## Command
 
@@ -9,7 +9,7 @@ Prerequisites:
 - Run from the repository checkout.
 - Use a Python environment with `pytest` installed. If `python` on `PATH` is not the intended interpreter, set `PYTHON=/path/to/python`.
 - The benchmark and stress gates are standalone-checkout safe: they provide the minimal Hermes Agent `ContextEngine` base class needed for deterministic local validation when Hermes Agent is not importable.
-- On a PR branch with `origin/main` available, the whitespace/conflict-marker gate checks `origin/main...HEAD` instead of only uncommitted working-tree changes, then also checks the local working tree and staged diff. Override with `LCM_RELEASE_DIFF_BASE=<rev-or-range>` when validating against another base. If no changed `origin/main...HEAD` range is available but `HEAD` has a parent, the gate checks `HEAD^...HEAD` so a detached release checkout still validates the committed release diff.
+- On a PR branch with `origin/main` available, the whitespace/conflict-marker gate checks `origin/main...HEAD` instead of only uncommitted working-tree changes, then also checks the local working tree and staged diff. Override with `TROVE_RELEASE_DIFF_BASE=<rev-or-range>` when validating against another base. If no changed `origin/main...HEAD` range is available but `HEAD` has a parent, the gate checks `HEAD^...HEAD` so a detached release checkout still validates the committed release diff.
 - Python validation runs with `PYTHONPYCACHEPREFIX` under the output directory and pytest cache disabled, then records git status before and after validation so release runs do not silently dirty the checkout.
 - The low-file-descriptor full gate lowers the limit to 1024 only when the current shell allows it; locked-down hosts keep their existing lower limit instead of failing before pytest starts.
 
@@ -39,7 +39,7 @@ Full mode adds the whole test suite, the low-file-descriptor pytest pass, and th
 Each run creates a fresh directory, by default:
 
 ```text
-/tmp/hermes-lcm-release-validation-YYYYMMDD-HHMMSS/
+/tmp/hermes-trove-release-validation-YYYYMMDD-HHMMSS/
 ```
 
 Important files:
@@ -72,7 +72,7 @@ The checklist is safe to paste into a release note or PR validation section afte
 - [ ] git status before/after validation reviewed
 
 ### Doctor triage
-- [ ] `lcm_doctor` warnings were classified as `safe/ignore`, `inspect`, or `backup-first cleanup`
+- [ ] `trove_doctor` warnings were classified as `safe/ignore`, `inspect`, or `backup-first cleanup`
 - [ ] no warning-only class was auto-cleaned without operator review
 
 ### Notes

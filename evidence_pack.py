@@ -34,7 +34,7 @@ DEFAULT_MAX_REFS = 25
 DEFAULT_MAX_QUOTE_CHARS = 2_400
 MAX_QUOTE_CHARS = 2_400
 RESPONSE_CHAR_CAP = 64_000
-_EXACT_REF_RE = re.compile(r"^lcm:(?P<store_id>[1-9]\d*):(?P<start>\d+)-(?P<end>\d+)$")
+_EXACT_REF_RE = re.compile(r"^trove:(?P<store_id>[1-9]\d*):(?P<start>\d+)-(?P<end>\d+)$")
 _DATE_PREFIX_RE = re.compile(
     r"^(?P<year>\d{4})[-/](?P<month>\d{2})[-/](?P<day>\d{2})(?=$|[Tt\s])"
 )
@@ -425,7 +425,7 @@ def _resolve_candidate(
     if occurrence.get("event_date"):
         operand["date"] = occurrence["event_date"]
 
-    exact_ref = f"lcm:{store_id}:{span_start}-{span_end}"
+    exact_ref = f"trove:{store_id}:{span_start}-{span_end}"
     public = {
         "exact_ref": exact_ref,
         "store_id": store_id,
@@ -869,7 +869,7 @@ def build_evidence_pack(
                 "bounded_baseline_refs",
                 "budgets",
             ],
-            "storage": "same_lcm_db",
+            "storage": "same_trove_db",
             "provider": "none",
             "model": "none",
             "exact_span_policy": "unique_quote_within_declared_exact_ref",

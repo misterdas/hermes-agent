@@ -1,4 +1,4 @@
-"""Pure message-list analysis helpers for the LCM engine.
+"""Pure message-list analysis helpers for the TROVE engine.
 
 Isolated from ``engine.py`` (WS5 seam): extracting and pairing assistant/tool
 tool-call ids across a message list, and detecting synthetic assistant "noise"

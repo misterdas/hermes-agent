@@ -1,6 +1,6 @@
 # Opt-in async/background compaction with atomic publish
 
-Design spike for preparing old stable chunks off the turn-critical path while keeping current LCM behavior unchanged unless explicitly enabled.
+Design spike for preparing old stable chunks off the turn-critical path while keeping current TROVE behavior unchanged unless explicitly enabled.
 
 Refs:
 
@@ -10,7 +10,7 @@ Refs:
 
 ## Problem
 
-Today `LCMEngine.compress()` does the expensive work synchronously: ingest, select the oldest raw backlog outside the fresh tail, call the summarizer, write canonical DAG nodes, optionally condense, then assemble the active context. That preserves the important cache-friendly property: active context changes only at threshold/full-sweep boundaries. The downside is foreground latency, especially with slow local summarizers or serial leaf chains.
+Today `TROVEEngine.compress()` does the expensive work synchronously: ingest, select the oldest raw backlog outside the fresh tail, call the summarizer, write canonical DAG nodes, optionally condense, then assemble the active context. That preserves the important cache-friendly property: active context changes only at threshold/full-sweep boundaries. The downside is foreground latency, especially with slow local summarizers or serial leaf chains.
 
 The safe target is not “write summaries in another thread and flip a boolean.” The target is a two-phase lifecycle:
 
@@ -33,10 +33,10 @@ Add config fields, all disabled by default:
 
 | Field | Env | Default | Meaning |
 | --- | --- | ---: | --- |
-| `async_background_compaction_enabled` | `LCM_ASYNC_BACKGROUND_COMPACTION_ENABLED` | `false` | Enables the feature surface. |
-| `async_background_compaction_worker_enabled` | `LCM_ASYNC_BACKGROUND_COMPACTION_WORKER_ENABLED` | `false` | Allows automatic background preparation. Tests and hosts may still call one-shot prep manually when the feature is enabled. |
-| `async_background_compaction_max_batches` | `LCM_ASYNC_BACKGROUND_COMPACTION_MAX_BATCHES` | `2` | Backpressure cap per conversation. |
-| `async_background_compaction_retry_backoff_seconds` | `LCM_ASYNC_BACKGROUND_COMPACTION_RETRY_BACKOFF_SECONDS` | `300` | Cooldown after summary failures. |
+| `async_background_compaction_enabled` | `TROVE_ASYNC_BACKGROUND_COMPACTION_ENABLED` | `false` | Enables the feature surface. |
+| `async_background_compaction_worker_enabled` | `TROVE_ASYNC_BACKGROUND_COMPACTION_WORKER_ENABLED` | `false` | Allows automatic background preparation. Tests and hosts may still call one-shot prep manually when the feature is enabled. |
+| `async_background_compaction_max_batches` | `TROVE_ASYNC_BACKGROUND_COMPACTION_MAX_BATCHES` | `2` | Backpressure cap per conversation. |
+| `async_background_compaction_retry_backoff_seconds` | `TROVE_ASYNC_BACKGROUND_COMPACTION_RETRY_BACKOFF_SECONDS` | `300` | Cooldown after summary failures. |
 
 The enable flag should guard all writes to the new tables and all promotion attempts. Reader filters must still be robust if old pending rows exist after the flag is later disabled.
 
@@ -234,9 +234,9 @@ SQLite transaction atomicity should mean there is no half-published active state
 
 Active readers default to canonical rows only:
 
-- `lcm_grep` summary search ignores pending rows.
-- `lcm_expand(node_id=...)` cannot expand pending IDs through the canonical node path.
-- `lcm_describe` active DAG overview excludes pending rows.
+- `trove_grep` summary search ignores pending rows.
+- `trove_expand(node_id=...)` cannot expand pending IDs through the canonical node path.
+- `trove_describe` active DAG overview excludes pending rows.
 - transcript GC eligibility ignores pending rows.
 - doctor active-context integrity checks ignore pending rows unless checking async health specifically.
 
@@ -299,6 +299,6 @@ These are mirrored in `tests/test_async_background_compaction_design.py` as xfai
 ## Open questions
 
 - Should v1 reject a ready batch when only a prefix is still publishable, or support prefix promotion? Recommendation: reject in v1. Prefix promotion makes continuity and expected leaf counts more complex.
-- Should automatic workers live inside `LCMEngine`, a plugin lifecycle helper, or a host-managed scheduler? Recommendation: start with a manual one-shot preparer and make the automatic worker a later slice.
+- Should automatic workers live inside `TROVEEngine`, a plugin lifecycle helper, or a host-managed scheduler? Recommendation: start with a manual one-shot preparer and make the automatic worker a later slice.
 - Should route fingerprint include fallback model order? Recommendation: yes. Different fallback order can change output after partial failures.
 - Should summary timeout changes reject prepared work? Recommendation: no unless timeout policy changes the output contract; include route/model/policy version, not operational timing knobs.

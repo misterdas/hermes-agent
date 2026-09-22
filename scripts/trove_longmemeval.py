@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""LongMemEval retrieval-quality harness CLI for hermes-lcm.
+"""LongMemEval retrieval-quality harness CLI for hermes-trove.
 
 Two subcommands:
 
     fetch   Download the pinned LongMemEval_S dataset file once (operator step).
-    run     Ingest histories into fresh temp LCM stores and score the arms.
+    run     Ingest histories into fresh temp TROVE stores and score the arms.
 
 Offline by default: `run` never downloads. Deterministic with `--provider stub`;
 `--provider fastembed` uses the local FastEmbed model (CI-grade, no network at
@@ -120,7 +120,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     questions = load_questions(dataset_path, limit=args.limit)
 
-    with tempfile.TemporaryDirectory(prefix="lcm-longmemeval-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="trove-longmemeval-") as tmp:
         tmp_dir = Path(tmp)
         os.environ.setdefault("HERMES_HOME", str(tmp_dir / "hermes-home"))
         report = run_harness(

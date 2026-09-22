@@ -5,7 +5,7 @@ from types import ModuleType
 
 import pytest
 
-from hermes_lcm.codex_routing import _codex_oauth_context_cap
+from hermes_trove.codex_routing import _codex_oauth_context_cap
 
 
 def _install_host_variant_predicate(monkeypatch, predicate):

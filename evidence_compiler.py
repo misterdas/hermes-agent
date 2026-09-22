@@ -23,7 +23,7 @@ from .reasoning import compile_evidence_plan, normalize_unit
 
 EVIDENCE_COMPILER_VERSION = "evidence-compiler-v1"
 SELECTOR_SCHEMA_VERSION = "evidence-selector-v1"
-_EXACT_REF_RE = re.compile(r"^lcm:(?P<store_id>[1-9]\d*):(?P<start>\d+)-(?P<end>\d+)$")
+_EXACT_REF_RE = re.compile(r"^trove:(?P<store_id>[1-9]\d*):(?P<start>\d+)-(?P<end>\d+)$")
 _FACET_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _CLAIM_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 _NUMBER_RE = re.compile(r"(?<![\w.])-?(?:\d+(?:,\d{3})*|\d*\.\d+)(?!\w)")
@@ -848,7 +848,7 @@ def _base(
             "latency_ms": round((time.perf_counter() - started) * 1_000.0, 3),
         },
         "provenance": {
-            "storage": "same_lcm_db",
+            "storage": "same_trove_db",
             "raw_messages_authoritative": True,
             "selector_is_proposal": True,
             "final_prose_cached": False,

@@ -1,6 +1,6 @@
 """SQLite-backed storage for derived temporal summary rollups.
 
-This module is intentionally not wired into the LCM engine yet. It provides
+This module is intentionally not wired into the TROVE engine yet. It provides
 only the durable schema-facing operations used by later temporal-memory work.
 """
 
@@ -123,7 +123,7 @@ class RollupStore:
             return None
         rollup_id = int(row["rollup_id"])
         source_rows = self._conn.execute(
-            "SELECT node_id FROM lcm_rollup_sources WHERE rollup_id = ? ORDER BY node_id",
+            "SELECT node_id FROM trove_rollup_sources WHERE rollup_id = ? ORDER BY node_id",
             (rollup_id,),
         ).fetchall()
         return {
@@ -150,7 +150,7 @@ class RollupStore:
         row = self._conn.execute(
             """
             SELECT *
-            FROM lcm_rollups
+            FROM trove_rollups
             WHERE period_kind = ? AND period_start = ? AND scope = ?
             """,
             (period_kind, period_start, scope),
@@ -170,7 +170,7 @@ class RollupStore:
         ``lease_expires_at`` is stamped so a crashed builder's row can later be
         reclaimed by :meth:`reclaim_stale_building`.
 
-        The claim deliberately does NOT clear ``lcm_rollup_sources``: the prior
+        The claim deliberately does NOT clear ``trove_rollup_sources``: the prior
         last-known-good lineage stays queryable until :meth:`mark_ready` swaps it
         (sources-replace + ``status = 'ready'`` in one transaction). Clearing at
         claim opened a purge/deletion race — a concurrent purge-by-node queried
@@ -181,14 +181,14 @@ class RollupStore:
         with self._write_transaction():
             self._conn.execute(
                 """
-                INSERT INTO lcm_rollups(
+                INSERT INTO trove_rollups(
                     period_kind, period_start, scope, status, built_at,
                     lease_expires_at, lease_nonce
                 )
                 VALUES(?, ?, ?, 'building', ?, ?, ?)
                 ON CONFLICT(period_kind, period_start, scope) DO UPDATE SET
                     status = 'building',
-                    generation = lcm_rollups.generation + 1,
+                    generation = trove_rollups.generation + 1,
                     built_at = excluded.built_at,
                     lease_expires_at = excluded.lease_expires_at,
                     lease_nonce = excluded.lease_nonce,
@@ -204,7 +204,7 @@ class RollupStore:
             row = self._conn.execute(
                 """
                 SELECT rollup_id, generation, lease_nonce
-                FROM lcm_rollups
+                FROM trove_rollups
                 WHERE period_kind = ? AND period_start = ? AND scope = ?
                 """,
                 (period_kind, period_start, scope),
@@ -240,7 +240,7 @@ class RollupStore:
         with self._write_transaction():
             owned = self._conn.execute(
                 """
-                SELECT period_kind, period_start, scope FROM lcm_rollups
+                SELECT period_kind, period_start, scope FROM trove_rollups
                 WHERE rollup_id = ? AND generation = ? AND lease_nonce = ?
                   AND status = 'building'
                 """,
@@ -248,7 +248,7 @@ class RollupStore:
             ).fetchone()
             if owned is None:
                 exists = self._conn.execute(
-                    "SELECT 1 FROM lcm_rollups WHERE rollup_id = ?",
+                    "SELECT 1 FROM trove_rollups WHERE rollup_id = ?",
                     (int(token.rollup_id),),
                 ).fetchone()
                 if exists is None:
@@ -275,7 +275,7 @@ class RollupStore:
             ).timestamp()
             pending_mutation = self._conn.execute(
                 """
-                SELECT 1 FROM lcm_rollup_invalidations
+                SELECT 1 FROM trove_rollup_invalidations
                 WHERE scope = ?
                   AND covered_start < ?
                   AND covered_end >= ?
@@ -286,7 +286,7 @@ class RollupStore:
             if pending_mutation is not None:
                 self._conn.execute(
                     """
-                    UPDATE lcm_rollups
+                    UPDATE trove_rollups
                     SET status='stale', generation=generation + 1,
                         error='source mutation pending', lease_expires_at=NULL,
                         lease_nonce=''
@@ -300,7 +300,7 @@ class RollupStore:
                 )
                 return False
 
-            # A first build has no prior lcm_rollup_sources lineage for deletion
+            # A first build has no prior trove_rollup_sources lineage for deletion
             # invalidation to find. Validate the proposed source snapshot in the
             # publication transaction itself so a deleted source can never be
             # committed as ready.
@@ -309,18 +309,18 @@ class RollupStore:
             ).fetchone()
             if unique_source_ids and has_summary_nodes is not None:
                 self._conn.execute(
-                    "CREATE TEMP TABLE IF NOT EXISTS lcm_rollup_publish_sources "
+                    "CREATE TEMP TABLE IF NOT EXISTS trove_rollup_publish_sources "
                     "(node_id INTEGER PRIMARY KEY) WITHOUT ROWID"
                 )
-                self._conn.execute("DELETE FROM temp.lcm_rollup_publish_sources")
+                self._conn.execute("DELETE FROM temp.trove_rollup_publish_sources")
                 self._conn.executemany(
-                    "INSERT INTO temp.lcm_rollup_publish_sources(node_id) VALUES(?)",
+                    "INSERT INTO temp.trove_rollup_publish_sources(node_id) VALUES(?)",
                     ((node_id,) for node_id in unique_source_ids),
                 )
                 missing = self._conn.execute(
                     """
                     SELECT 1
-                    FROM temp.lcm_rollup_publish_sources proposed
+                    FROM temp.trove_rollup_publish_sources proposed
                     LEFT JOIN summary_nodes node ON node.node_id = proposed.node_id
                     WHERE node.node_id IS NULL
                     LIMIT 1
@@ -329,7 +329,7 @@ class RollupStore:
                 if missing is not None:
                     self._conn.execute(
                         """
-                        UPDATE lcm_rollups
+                        UPDATE trove_rollups
                         SET status='stale', generation=generation + 1,
                             error='source changed during build',
                             lease_expires_at=NULL, lease_nonce=''
@@ -344,7 +344,7 @@ class RollupStore:
                     return False
             cur = self._conn.execute(
                 """
-                UPDATE lcm_rollups
+                UPDATE trove_rollups
                 SET summary = ?, token_count = ?, status = 'ready', built_at = ?,
                     source_fingerprint = ?, error = NULL, failed_at = NULL,
                     lease_expires_at = NULL, lease_nonce = ''
@@ -363,7 +363,7 @@ class RollupStore:
             )
             if cur.rowcount == 0:
                 exists = self._conn.execute(
-                    "SELECT 1 FROM lcm_rollups WHERE rollup_id = ?",
+                    "SELECT 1 FROM trove_rollups WHERE rollup_id = ?",
                     (int(token.rollup_id),),
                 ).fetchone()
                 if exists is None:
@@ -371,11 +371,11 @@ class RollupStore:
                 # Superseded by a newer generation: discard this build's result.
                 return False
             self._conn.execute(
-                "DELETE FROM lcm_rollup_sources WHERE rollup_id = ?",
+                "DELETE FROM trove_rollup_sources WHERE rollup_id = ?",
                 (int(token.rollup_id),),
             )
             self._conn.executemany(
-                "INSERT INTO lcm_rollup_sources(rollup_id, node_id) VALUES(?, ?)",
+                "INSERT INTO trove_rollup_sources(rollup_id, node_id) VALUES(?, ?)",
                 ((int(token.rollup_id), node_id) for node_id in unique_source_ids),
             )
         return True
@@ -386,7 +386,7 @@ class RollupStore:
             now = self._now()
             cur = self._conn.execute(
                 """
-                UPDATE lcm_rollups
+                UPDATE trove_rollups
                 SET status = 'failed', error = ?, failed_at = ?,
                     lease_expires_at = NULL, lease_nonce = ''
                 WHERE rollup_id = ? AND generation = ? AND lease_nonce = ?
@@ -423,14 +423,14 @@ class RollupStore:
         with self._write_transaction():
             cur = self._conn.execute(
                 """
-                INSERT INTO lcm_rollups(period_kind, period_start, scope, status)
+                INSERT INTO trove_rollups(period_kind, period_start, scope, status)
                 VALUES
                     ('day', ?, ?, 'stale'),
                     ('week', ?, ?, 'stale'),
                     ('month', ?, ?, 'stale')
                 ON CONFLICT(period_kind, period_start, scope) DO UPDATE SET
                     status = 'stale',
-                    generation = lcm_rollups.generation + 1,
+                    generation = trove_rollups.generation + 1,
                     lease_expires_at = NULL,
                     lease_nonce = ''
                 """,
@@ -450,13 +450,13 @@ class RollupStore:
         with self._write_transaction():
             cur = self._conn.execute(
                 """
-                INSERT INTO lcm_rollups(period_kind, period_start, scope, status)
+                INSERT INTO trove_rollups(period_kind, period_start, scope, status)
                 VALUES
                     ('week', ?, ?, 'stale'),
                     ('month', ?, ?, 'stale')
                 ON CONFLICT(period_kind, period_start, scope) DO UPDATE SET
                     status = 'stale',
-                    generation = lcm_rollups.generation + 1,
+                    generation = trove_rollups.generation + 1,
                     lease_expires_at = NULL,
                     lease_nonce = ''
                 """,
@@ -467,7 +467,7 @@ class RollupStore:
     def upsert_stale(self, period_kind: str, period_start: str, scope: str) -> int:
         """Durably seed a single ``stale`` row for one period.
 
-        Used by ``/lcm rollups rebuild`` to queue every requested target before
+        Used by ``/trove rollups rebuild`` to queue every requested target before
         the per-pass build budget is applied, so unattempted targets remain
         durably ``stale`` (not absent) and get built by later maintenance. Does
         not disturb a row that is currently ``building``.
@@ -478,14 +478,14 @@ class RollupStore:
             for target_kind, target_start, target_scope in targets:
                 cur = self._conn.execute(
                     """
-                    INSERT INTO lcm_rollups(period_kind, period_start, scope, status)
+                    INSERT INTO trove_rollups(period_kind, period_start, scope, status)
                     VALUES(?, ?, ?, 'stale')
                     ON CONFLICT(period_kind, period_start, scope) DO UPDATE SET
                         status = 'stale',
-                        generation = lcm_rollups.generation + 1,
+                        generation = trove_rollups.generation + 1,
                         lease_expires_at = NULL,
                         lease_nonce = ''
-                    WHERE lcm_rollups.status != 'building'
+                    WHERE trove_rollups.status != 'building'
                     """,
                     (target_kind, target_start, target_scope),
                 )
@@ -516,7 +516,7 @@ class RollupStore:
     ) -> int:
         """Durably seed several ``stale`` rows in ONE transaction (all-or-nothing).
 
-        ``/lcm rollups rebuild`` queues every requested target before applying
+        ``/trove rollups rebuild`` queues every requested target before applying
         the per-pass build budget. Seeding each target in its own transaction let
         a mid-batch failure leave some targets seeded and others absent (e.g. a
         missing month with no row); seeding them together makes the batch
@@ -534,14 +534,14 @@ class RollupStore:
             for period_kind, period_start, scope in rows:
                 cur = self._conn.execute(
                     """
-                    INSERT INTO lcm_rollups(period_kind, period_start, scope, status)
+                    INSERT INTO trove_rollups(period_kind, period_start, scope, status)
                     VALUES(?, ?, ?, 'stale')
                     ON CONFLICT(period_kind, period_start, scope) DO UPDATE SET
                         status = 'stale',
-                        generation = lcm_rollups.generation + 1,
+                        generation = trove_rollups.generation + 1,
                         lease_expires_at = NULL,
                         lease_nonce = ''
-                    WHERE lcm_rollups.status != 'building'
+                    WHERE trove_rollups.status != 'building'
                     """,
                     (period_kind, period_start, scope),
                 )
@@ -562,7 +562,7 @@ class RollupStore:
         with self._write_transaction():
             cur = self._conn.execute(
                 """
-                UPDATE lcm_rollups
+                UPDATE trove_rollups
                 SET status = 'stale', error = ?, lease_expires_at = NULL,
                     lease_nonce = ''
                 WHERE rollup_id = ? AND generation = ? AND lease_nonce = ?
@@ -592,13 +592,13 @@ class RollupStore:
         """
         with self._write_transaction():
             cur = self._conn.execute(
-                "DELETE FROM lcm_rollups WHERE rollup_id = ? AND generation = ? "
+                "DELETE FROM trove_rollups WHERE rollup_id = ? AND generation = ? "
                 "AND lease_nonce = ? AND status = 'building'",
                 (int(token.rollup_id), int(token.generation), str(token.nonce)),
             )
             if int(cur.rowcount or 0) > 0:
                 self._conn.execute(
-                    "DELETE FROM lcm_rollup_sources WHERE rollup_id = ?",
+                    "DELETE FROM trove_rollup_sources WHERE rollup_id = ?",
                     (int(token.rollup_id),),
                 )
         return int(cur.rowcount or 0) > 0
@@ -613,13 +613,13 @@ class RollupStore:
         with self._write_transaction():
             cur = self._conn.execute(
                 """
-                UPDATE lcm_rollups
+                UPDATE trove_rollups
                 SET status = 'stale',
                     generation = generation + 1,
                     lease_expires_at = NULL,
                     lease_nonce = ''
                 WHERE rollup_id IN (
-                    SELECT rollup_id FROM lcm_rollups
+                    SELECT rollup_id FROM trove_rollups
                     WHERE status = 'building'
                       AND lease_expires_at IS NOT NULL
                       AND lease_expires_at < ?
@@ -635,11 +635,11 @@ class RollupStore:
         """Check for durable mutation debt using the pending-event index."""
         if scope is None:
             row = self._conn.execute(
-                "SELECT 1 FROM lcm_rollup_invalidations ORDER BY event_id LIMIT 1"
+                "SELECT 1 FROM trove_rollup_invalidations ORDER BY event_id LIMIT 1"
             ).fetchone()
         else:
             row = self._conn.execute(
-                "SELECT 1 FROM lcm_rollup_invalidations WHERE scope=? "
+                "SELECT 1 FROM trove_rollup_invalidations WHERE scope=? "
                 "ORDER BY event_id LIMIT 1",
                 (scope,),
             ).fetchone()
@@ -662,7 +662,7 @@ class RollupStore:
             rows = self._conn.execute(
                 """
                 SELECT event_id, scope, covered_start, covered_end, next_day
-                FROM lcm_rollup_invalidations
+                FROM trove_rollup_invalidations
                 ORDER BY event_id
                 LIMIT ?
                 """,
@@ -691,14 +691,14 @@ class RollupStore:
                     )
                     self._conn.execute(
                         """
-                        INSERT INTO lcm_rollups(
+                        INSERT INTO trove_rollups(
                             period_kind, period_start, scope, status
                         ) VALUES
                             ('day', ?, ?, 'stale'),
                             ('week', ?, ?, 'stale'),
                             ('month', ?, ?, 'stale')
                         ON CONFLICT(period_kind, period_start, scope) DO UPDATE SET
-                            status='stale', generation=lcm_rollups.generation + 1,
+                            status='stale', generation=trove_rollups.generation + 1,
                             lease_expires_at=NULL, lease_nonce=''
                         """,
                         (
@@ -712,12 +712,12 @@ class RollupStore:
                     remaining_days -= 1
                 if current > end:
                     self._conn.execute(
-                        "DELETE FROM lcm_rollup_invalidations WHERE event_id=?",
+                        "DELETE FROM trove_rollup_invalidations WHERE event_id=?",
                         (int(row["event_id"]),),
                     )
                 else:
                     self._conn.execute(
-                        "UPDATE lcm_rollup_invalidations SET next_day=? WHERE event_id=?",
+                        "UPDATE trove_rollup_invalidations SET next_day=? WHERE event_id=?",
                         (current.isoformat(), int(row["event_id"])),
                     )
                     break
@@ -735,7 +735,7 @@ class RollupStore:
         rows = self._conn.execute(
             """
             SELECT *
-            FROM lcm_rollups
+            FROM trove_rollups
             WHERE period_kind = ?
               AND period_start >= ?
               AND period_start <= ?
@@ -749,7 +749,7 @@ class RollupStore:
 
     def get_cursor(self, period_kind: str, scope: str = "") -> str | None:
         row = self._conn.execute(
-            "SELECT last_build_cursor FROM lcm_rollup_state WHERE period_kind = ? AND scope = ?",
+            "SELECT last_build_cursor FROM trove_rollup_state WHERE period_kind = ? AND scope = ?",
             (period_kind, scope),
         ).fetchone()
         return str(row["last_build_cursor"]) if row and row["last_build_cursor"] is not None else None
@@ -765,7 +765,7 @@ class RollupStore:
         with self._write_transaction():
             self._conn.execute(
                 """
-                INSERT INTO lcm_rollup_state(period_kind, scope, last_build_cursor, last_built_at)
+                INSERT INTO trove_rollup_state(period_kind, scope, last_build_cursor, last_built_at)
                 VALUES(?, ?, ?, ?)
                 ON CONFLICT(period_kind, scope) DO UPDATE SET
                     last_build_cursor = excluded.last_build_cursor,
@@ -791,17 +791,17 @@ class RollupStore:
             return 0
         with self._write_transaction():
             self._conn.execute(
-                "CREATE TEMP TABLE IF NOT EXISTS lcm_rollup_purge_nodes "
+                "CREATE TEMP TABLE IF NOT EXISTS trove_rollup_purge_nodes "
                 "(node_id INTEGER PRIMARY KEY) WITHOUT ROWID"
             )
-            self._conn.execute("DELETE FROM temp.lcm_rollup_purge_nodes")
+            self._conn.execute("DELETE FROM temp.trove_rollup_purge_nodes")
             self._conn.executemany(
-                "INSERT INTO temp.lcm_rollup_purge_nodes(node_id) VALUES(?)",
+                "INSERT INTO temp.trove_rollup_purge_nodes(node_id) VALUES(?)",
                 ((node_id,) for node_id in unique_node_ids),
             )
             cur = self._conn.execute(
                 """
-                UPDATE lcm_rollups
+                UPDATE trove_rollups
                 SET status = 'stale',
                     generation = generation + 1,
                     summary = NULL,
@@ -812,8 +812,8 @@ class RollupStore:
                     lease_nonce = ''
                 WHERE rollup_id IN (
                     SELECT source.rollup_id
-                    FROM lcm_rollup_sources source
-                    JOIN temp.lcm_rollup_purge_nodes purged
+                    FROM trove_rollup_sources source
+                    JOIN temp.trove_rollup_purge_nodes purged
                       ON purged.node_id = source.node_id
                 )
                 """,
@@ -821,11 +821,11 @@ class RollupStore:
             affected = int(cur.rowcount or 0)
             self._conn.execute(
                 """
-                DELETE FROM lcm_rollup_sources
+                DELETE FROM trove_rollup_sources
                 WHERE rollup_id IN (
                     SELECT source.rollup_id
-                    FROM lcm_rollup_sources source
-                    JOIN temp.lcm_rollup_purge_nodes purged
+                    FROM trove_rollup_sources source
+                    JOIN temp.trove_rollup_purge_nodes purged
                       ON purged.node_id = source.node_id
                 )
                 """

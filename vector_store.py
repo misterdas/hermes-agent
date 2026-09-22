@@ -1,6 +1,6 @@
 """SQLite-backed storage and brute-force KNN for summary embeddings.
 
-This module is intentionally not wired into the LCM engine yet. It owns only
+This module is intentionally not wired into the TROVE engine yet. It owns only
 the durable embedding schema operations and the dependency-optional compute
 ladder used by later semantic retrieval work.
 """
@@ -24,7 +24,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Iterator, Optional, Sequence
 
-from .config import LCMConfig
+from .config import TROVEConfig
 from .db_bootstrap import (
     SQLITE_BUSY_TIMEOUT_SECONDS,
     configure_connection,
@@ -77,7 +77,7 @@ _INT8_MAX = 127
 # table and summing rows is the popcount without a per-element Python loop.
 _POPCOUNT_TABLE = tuple(bin(value).count("1") for value in range(256))
 # Revision tag that folds the float32 sign-bit prescreen opt-in
-# (LCM_EMBEDDING_BINARY_PRESCREEN) into the profile identity. A prescreen corpus
+# (TROVE_EMBEDDING_BINARY_PRESCREEN) into the profile identity. A prescreen corpus
 # grows a companion sign-bit table that drives the two-stage KNN, so it MUST be a
 # distinct identity from a legacy binary-free float32 corpus — otherwise flipping
 # the flag on a populated identity leaves a mixed corpus the two-stage INNER JOIN
@@ -310,12 +310,12 @@ class VectorStore:
         self,
         db_path: str | Path,
         *,
-        config: LCMConfig | None = None,
+        config: TROVEConfig | None = None,
         bounded_scan_rows: int | None = None,
     ) -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        resolved_config = config or LCMConfig.from_env()
+        resolved_config = config or TROVEConfig.from_env()
         self.bounded_scan_rows = (
             resolved_config.embedding_bounded_scan_rows
             if bounded_scan_rows is None
@@ -440,7 +440,7 @@ class VectorStore:
         try:
             with self._write_lock, self._cache_lock:
                 if self._txn_depth > 0:
-                    savepoint = f"lcm_pub_sp_{self._txn_depth}"
+                    savepoint = f"trove_pub_sp_{self._txn_depth}"
                     self._conn.execute(f"SAVEPOINT {savepoint}")
                     self._txn_depth += 1
                     try:
@@ -502,7 +502,7 @@ class VectorStore:
             """
             SELECT identity_hash, model_name, provider, revision, dim, dtype,
                    byteorder, task, registered_at, active, archived_at, data_version
-            FROM lcm_embedding_profile
+            FROM trove_embedding_profile
             WHERE identity_hash = ?
             """,
             (str(identity_hash),),
@@ -535,7 +535,7 @@ class VectorStore:
                 """
                 SELECT identity_hash, model_name, provider, revision, dim, dtype,
                        byteorder, task, registered_at, active, archived_at, data_version
-                FROM lcm_embedding_profile
+                FROM trove_embedding_profile
                 WHERE model_name = ? AND provider = ? AND task = ?
                 ORDER BY (active = 1 AND archived_at IS NULL) DESC,
                          registered_at DESC, identity_hash DESC
@@ -547,7 +547,7 @@ class VectorStore:
             """
             SELECT identity_hash, model_name, provider, revision, dim, dtype,
                    byteorder, task, registered_at, active, archived_at, data_version
-            FROM lcm_embedding_profile
+            FROM trove_embedding_profile
             WHERE model_name = ? AND task = ?
             ORDER BY (active = 1 AND archived_at IS NULL) DESC,
                      registered_at DESC, identity_hash DESC
@@ -582,7 +582,7 @@ class VectorStore:
             """
             SELECT identity_hash, model_name, provider, revision, dim, dtype,
                    byteorder, task, registered_at, active, archived_at, data_version
-            FROM lcm_embedding_profile
+            FROM trove_embedding_profile
             WHERE active = 1 AND archived_at IS NULL AND task = ?
             ORDER BY registered_at DESC, identity_hash DESC
             LIMIT 1
@@ -597,7 +597,7 @@ class VectorStore:
         base = (
             "SELECT identity_hash, model_name, provider, revision, dim, dtype, "
             "byteorder, task, registered_at, active, archived_at, data_version "
-            "FROM lcm_embedding_profile WHERE model_name = ? AND task = ?"
+            "FROM trove_embedding_profile WHERE model_name = ? AND task = ?"
         )
         order = (
             " ORDER BY (active = 1 AND archived_at IS NULL) DESC, "
@@ -645,7 +645,7 @@ class VectorStore:
     def _prescreen_revision(self, revision: str, *, dtype: str) -> str:
         """Fold the float32 sign-bit prescreen opt-in into the identity via revision.
 
-        ``LCM_EMBEDDING_BINARY_PRESCREEN`` changes a float32 identity's stored
+        ``TROVE_EMBEDDING_BINARY_PRESCREEN`` changes a float32 identity's stored
         corpus shape (it grows a companion sign-bit table that drives the
         two-stage KNN), so a prescreen corpus MUST be a distinct identity from a
         legacy binary-free one. Otherwise flipping the flag on a populated
@@ -703,7 +703,7 @@ class VectorStore:
             if existing is None:
                 self._conn.execute(
                     """
-                    INSERT INTO lcm_embedding_profile(
+                    INSERT INTO trove_embedding_profile(
                         identity_hash, provider, model_name, revision, dim,
                         dtype, byteorder, task, registered_at, active,
                         archived_at, data_version
@@ -727,7 +727,7 @@ class VectorStore:
                 # vectors are still valid so no re-backfill is required.
                 self._conn.execute(
                     """
-                    UPDATE lcm_embedding_profile
+                    UPDATE trove_embedding_profile
                     SET active = 1, archived_at = NULL
                     WHERE identity_hash = ?
                     """,
@@ -740,7 +740,7 @@ class VectorStore:
             # are untouched, so the summary and chunk corpora coexist — each has
             # its own active profile.
             self._conn.execute(
-                "UPDATE lcm_embedding_profile SET active = 0 "
+                "UPDATE trove_embedding_profile SET active = 0 "
                 "WHERE identity_hash != ? AND task = ?",
                 (identity, canonical.task),
             )
@@ -875,7 +875,7 @@ class VectorStore:
         ``write_row``), data-version bump, and in-flight clear all share one
         ``BEGIN IMMEDIATE`` transaction. A superseded worker therefore performs
         none of these mutations. Summary and chunk publications share the one
-        ``lcm_embedding_backfill_inflight`` table because their embedded_ids are
+        ``trove_embedding_backfill_inflight`` table because their embedded_ids are
         disjoint (numeric node ids vs ``store_id:chunk_index``) and their
         identity hashes differ (task is part of the hash).
         """
@@ -894,7 +894,7 @@ class VectorStore:
             inflight = self._conn.execute(
                 """
                 SELECT 1
-                FROM lcm_embedding_backfill_inflight
+                FROM trove_embedding_backfill_inflight
                 WHERE embedded_id = ? AND identity_hash = ?
                   AND lease_id = ? AND generation = ?
                   AND request_id = ? AND state = 'dispatched'
@@ -913,7 +913,7 @@ class VectorStore:
             if int(profile["active"] or 0) != 1 or profile["archived_at"] is not None:
                 transitioned = self._conn.execute(
                     """
-                    UPDATE lcm_embedding_backfill_inflight
+                    UPDATE trove_embedding_backfill_inflight
                     SET state = 'uncertain', updated_at = ?,
                         last_error = 'embedding identity superseded after remote acceptance'
                     WHERE identity_hash = ? AND lease_id = ? AND generation = ?
@@ -946,7 +946,7 @@ class VectorStore:
             write_row(profile)
             cleared = self._conn.execute(
                 """
-                DELETE FROM lcm_embedding_backfill_inflight
+                DELETE FROM trove_embedding_backfill_inflight
                 WHERE embedded_id = ? AND identity_hash = ?
                   AND lease_id = ? AND generation = ?
                   AND request_id = ? AND state = 'dispatched'
@@ -1007,11 +1007,11 @@ class VectorStore:
         Returns ``(normalized, vec_blob, sign_bits)``. For a float32 profile the
         blob is the existing little-endian float32 wire format; ``sign_bits`` is
         None unless the store opts into a float32 prescreen
-        (``LCM_EMBEDDING_BINARY_PRESCREEN``), which yields float32-vec + binary =
+        (``TROVE_EMBEDDING_BINARY_PRESCREEN``), which yields float32-vec + binary =
         the two-stage path with EXACT float rescore. For an int8 profile the blob
         is the quantized ``dim`` bytes + float32 scale and ``sign_bits`` is always
         the packed prescreen row. When the incoming vector is longer than the
-        profile dim (Matryoshka ``LCM_EMBEDDING_STORE_DIM``), it is truncated to
+        profile dim (Matryoshka ``TROVE_EMBEDDING_STORE_DIM``), it is truncated to
         the leading ``dim`` components and renormalized before encoding.
         """
         dim = int(profile["dim"])
@@ -1061,34 +1061,34 @@ class VectorStore:
             raise ValueError(f"summary node does not exist: {embedded_id}")
         embedded_at = self._now()
         self._conn.execute(
-            "DELETE FROM lcm_embedding_vectors "
+            "DELETE FROM trove_embedding_vectors "
             "WHERE embedded_id = ? AND identity_hash = ?",
             (embedded_id, identity_hash),
         )
         self._conn.execute(
-            "DELETE FROM lcm_embedding_meta WHERE embedded_id = ? "
+            "DELETE FROM trove_embedding_meta WHERE embedded_id = ? "
             "AND embedded_kind = ? AND identity_hash = ?",
             (embedded_id, kind, identity_hash),
         )
         self._conn.execute(
-            "DELETE FROM lcm_embedding_binary WHERE embedded_id = ? "
+            "DELETE FROM trove_embedding_binary WHERE embedded_id = ? "
             "AND identity_hash = ?",
             (embedded_id, identity_hash),
         )
         self._conn.execute(
-            "INSERT INTO lcm_embedding_vectors(embedded_id, identity_hash, vec) "
+            "INSERT INTO trove_embedding_vectors(embedded_id, identity_hash, vec) "
             "VALUES(?, ?, ?)",
             (embedded_id, identity_hash, packed),
         )
         if sign_bits is not None:
             self._conn.execute(
-                "INSERT INTO lcm_embedding_binary(embedded_id, identity_hash, bits) "
+                "INSERT INTO trove_embedding_binary(embedded_id, identity_hash, bits) "
                 "VALUES(?, ?, ?)",
                 (embedded_id, identity_hash, sign_bits),
             )
         self._conn.execute(
             """
-            INSERT INTO lcm_embedding_meta(
+            INSERT INTO trove_embedding_meta(
                 embedded_id, embedded_kind, identity_hash, embedded_at,
                 source_token_count, archived
             ) VALUES(?, ?, ?, ?, ?, 0)
@@ -1111,14 +1111,14 @@ class VectorStore:
         invalidates its NumPy matrix cache.
         """
         self._conn.execute(
-            "UPDATE lcm_embedding_profile SET data_version = data_version + 1 "
+            "UPDATE trove_embedding_profile SET data_version = data_version + 1 "
             "WHERE identity_hash = ?",
             (str(identity_hash),),
         )
 
     def _bump_all_data_versions(self) -> None:
         self._conn.execute(
-            "UPDATE lcm_embedding_profile SET data_version = data_version + 1"
+            "UPDATE trove_embedding_profile SET data_version = data_version + 1"
         )
 
     @contextmanager
@@ -1134,7 +1134,7 @@ class VectorStore:
         two concurrent ``knn()`` calls scribbled over each other's candidate set.
         The table is dropped in ``finally`` so it never outlives the call.
         """
-        table = f"_lcm_id_scratch_{uuid.uuid4().hex}"
+        table = f"_trove_id_scratch_{uuid.uuid4().hex}"
         self._conn.execute(f"CREATE TEMP TABLE {table}(id TEXT PRIMARY KEY)")
         try:
             for offset in range(0, len(ids), _ID_INSERT_CHUNK):
@@ -1168,27 +1168,27 @@ class VectorStore:
         with self._write_transaction():
             with self._temp_id_table(unique_ids) as table:
                 cur = self._conn.execute(
-                    f"DELETE FROM lcm_embedding_vectors "
+                    f"DELETE FROM trove_embedding_vectors "
                     f"WHERE embedded_id IN (SELECT id FROM {table})"
                 )
                 self._conn.execute(
-                    f"DELETE FROM lcm_embedding_meta "
+                    f"DELETE FROM trove_embedding_meta "
                     f"WHERE embedded_id IN (SELECT id FROM {table})"
                 )
                 if self._conn.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' "
-                    "AND name='lcm_embedding_binary'"
+                    "AND name='trove_embedding_binary'"
                 ).fetchone() is not None:
                     self._conn.execute(
-                        f"DELETE FROM lcm_embedding_binary "
+                        f"DELETE FROM trove_embedding_binary "
                         f"WHERE embedded_id IN (SELECT id FROM {table})"
                     )
                 if self._conn.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' "
-                    "AND name='lcm_embedding_backfill_inflight'"
+                    "AND name='trove_embedding_backfill_inflight'"
                 ).fetchone() is not None:
                     self._conn.execute(
-                        f"DELETE FROM lcm_embedding_backfill_inflight "
+                        f"DELETE FROM trove_embedding_backfill_inflight "
                         f"WHERE embedded_id IN (SELECT id FROM {table})"
                     )
             # Purge spans every identity keyed by these ids; bump all data
@@ -1212,42 +1212,42 @@ class VectorStore:
             str(row[0])
             for row in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name IN ("
-                "'lcm_embedding_vectors','lcm_embedding_meta','lcm_embedding_binary',"
-                "'lcm_embedding_profile','lcm_embedding_backfill_inflight')"
+                "'trove_embedding_vectors','trove_embedding_meta','trove_embedding_binary',"
+                "'trove_embedding_profile','trove_embedding_backfill_inflight')"
             ).fetchall()
         }
         if not {
-            "lcm_embedding_vectors",
-            "lcm_embedding_meta",
-            "lcm_embedding_profile",
+            "trove_embedding_vectors",
+            "trove_embedding_meta",
+            "trove_embedding_profile",
         } <= tables:
             return 0
         placeholders = ",".join("?" for _ in unique_ids)
         cur = conn.execute(
-            f"DELETE FROM lcm_embedding_vectors "
+            f"DELETE FROM trove_embedding_vectors "
             f"WHERE embedded_id IN ({placeholders})",
             unique_ids,
         )
         conn.execute(
-            f"DELETE FROM lcm_embedding_meta "
+            f"DELETE FROM trove_embedding_meta "
             f"WHERE embedded_id IN ({placeholders})",
             unique_ids,
         )
-        if "lcm_embedding_binary" in tables:
+        if "trove_embedding_binary" in tables:
             conn.execute(
-                f"DELETE FROM lcm_embedding_binary "
+                f"DELETE FROM trove_embedding_binary "
                 f"WHERE embedded_id IN ({placeholders})",
                 unique_ids,
             )
-        if "lcm_embedding_backfill_inflight" in tables:
+        if "trove_embedding_backfill_inflight" in tables:
             conn.execute(
-                f"DELETE FROM lcm_embedding_backfill_inflight "
+                f"DELETE FROM trove_embedding_backfill_inflight "
                 f"WHERE embedded_id IN ({placeholders})",
                 unique_ids,
             )
         if cur.rowcount:
             conn.execute(
-                "UPDATE lcm_embedding_profile "
+                "UPDATE trove_embedding_profile "
                 "SET data_version = data_version + 1"
             )
         return int(cur.rowcount or 0)
@@ -1261,7 +1261,7 @@ class VectorStore:
         """
         try:
             row = self._conn.execute(
-                "SELECT 1 FROM lcm_migration_state WHERE step_name = ? LIMIT 1",
+                "SELECT 1 FROM trove_migration_state WHERE step_name = ? LIMIT 1",
                 (str(step_name),),
             ).fetchone()
         except sqlite3.OperationalError:
@@ -1277,7 +1277,7 @@ class VectorStore:
         scanned/total ratio signals partial-archive coverage, not an exact live
         count).
         """
-        table = "lcm_chunk_vectors" if chunk else "lcm_embedding_vectors"
+        table = "trove_chunk_vectors" if chunk else "trove_embedding_vectors"
         try:
             row = self._conn.execute(
                 f"SELECT COUNT(*) FROM {table} WHERE identity_hash = ?",
@@ -1289,7 +1289,7 @@ class VectorStore:
 
     def _data_version(self, identity_hash: str) -> int:
         row = self._conn.execute(
-            "SELECT data_version FROM lcm_embedding_profile WHERE identity_hash = ?",
+            "SELECT data_version FROM trove_embedding_profile WHERE identity_hash = ?",
             (str(identity_hash),),
         ).fetchone()
         return int(row["data_version"]) if row is not None else 0
@@ -1411,7 +1411,7 @@ class VectorStore:
             rows = self._conn.execute(
                 f"""
                 SELECT m.embedded_id
-                FROM lcm_embedding_meta m
+                FROM trove_embedding_meta m
                 JOIN summary_nodes sn ON sn.node_id = CAST(m.embedded_id AS INTEGER)
                 {conversation_join}
                 WHERE {' AND '.join(where)}
@@ -1470,9 +1470,9 @@ class VectorStore:
                 f"""
                 SELECT v.rowid, v.embedded_id, m.embedded_kind, v.vec
                 FROM {table} t
-                JOIN lcm_embedding_vectors v
+                JOIN trove_embedding_vectors v
                   ON v.embedded_id = t.id AND v.identity_hash = ?
-                JOIN lcm_embedding_meta m
+                JOIN trove_embedding_meta m
                   ON m.embedded_id = v.embedded_id
                  AND m.identity_hash = v.identity_hash
                 WHERE m.archived = 0
@@ -1564,7 +1564,7 @@ class VectorStore:
         each one before the next sweep reaches it — every repetition pays a full
         reload for zero hits, while still retaining 4 float32 matrices (153.6MB
         on the 185k-vector chunk arm) and breaking the one-batch memory bound
-        this batching exists to provide. A single-batch scan — every lcm_grep
+        this batching exists to provide. A single-batch scan — every trove_grep
         call and any corpus under the batch size — still caches exactly as
         before, so the pooled-store warm path is unchanged.
         """
@@ -1756,7 +1756,7 @@ class VectorStore:
 
     def _has_binary(self, identity_hash: str, *, chunk: bool) -> bool:
         """Does the active identity carry a sign-bit prescreen (int8 identities)?"""
-        table = "lcm_chunk_binary" if chunk else "lcm_embedding_binary"
+        table = "trove_chunk_binary" if chunk else "trove_embedding_binary"
         try:
             row = self._conn.execute(
                 f"SELECT 1 FROM {table} WHERE identity_hash = ? LIMIT 1",
@@ -1772,7 +1772,7 @@ class VectorStore:
         Defense-in-depth for FIX 1: the two-stage path INNER JOINs the binary
         table, so it is only correct when the binary corpus is a COMPLETE mirror
         of the vector corpus. A partial binary corpus — e.g.
-        ``LCM_EMBEDDING_BINARY_PRESCREEN`` flipped on mid-life so sign-bits exist
+        ``TROVE_EMBEDDING_BINARY_PRESCREEN`` flipped on mid-life so sign-bits exist
         only for rows written after the flip — would silently exclude every
         pre-flip vector while reporting coverage='full'. When the counts disagree
         (or no binary rows exist) this returns False so ``knn`` stays on the exact
@@ -1780,8 +1780,8 @@ class VectorStore:
         a genuine prescreen identity (int8 or float32-with-prescreen), so a
         fully-synced corpus reports equal counts.
         """
-        binary_table = "lcm_chunk_binary" if chunk else "lcm_embedding_binary"
-        vector_table = "lcm_chunk_vectors" if chunk else "lcm_embedding_vectors"
+        binary_table = "trove_chunk_binary" if chunk else "trove_embedding_binary"
+        vector_table = "trove_chunk_vectors" if chunk else "trove_embedding_vectors"
         try:
             binary_count = self._conn.execute(
                 f"SELECT COUNT(*) FROM {binary_table} WHERE identity_hash = ?",
@@ -1834,8 +1834,8 @@ class VectorStore:
             rows = self._conn.execute(
                 f"""
                 SELECT b.chunk_id, b.bits
-                FROM lcm_chunk_binary b
-                JOIN lcm_chunk_meta cm
+                FROM trove_chunk_binary b
+                JOIN trove_chunk_meta cm
                   ON cm.chunk_id = b.chunk_id AND cm.identity_hash = b.identity_hash
                 JOIN messages m ON m.store_id = cm.store_id
                 {conversation_join}
@@ -1887,8 +1887,8 @@ class VectorStore:
             rows = self._conn.execute(
                 f"""
                 SELECT b.embedded_id, b.bits
-                FROM lcm_embedding_binary b
-                JOIN lcm_embedding_meta m
+                FROM trove_embedding_binary b
+                JOIN trove_embedding_meta m
                   ON m.embedded_id = b.embedded_id AND m.identity_hash = b.identity_hash
                 JOIN summary_nodes sn ON sn.node_id = CAST(b.embedded_id AS INTEGER)
                 {conversation_join}
@@ -2303,7 +2303,7 @@ class VectorStore:
 
         Default (``full_scan=False``) keeps the historical recency window:
         ``bounded_scan_rows`` candidates, probed one deeper so a larger corpus
-        reports ``coverage='bounded'``. ``full_scan=True`` (the lcm_recall
+        reports ``coverage='bounded'``. ``full_scan=True`` (the trove_recall
         contract) enumerates the WHOLE corpus and uses ``bounded_scan_rows``
         only as the scan's batch size; ``scan_max_rows`` (0 = unlimited) is the
         escape hatch for a pathological corpus and is disclosed as bounded
@@ -2332,7 +2332,7 @@ class VectorStore:
     # -- Chunk corpus ------------------------------------------------------
     #
     # The chunk corpus mirrors the summary corpus exactly: identity-hashed
-    # profiles (task='chunk') in the shared lcm_embedding_profile table, the
+    # profiles (task='chunk') in the shared trove_embedding_profile table, the
     # same bounded-candidate KNN + coverage contract, the same lease publication
     # CAS. It differs only in its source table (raw messages, keyed by store_id)
     # and its own meta/vectors tables. Chunk schema is materialized lazily on
@@ -2382,30 +2382,30 @@ class VectorStore:
         normalized, packed, sign_bits = self._encode_stored_vector(vec, profile)
         embedded_at = self._now()
         self._conn.execute(
-            "DELETE FROM lcm_chunk_vectors WHERE chunk_id = ? AND identity_hash = ?",
+            "DELETE FROM trove_chunk_vectors WHERE chunk_id = ? AND identity_hash = ?",
             (chunk_id, identity_hash),
         )
         self._conn.execute(
-            "DELETE FROM lcm_chunk_meta WHERE chunk_id = ? AND identity_hash = ?",
+            "DELETE FROM trove_chunk_meta WHERE chunk_id = ? AND identity_hash = ?",
             (chunk_id, identity_hash),
         )
         self._conn.execute(
-            "DELETE FROM lcm_chunk_binary WHERE chunk_id = ? AND identity_hash = ?",
+            "DELETE FROM trove_chunk_binary WHERE chunk_id = ? AND identity_hash = ?",
             (chunk_id, identity_hash),
         )
         self._conn.execute(
-            "INSERT INTO lcm_chunk_vectors(chunk_id, identity_hash, vec) VALUES(?, ?, ?)",
+            "INSERT INTO trove_chunk_vectors(chunk_id, identity_hash, vec) VALUES(?, ?, ?)",
             (chunk_id, identity_hash, packed),
         )
         if sign_bits is not None:
             self._conn.execute(
-                "INSERT INTO lcm_chunk_binary(chunk_id, identity_hash, bits) "
+                "INSERT INTO trove_chunk_binary(chunk_id, identity_hash, bits) "
                 "VALUES(?, ?, ?)",
                 (chunk_id, identity_hash, sign_bits),
             )
         self._conn.execute(
             """
-            INSERT INTO lcm_chunk_meta(
+            INSERT INTO trove_chunk_meta(
                 chunk_id, identity_hash, store_id, chunk_index, char_start,
                 char_end, token_estimate, embedded_at, archived
             ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 0)
@@ -2549,7 +2549,7 @@ class VectorStore:
         with self._write_transaction():
             with self._temp_id_table([str(value) for value in unique_ids]) as table:
                 cur = self._conn.execute(
-                    f"UPDATE lcm_chunk_meta SET archived = 1 "
+                    f"UPDATE trove_chunk_meta SET archived = 1 "
                     f"WHERE archived = 0 AND store_id IN "
                     f"(SELECT CAST(id AS INTEGER) FROM {table})"
                 )
@@ -2571,26 +2571,26 @@ class VectorStore:
             str(row[0])
             for row in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name IN ("
-                "'lcm_chunk_meta','lcm_embedding_profile')"
+                "'trove_chunk_meta','trove_embedding_profile')"
             ).fetchall()
         }
-        if not {"lcm_chunk_meta", "lcm_embedding_profile"} <= tables:
+        if not {"trove_chunk_meta", "trove_embedding_profile"} <= tables:
             return 0
         placeholders = ",".join("?" for _ in unique_ids)
         cur = conn.execute(
-            f"UPDATE lcm_chunk_meta SET archived = 1 "
+            f"UPDATE trove_chunk_meta SET archived = 1 "
             f"WHERE archived = 0 AND store_id IN ({placeholders})",
             unique_ids,
         )
         if cur.rowcount:
             conn.execute(
-                "UPDATE lcm_embedding_profile SET data_version = data_version + 1"
+                "UPDATE trove_embedding_profile SET data_version = data_version + 1"
             )
         return int(cur.rowcount or 0)
 
     def _chunk_tables_exist(self) -> bool:
         return self._conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='lcm_chunk_meta'"
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='trove_chunk_meta'"
         ).fetchone() is not None
 
     def _bounded_chunk_candidate_ids(
@@ -2644,7 +2644,7 @@ class VectorStore:
             rows = self._conn.execute(
                 f"""
                 SELECT cm.chunk_id
-                FROM lcm_chunk_meta cm
+                FROM trove_chunk_meta cm
                 JOIN messages m ON m.store_id = cm.store_id
                 {conversation_join}
                 WHERE {' AND '.join(where)}
@@ -2673,9 +2673,9 @@ class VectorStore:
                 f"""
                 SELECT v.rowid, v.chunk_id, v.vec
                 FROM {table} t
-                JOIN lcm_chunk_vectors v
+                JOIN trove_chunk_vectors v
                   ON v.chunk_id = t.id AND v.identity_hash = ?
-                JOIN lcm_chunk_meta m
+                JOIN trove_chunk_meta m
                   ON m.chunk_id = v.chunk_id AND m.identity_hash = v.identity_hash
                 WHERE m.archived = 0
                 """,
@@ -2934,7 +2934,7 @@ class VectorStore:
             """
             SELECT identity_hash, model_name, provider, revision, dim, dtype,
                    byteorder, task, registered_at, active, archived_at, data_version
-            FROM lcm_embedding_profile
+            FROM trove_embedding_profile
             WHERE active = 1 AND archived_at IS NULL AND task = ?
             ORDER BY registered_at DESC, identity_hash DESC
             LIMIT 1

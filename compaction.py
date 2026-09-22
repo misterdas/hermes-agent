@@ -1,14 +1,14 @@
-"""Leaf-compaction pipeline for the LCM engine (WS5 Seam 6).
+"""Leaf-compaction pipeline for the TROVE engine (WS5 Seam 6).
 
 The ``CompactionMixin`` holds the compaction gate + pipeline: ``should_compress``
 / ``should_compress_preflight`` (public), the leaf-candidate and chunk-selection
 helpers, and the main ``compress`` entry point. These methods were lifted
-verbatim out of ``LCMEngine`` and continue to run bound to the engine instance
-(``self`` is the ``LCMEngine``), so they read and write the engine's runtime
+verbatim out of ``TROVEEngine`` and continue to run bound to the engine instance
+(``self`` is the ``TROVEEngine``), so they read and write the engine's runtime
 state (``_ingest_cursor``, ``_store``, ``_dag``, ``_lifecycle``, status/telemetry
 fields, per-turn caches) and call back into engine helpers (ingest,
 reconciliation, placeholder-ledger, the summarize-with-rescue step, assembly,
-lifecycle) through normal attribute lookup. ``LCMEngine`` mixes this in ahead of
+lifecycle) through normal attribute lookup. ``TROVEEngine`` mixes this in ahead of
 ``ContextEngine`` so the mixin's ``compress`` / ``should_compress`` /
 ``should_compress_preflight`` override the ContextEngine protocol defaults.
 """
@@ -96,7 +96,7 @@ class CompactionMixin:
     ) -> tuple[str, object] | None:
         """Claim one preflight-proven pure-sanitation invocation."""
         with self._sanitation_claim_lock:
-            if self._bypasses_lcm_context_management() or (
+            if self._bypasses_trove_context_management() or (
                 session_id and session_id != self._session_id
             ):
                 return None
@@ -157,7 +157,7 @@ class CompactionMixin:
             return "sanitize", claim
 
     def should_compress(self, prompt_tokens: int = None) -> bool:
-        if self._bypasses_lcm_context_management():
+        if self._bypasses_trove_context_management():
             if prompt_tokens is not None:
                 tokens = prompt_tokens
             else:
@@ -189,11 +189,11 @@ class CompactionMixin:
 
     def _should_compress_preflight_locked(self, messages):
         self._maybe_reclassify_late_auxiliary_before_compaction_write()
-        bypasses_lcm_context_management = self._bypasses_lcm_context_management()
-        if not bypasses_lcm_context_management:
+        bypasses_trove_context_management = self._bypasses_trove_context_management()
+        if not bypasses_trove_context_management:
             self._invalidate_sanitation_operation()
-        if bypasses_lcm_context_management:
-            self._remember_lcm_bypass_message_prefix(self._bypass_lcm_session_id(), messages)
+        if bypasses_trove_context_management:
+            self._remember_trove_bypass_message_prefix(self._bypass_trove_session_id(), messages)
             rough = count_messages_tokens(messages)
             if self._should_force_overflow_recovery(observed_tokens=rough, messages=messages):
                 return self._mark_preflight_compression_requested(
@@ -347,7 +347,7 @@ class CompactionMixin:
             if pre_ingest_placeholder_ambiguous_noop and not cooldown_active:
                 self._last_compression_status = "noop"
                 self._last_compression_noop_reason = pre_ingest_noop_reason
-                logger.info("LCM preflight compression no-op: %s", pre_ingest_noop_reason)
+                logger.info("TROVE preflight compression no-op: %s", pre_ingest_noop_reason)
                 return False
             eligible, reason = self._leaf_compaction_candidate_status(
                 replay_messages,
@@ -420,7 +420,7 @@ class CompactionMixin:
                     )
                 self._last_compression_status = "noop"
                 self._last_compression_noop_reason = reason
-                logger.info("LCM preflight compression no-op: %s", reason)
+                logger.info("TROVE preflight compression no-op: %s", reason)
                 return False
             self._refresh_raw_backlog_debt(replay_messages, observed_tokens=replay_rough)
             if self._critical_budget_pressure_reached(
@@ -450,7 +450,7 @@ class CompactionMixin:
             if pre_ingest_placeholder_ambiguous_noop:
                 self._last_compression_status = "noop"
                 self._last_compression_noop_reason = pre_ingest_noop_reason
-                logger.info("LCM preflight compression no-op: %s", pre_ingest_noop_reason)
+                logger.info("TROVE preflight compression no-op: %s", pre_ingest_noop_reason)
                 return False
             eligible, reason = self._leaf_compaction_candidate_status(
                 messages,
@@ -476,7 +476,7 @@ class CompactionMixin:
                 )
             self._last_compression_status = "noop"
             self._last_compression_noop_reason = reason
-            logger.info("LCM preflight compression no-op: %s", reason)
+            logger.info("TROVE preflight compression no-op: %s", reason)
             return False
         self._refresh_raw_backlog_debt(messages, observed_tokens=rough)
         critical_pressure = self._critical_budget_pressure_reached(
@@ -538,17 +538,17 @@ class CompactionMixin:
             original_text = text_content_for_pattern_matching(original_msg.get("content")) or ""
             replay_text = text_content_for_pattern_matching(replay_msg.get("content")) or ""
             if original_text != replay_text:
-                if replay_text.startswith("[Externalized LCM ingest payload:"):
+                if replay_text.startswith("[Externalized TROVE ingest payload:"):
                     return "externalization_sanitation"
                 if replay_text.startswith("[Externalized payload: kind=raw_payload;"):
                     return "externalization_sanitation"
                 if replay_text.startswith("[Externalized tool output:"):
                     return "externalization_sanitation"
-                if replay_text.startswith("[LCM active replay placeholder: assistant output quarantined;"):
+                if replay_text.startswith("[TROVE active replay placeholder: assistant output quarantined;"):
                     return "quarantine_sanitation"
-                if replay_text.startswith("[LCM active replay placeholder: message ignored;"):
+                if replay_text.startswith("[TROVE active replay placeholder: message ignored;"):
                     return "ignored_message_sanitation"
-                if "[LCM sensitive redaction:" in replay_text:
+                if "[TROVE sensitive redaction:" in replay_text:
                     return "redaction_sanitation"
             if original_msg.get("content") != replay_msg.get("content") and _contains_sensitive_redaction(
                 replay_msg.get("content")
@@ -698,7 +698,7 @@ class CompactionMixin:
                 None,
             )
             preserve_foreground_sanitation_state = bool(
-                self._bypasses_lcm_context_management()
+                self._bypasses_trove_context_management()
                 and operation_claim is None
                 and (pending_claim is not None or compatibility_handoff is not None)
             )
@@ -788,14 +788,14 @@ class CompactionMixin:
             )
         except sqlite3.DatabaseError as exc:
             logger.error(
-                "LCM DatabaseError during compaction: %s. Falling back to bypassed context management to keep session alive.",
+                "TROVE DatabaseError during compaction: %s. Falling back to bypassed context management to keep session alive.",
                 exc,
                 exc_info=True,
             )
             self._last_compression_status = "degraded_database_error"
             self._last_compression_noop_reason = f"sqlite error: {exc}"
             try:
-                compress_bypassed = getattr(self, "_compress_lcm_bypassed_session", None)
+                compress_bypassed = getattr(self, "_compress_trove_bypassed_session", None)
                 if callable(compress_bypassed):
                     return compress_bypassed(
                         messages,
@@ -804,7 +804,7 @@ class CompactionMixin:
                         force=force,
                     )
             except Exception as fallback_exc:
-                logger.error("LCM bypassed compression fallback also failed: %s", fallback_exc)
+                logger.error("TROVE bypassed compression fallback also failed: %s", fallback_exc)
             return messages
         except BaseException:
             self._last_compression_status = "error"
@@ -836,11 +836,11 @@ class CompactionMixin:
         _compress_started = time.perf_counter()
         if force:
             logger.info(
-                "LCM compression decision operation=compact reason=manual_force"
+                "TROVE compression decision operation=compact reason=manual_force"
             )
 
         self._maybe_reclassify_late_auxiliary_before_compaction_write()
-        if self._bypasses_lcm_context_management():
+        if self._bypasses_trove_context_management():
             bypass_current_tokens = current_tokens
             if bypass_current_tokens is None or bypass_current_tokens <= 0:
                 auxiliary_session_id = self._thread_context_session_id()
@@ -850,7 +850,7 @@ class CompactionMixin:
                     )
                     if auxiliary_prompt_tokens > 0:
                         bypass_current_tokens = auxiliary_prompt_tokens
-            return self._compress_lcm_bypassed_session(
+            return self._compress_trove_bypassed_session(
                 messages,
                 current_tokens=bypass_current_tokens,
                 focus_topic=focus_topic,
@@ -1278,7 +1278,7 @@ class CompactionMixin:
                     if threshold_full_sweep_active and leaf_compacted_this_turn:
                         sweep_stop_reason = "leaf_summary_error"
                         logger.warning(
-                            "LCM threshold full sweep stopped after %d persisted leaf pass(es): %s",
+                            "TROVE threshold full sweep stopped after %d persisted leaf pass(es): %s",
                             leaf_passes,
                             exc,
                         )
@@ -1437,7 +1437,7 @@ class CompactionMixin:
             else:
                 self._last_compression_status = "noop"
                 self._last_compression_noop_reason = noop_reason
-                logger.info("LCM compression no-op: %s", noop_reason)
+                logger.info("TROVE compression no-op: %s", noop_reason)
             if threshold_full_sweep_active:
                 duration_ms = (time.perf_counter() - _compress_started) * 1000.0
                 self._last_threshold_full_sweep = {
@@ -1501,7 +1501,7 @@ class CompactionMixin:
         self.compression_count += 1
         self._last_compaction_duration_ms = (time.perf_counter() - _compress_started) * 1000.0
         logger.info(
-            "LCM leaf compaction finished in %.1fms", self._last_compaction_duration_ms
+            "TROVE leaf compaction finished in %.1fms", self._last_compaction_duration_ms
         )
         self._last_compression_status = "compacted"
         self._last_compression_noop_reason = ""
@@ -1511,7 +1511,7 @@ class CompactionMixin:
             self._last_overflow_recovery_failed = count_messages_tokens(compressed) > recovery_assembly_cap
             if self._last_overflow_recovery_failed:
                 logger.warning(
-                    "LCM overflow recovery could not get under cap=%d after compaction; returning best-effort context (%d tokens)",
+                    "TROVE overflow recovery could not get under cap=%d after compaction; returning best-effort context (%d tokens)",
                     recovery_assembly_cap,
                     count_messages_tokens(compressed),
                 )
@@ -1521,7 +1521,7 @@ class CompactionMixin:
         self._ingest_cursor_needs_reconcile = False
 
         logger.info(
-            "LCM compaction #%d: %d messages → %d (%d leaf pass%s, %d→%d tokens, %d DAG nodes%s)",
+            "TROVE compaction #%d: %d messages → %d (%d leaf pass%s, %d→%d tokens, %d DAG nodes%s)",
             self.compression_count,
             len(messages),
             len(compressed),

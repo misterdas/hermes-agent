@@ -4,13 +4,13 @@ Use read-only product tools before changing configuration or running an apply pa
 
 ## Fast path
 
-1. `hermes plugins`: confirm `hermes-lcm` is enabled and the selected context engine is `lcm`.
+1. `hermes plugins`: confirm `hermes-trove` is enabled and the selected context engine is `trove`.
 2. Send one normal message if the session has not been bound since restart.
-3. `lcm_status`: inspect runtime identity, database path, context pressure, summary/store counts, filters, and lifecycle state.
-4. `lcm_inspect`: inspect current-session lineage, frontiers, fresh tail, externalized-ref readability, and skip/no-op reasons without retrieving content.
-5. `lcm_doctor`: run database, FTS, lifecycle, configuration, and context-pressure diagnostics.
+3. `trove_status`: inspect runtime identity, database path, context pressure, summary/store counts, filters, and lifecycle state.
+4. `trove_inspect`: inspect current-session lineage, frontiers, fresh tail, externalized-ref readability, and skip/no-op reasons without retrieving content.
+5. `trove_doctor`: run database, FTS, lifecycle, configuration, and context-pressure diagnostics.
 
-If optional slash commands are enabled, `/lcm status` and `/lcm doctor` expose the corresponding operator views. To enable: set `LCM_ENABLE_SLASH_COMMAND=1` in the environment. Without it, the `/lcm` slash commands are silently not registered.
+If optional slash commands are enabled, `/trove status` and `/trove doctor` expose the corresponding operator views. To enable: set `TROVE_ENABLE_SLASH_COMMAND=1` in the environment. Without it, the `/trove` slash commands are silently not registered.
 
 ## Safe mutation order
 

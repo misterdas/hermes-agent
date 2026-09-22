@@ -156,7 +156,7 @@ def _call_structured_assertion_llm(
     from agent.auxiliary_client import call_llm
 
     from .escalation import _strip_reasoning_blocks
-    from .model_routing import apply_lcm_model_route
+    from .model_routing import apply_trove_model_route
 
     call_kwargs: dict[str, Any] = {
         "task": "assertion_extraction",
@@ -165,7 +165,7 @@ def _call_structured_assertion_llm(
         "max_tokens": 4000,
         "timeout": timeout_seconds,
     }
-    apply_lcm_model_route(call_kwargs, model)
+    apply_trove_model_route(call_kwargs, model)
     response = call_llm(**call_kwargs)
     content = response.choices[0].message.content
     if not isinstance(content, str):

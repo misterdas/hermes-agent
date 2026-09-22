@@ -1,4 +1,4 @@
-"""Policy loading for model-aware LCM benchmark replays."""
+"""Policy loading for model-aware TROVE benchmark replays."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from .types import LCMPolicy
+from .types import TROVEPolicy
 
 try:  # pragma: no cover - exercised when PyYAML is installed
     import yaml
@@ -24,10 +24,10 @@ def _resolve_path(path: str | Path) -> Path:
     return _REPO_ROOT / candidate
 
 
-def builtin_policies() -> list[LCMPolicy]:
+def builtin_policies() -> list[TROVEPolicy]:
     """Return the zero-config policy set used by the skeleton harness."""
     return [
-        LCMPolicy(
+        TROVEPolicy(
             name="baseline_272k",
             context_length=272_000,
             context_threshold=0.75,
@@ -35,7 +35,7 @@ def builtin_policies() -> list[LCMPolicy]:
             leaf_chunk_tokens=20_000,
             notes="Current long-context baseline: 64-message fresh tail, 20k leaf chunks.",
         ),
-        LCMPolicy(
+        TROVEPolicy(
             name="codex_gpt_long_context",
             context_length=272_000,
             context_threshold=0.75,
@@ -45,7 +45,7 @@ def builtin_policies() -> list[LCMPolicy]:
             policy_version="1",
             notes="Initial benchmark candidate for GPT/Codex long-context routes.",
         ),
-        LCMPolicy(
+        TROVEPolicy(
             name="codex_spark_context",
             context_length=128_000,
             context_threshold=0.75,
@@ -55,7 +55,7 @@ def builtin_policies() -> list[LCMPolicy]:
             policy_version="1",
             notes="Benchmark candidate for GPT-5.3 Codex Spark / 128k Codex-style routes.",
         ),
-        LCMPolicy(
+        TROVEPolicy(
             name="pressure_smoke",
             context_length=300,
             context_threshold=0.30,
@@ -123,12 +123,12 @@ def _load_mapping(path: Path) -> Mapping[str, Any]:
     return loaded
 
 
-def load_policy(path: str | Path) -> LCMPolicy:
+def load_policy(path: str | Path) -> TROVEPolicy:
     """Load one policy from JSON or flat YAML."""
-    return LCMPolicy.from_dict(_load_mapping(_resolve_path(path)))
+    return TROVEPolicy.from_dict(_load_mapping(_resolve_path(path)))
 
 
-def load_policies(paths: Iterable[str | Path] | None = None) -> list[LCMPolicy]:
+def load_policies(paths: Iterable[str | Path] | None = None) -> list[TROVEPolicy]:
     """Load policies from paths, or return built-ins when no paths are supplied."""
     selected = list(paths or [])
     if not selected:

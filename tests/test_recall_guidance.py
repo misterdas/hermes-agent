@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _load_guidance_module():
-    package_name = "hermes_lcm_recall_guidance"
+    package_name = "hermes_trove_recall_guidance"
     package_spec = importlib.util.spec_from_file_location(
         package_name,
         str(REPO_ROOT / "__init__.py"),
@@ -46,24 +46,24 @@ def test_recall_policy_covers_evidence_safety_and_stable_tool_routing():
         "summaries are recall cues",
         "newer source-backed evidence",
         "1-3 distinctive terms",
-        "lcm_grep",
-        "lcm_describe",
-        "lcm_expand_query",
-        "lcm_recall",
-        "lcm_load_session",
-        "lcm_recent",
-        "lcm_compile_evidence",
-        "lcm_evidence_pack",
-        "lcm_compute",
+        "trove_grep",
+        "trove_describe",
+        "trove_expand_query",
+        "trove_recall",
+        "trove_load_session",
+        "trove_recent",
+        "trove_compile_evidence",
+        "trove_evidence_pack",
+        "trove_compute",
         "Open-cardinality evidence remains incomplete",
     ):
         assert phrase in policy
 
 
 def test_bundled_skill_has_valid_minimal_frontmatter_and_matching_tool_references():
-    skill_root = REPO_ROOT / "skills" / "hermes-lcm"
+    skill_root = REPO_ROOT / "skills" / "hermes-trove"
     skill_text = (skill_root / "SKILL.md").read_text(encoding="utf-8")
-    assert skill_text.startswith("---\nname: hermes-lcm\ndescription:")
+    assert skill_text.startswith("---\nname: hermes-trove\ndescription:")
     frontmatter = skill_text.split("---", 2)[1]
     keys = {
         line.split(":", 1)[0].strip()
@@ -76,16 +76,16 @@ def test_bundled_skill_has_valid_minimal_frontmatter_and_matching_tool_reference
         encoding="utf-8"
     )
     documented = {
-        "lcm_grep",
-        "lcm_recall",
-        "lcm_recent",
-        "lcm_load_session",
-        "lcm_describe",
-        "lcm_expand",
-        "lcm_expand_query",
-        "lcm_compute",
-        "lcm_compile_evidence",
-        "lcm_evidence_pack",
+        "trove_grep",
+        "trove_recall",
+        "trove_recent",
+        "trove_load_session",
+        "trove_describe",
+        "trove_expand",
+        "trove_expand_query",
+        "trove_compute",
+        "trove_compile_evidence",
+        "trove_evidence_pack",
     }
     for tool_name in documented:
         assert f"`{tool_name}`" in recall_reference

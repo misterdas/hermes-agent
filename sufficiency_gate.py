@@ -197,7 +197,7 @@ def render_disclosure(
     trace_map = trace if isinstance(trace, dict) else {}
 
     lines = [
-        "<lcm-sufficiency-disclosure>",
+        "<trove-sufficiency-disclosure>",
         f"gate: {SUFFICIENCY_GATE_VERSION}",
         f"state: {state}",
         f"policy_action: {policy_action}",
@@ -223,7 +223,7 @@ def render_disclosure(
         [
             "stored evidence did not establish sufficiency; disclose rather than imply sufficiency",
             "this block is an annotation, not evidence",
-            "</lcm-sufficiency-disclosure>",
+            "</trove-sufficiency-disclosure>",
         ]
     )
     return "\n".join(lines)

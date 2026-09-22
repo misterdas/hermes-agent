@@ -233,7 +233,7 @@ class QueryEvidenceDependency:
 
     @property
     def citation(self) -> str:
-        return f"lcm:{self.source_store_id}:{self.span_start}-{self.span_end}"
+        return f"trove:{self.source_store_id}:{self.span_start}-{self.span_end}"
 
 
 class CorpusSnapshot(NamedTuple):
@@ -273,24 +273,24 @@ class QueryViewBuildInProgressError(RuntimeError):
 
 
 _REQUIRED_SCHEMA: dict[str, frozenset[str]] = {
-    "lcm_query_corpus_state": frozenset({
+    "trove_query_corpus_state": frozenset({
         "singleton", "generation", "max_store_id", "row_count", "changed_at"
     }),
-    "lcm_query_corpus_events": frozenset({
+    "trove_query_corpus_events": frozenset({
         "generation", "store_id", "mutation", "session_id", "conversation_id",
         "source", "role", "source_timestamp", "changed_at"
     }),
-    "lcm_query_views": frozenset({
+    "trove_query_views": frozenset({
         "view_id", "identity_json", "status", "generation", "current_version",
         "build_nonce", "lease_expires_at", "stale_reason", "hit_count",
         "promotion_status", "created_at", "updated_at", "expires_at"
     }),
-    "lcm_query_view_versions": frozenset({
+    "trove_query_view_versions": frozenset({
         "view_id", "version", "manifest_json", "trace_json", "completeness",
         "search_policy_version", "corpus_generation", "coverage_store_id",
         "published_at", "expires_at", "supersedes_version"
     }),
-    "lcm_query_view_sources": frozenset({
+    "trove_query_view_sources": frozenset({
         "view_id", "version", "source_store_id", "source_content_sha256",
         "source_session_id", "source_conversation_id", "source_role",
         "source_name", "source_timestamp", "span_start", "span_end", "quote",
@@ -302,7 +302,7 @@ _REQUIRED_SCHEMA: dict[str, frozenset[str]] = {
 def _ensure_query_view_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(
         """
-        CREATE TABLE IF NOT EXISTS lcm_query_corpus_state (
+        CREATE TABLE IF NOT EXISTS trove_query_corpus_state (
             singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
             generation INTEGER NOT NULL DEFAULT 0 CHECK(generation >= 0),
             max_store_id INTEGER NOT NULL DEFAULT 0 CHECK(max_store_id >= 0),
@@ -310,7 +310,7 @@ def _ensure_query_view_schema(conn: sqlite3.Connection) -> None:
             changed_at REAL NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS lcm_query_corpus_events (
+        CREATE TABLE IF NOT EXISTS trove_query_corpus_events (
             generation INTEGER PRIMARY KEY CHECK(generation > 0),
             store_id INTEGER NOT NULL CHECK(store_id > 0),
             mutation TEXT NOT NULL CHECK(mutation IN ('insert', 'update', 'delete')),
@@ -322,7 +322,7 @@ def _ensure_query_view_schema(conn: sqlite3.Connection) -> None:
             changed_at REAL NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS lcm_query_views (
+        CREATE TABLE IF NOT EXISTS trove_query_views (
             view_id TEXT PRIMARY KEY CHECK(length(view_id) = 64),
             identity_json TEXT NOT NULL,
             status TEXT NOT NULL CHECK(status IN (
@@ -341,7 +341,7 @@ def _ensure_query_view_schema(conn: sqlite3.Connection) -> None:
             expires_at REAL
         );
 
-        CREATE TABLE IF NOT EXISTS lcm_query_view_versions (
+        CREATE TABLE IF NOT EXISTS trove_query_view_versions (
             view_id TEXT NOT NULL,
             version INTEGER NOT NULL CHECK(version > 0),
             manifest_json TEXT NOT NULL,
@@ -356,7 +356,7 @@ def _ensure_query_view_schema(conn: sqlite3.Connection) -> None:
             PRIMARY KEY(view_id, version)
         );
 
-        CREATE TABLE IF NOT EXISTS lcm_query_view_sources (
+        CREATE TABLE IF NOT EXISTS trove_query_view_sources (
             view_id TEXT NOT NULL,
             version INTEGER NOT NULL,
             source_store_id INTEGER NOT NULL CHECK(source_store_id > 0),
@@ -373,48 +373,48 @@ def _ensure_query_view_schema(conn: sqlite3.Connection) -> None:
             PRIMARY KEY(view_id, version, source_store_id, span_start, span_end)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_lcm_query_view_sources_store
-            ON lcm_query_view_sources(source_store_id, view_id, version);
-        CREATE INDEX IF NOT EXISTS idx_lcm_query_view_versions_coverage
-            ON lcm_query_view_versions(corpus_generation, view_id, version);
-        CREATE INDEX IF NOT EXISTS idx_lcm_query_views_lifecycle
-            ON lcm_query_views(status, expires_at, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_trove_query_view_sources_store
+            ON trove_query_view_sources(source_store_id, view_id, version);
+        CREATE INDEX IF NOT EXISTS idx_trove_query_view_versions_coverage
+            ON trove_query_view_versions(corpus_generation, view_id, version);
+        CREATE INDEX IF NOT EXISTS idx_trove_query_views_lifecycle
+            ON trove_query_views(status, expires_at, updated_at);
 
-        CREATE TRIGGER IF NOT EXISTS lcm_query_corpus_message_insert
+        CREATE TRIGGER IF NOT EXISTS trove_query_corpus_message_insert
         AFTER INSERT ON messages
         BEGIN
-            UPDATE lcm_query_corpus_state
+            UPDATE trove_query_corpus_state
                SET generation = generation + 1,
                    max_store_id = max(max_store_id, NEW.store_id),
                    row_count = row_count + 1,
                    changed_at = CAST(strftime('%s','now') AS REAL)
              WHERE singleton = 1;
-            INSERT INTO lcm_query_corpus_events(
+            INSERT INTO trove_query_corpus_events(
                 generation, store_id, mutation, session_id, conversation_id,
                 source, role, source_timestamp, changed_at
             ) SELECT generation, NEW.store_id, 'insert', NEW.session_id,
                      NEW.conversation_id, NEW.source, NEW.role, NEW.timestamp,
                      changed_at
-                FROM lcm_query_corpus_state WHERE singleton = 1;
+                FROM trove_query_corpus_state WHERE singleton = 1;
         END;
 
-        CREATE TRIGGER IF NOT EXISTS lcm_query_corpus_message_update
+        CREATE TRIGGER IF NOT EXISTS trove_query_corpus_message_update
         AFTER UPDATE OF content, session_id, conversation_id, source, role, timestamp
         ON messages
         BEGIN
-            UPDATE lcm_query_corpus_state
+            UPDATE trove_query_corpus_state
                SET generation = generation + 1,
                    max_store_id = max(max_store_id, NEW.store_id),
                    changed_at = CAST(strftime('%s','now') AS REAL)
              WHERE singleton = 1;
-            INSERT INTO lcm_query_corpus_events(
+            INSERT INTO trove_query_corpus_events(
                 generation, store_id, mutation, session_id, conversation_id,
                 source, role, source_timestamp, changed_at
             ) SELECT generation, NEW.store_id, 'update', NEW.session_id,
                      NEW.conversation_id, NEW.source, NEW.role, NEW.timestamp,
                      changed_at
-                FROM lcm_query_corpus_state WHERE singleton = 1;
-            UPDATE lcm_query_views
+                FROM trove_query_corpus_state WHERE singleton = 1;
+            UPDATE trove_query_views
                SET status = 'stale', generation = generation + 1,
                    stale_reason = 'positive_source_updated',
                    build_nonce = '', lease_expires_at = NULL,
@@ -422,28 +422,28 @@ def _ensure_query_view_schema(conn: sqlite3.Connection) -> None:
              WHERE status IN ('ready', 'building')
                AND view_id IN (
                    SELECT dependency.view_id
-                     FROM lcm_query_view_sources AS dependency
+                     FROM trove_query_view_sources AS dependency
                     WHERE dependency.source_store_id = OLD.store_id
-                      AND dependency.version = lcm_query_views.current_version
+                      AND dependency.version = trove_query_views.current_version
                );
         END;
 
-        CREATE TRIGGER IF NOT EXISTS lcm_query_corpus_message_delete
+        CREATE TRIGGER IF NOT EXISTS trove_query_corpus_message_delete
         AFTER DELETE ON messages
         BEGIN
-            UPDATE lcm_query_corpus_state
+            UPDATE trove_query_corpus_state
                SET generation = generation + 1,
                    row_count = max(0, row_count - 1),
                    changed_at = CAST(strftime('%s','now') AS REAL)
              WHERE singleton = 1;
-            INSERT INTO lcm_query_corpus_events(
+            INSERT INTO trove_query_corpus_events(
                 generation, store_id, mutation, session_id, conversation_id,
                 source, role, source_timestamp, changed_at
             ) SELECT generation, OLD.store_id, 'delete', OLD.session_id,
                      OLD.conversation_id, OLD.source, OLD.role, OLD.timestamp,
                      changed_at
-                FROM lcm_query_corpus_state WHERE singleton = 1;
-            UPDATE lcm_query_views
+                FROM trove_query_corpus_state WHERE singleton = 1;
+            UPDATE trove_query_views
                SET status = 'stale', generation = generation + 1,
                    stale_reason = 'positive_source_deleted',
                    build_nonce = '', lease_expires_at = NULL,
@@ -451,16 +451,16 @@ def _ensure_query_view_schema(conn: sqlite3.Connection) -> None:
              WHERE status IN ('ready', 'building')
                AND view_id IN (
                    SELECT dependency.view_id
-                     FROM lcm_query_view_sources AS dependency
+                     FROM trove_query_view_sources AS dependency
                     WHERE dependency.source_store_id = OLD.store_id
-                      AND dependency.version = lcm_query_views.current_version
+                      AND dependency.version = trove_query_views.current_version
                );
         END;
         """
     )
     conn.execute(
         """
-        INSERT OR IGNORE INTO lcm_query_corpus_state(
+        INSERT OR IGNORE INTO trove_query_corpus_state(
             singleton, generation, max_store_id, row_count, changed_at
         )
         SELECT 1, 0, coalesce(max(store_id), 0), count(*), ? FROM messages
@@ -475,7 +475,7 @@ def _verify_query_view_schema(conn: sqlite3.Connection) -> list[str]:
         str(row[0])
         for row in conn.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table' "
-            "AND name LIKE 'lcm_query%'"
+            "AND name LIKE 'trove_query%'"
         )
     }
     missing.extend(
@@ -498,14 +498,14 @@ def _verify_query_view_schema(conn: sqlite3.Connection) -> list[str]:
             )
     required_objects = {
         "index": {
-            "idx_lcm_query_view_sources_store",
-            "idx_lcm_query_view_versions_coverage",
-            "idx_lcm_query_views_lifecycle",
+            "idx_trove_query_view_sources_store",
+            "idx_trove_query_view_versions_coverage",
+            "idx_trove_query_views_lifecycle",
         },
         "trigger": {
-            "lcm_query_corpus_message_insert",
-            "lcm_query_corpus_message_update",
-            "lcm_query_corpus_message_delete",
+            "trove_query_corpus_message_insert",
+            "trove_query_corpus_message_update",
+            "trove_query_corpus_message_delete",
         },
     }
     for object_type, names in required_objects.items():
@@ -518,10 +518,10 @@ def _verify_query_view_schema(conn: sqlite3.Connection) -> list[str]:
         missing.extend(
             f"{object_type}:{name}" for name in sorted(names - actual)
         )
-        # Real index names carry the idx_ prefix (idx_lcm_query_*); gating on
+        # Real index names carry the idx_ prefix (idx_trove_query_*); gating on
         # the bare table prefix would make the index half of this fail-closed
         # check unable to match any legitimately-named extra index.
-        gate_prefix = "idx_lcm_query" if object_type == "index" else "lcm_query"
+        gate_prefix = "idx_trove_query" if object_type == "index" else "trove_query"
         gated = {name for name in actual if name.startswith(gate_prefix)}
         missing.extend(
             f"unexpected-{object_type}:{name}"
@@ -580,7 +580,7 @@ class QueryViewStore:
     def corpus_snapshot(self) -> CorpusSnapshot:
         row = self._conn.execute(
             "SELECT generation, max_store_id, row_count "
-            "FROM lcm_query_corpus_state WHERE singleton = 1"
+            "FROM trove_query_corpus_state WHERE singleton = 1"
         ).fetchone()
         if row is None:
             raise RuntimeError("query corpus state is unavailable")
@@ -627,7 +627,7 @@ class QueryViewStore:
                 raise ValueError("assertion_id must be a 64-character SHA-256 value")
             assertion = self._conn.execute(
                 "SELECT source_store_id, source_span_start, source_span_end, source_quote "
-                "FROM lcm_assertions WHERE assertion_id = ?",
+                "FROM trove_assertions WHERE assertion_id = ?",
                 (normalized_assertion,),
             ).fetchone()
             if assertion is None or (
@@ -669,25 +669,25 @@ class QueryViewStore:
         with self._write_transaction():
             self._conn.execute(
                 """
-                INSERT INTO lcm_query_views(
+                INSERT INTO trove_query_views(
                     view_id, identity_json, status, generation, current_version,
                     build_nonce, lease_expires_at, created_at, updated_at
                 ) VALUES(?, ?, 'building', 0, 0, ?, ?, ?, ?)
                 ON CONFLICT(view_id) DO UPDATE SET
                     status = 'building',
-                    generation = lcm_query_views.generation + 1,
+                    generation = trove_query_views.generation + 1,
                     build_nonce = excluded.build_nonce,
                     lease_expires_at = excluded.lease_expires_at,
                     stale_reason = '',
                     updated_at = excluded.updated_at
-                WHERE lcm_query_views.status <> 'building'
-                   OR coalesce(lcm_query_views.lease_expires_at, 0) <= ?
+                WHERE trove_query_views.status <> 'building'
+                   OR coalesce(trove_query_views.lease_expires_at, 0) <= ?
                 """,
                 (view_id, canonical, nonce, lease, now, now, now),
             )
             row = self._conn.execute(
                 "SELECT identity_json, generation, current_version, build_nonce "
-                "FROM lcm_query_views WHERE view_id = ?",
+                "FROM trove_query_views WHERE view_id = ?",
                 (view_id,),
             ).fetchone()
             if str(row["identity_json"]) != canonical:
@@ -785,8 +785,8 @@ class QueryViewStore:
             )
         if dependency.assertion_id:
             assertion = self._conn.execute(
-                "SELECT 1 FROM lcm_assertions AS assertion "
-                "JOIN lcm_assertion_sources AS source "
+                "SELECT 1 FROM trove_assertions AS assertion "
+                "JOIN trove_assertion_sources AS source "
                 "ON source.source_store_id = assertion.source_store_id "
                 "AND source.extraction_version = assertion.extraction_version "
                 "AND source.source_content_sha256 = assertion.source_content_sha256 "
@@ -849,7 +849,7 @@ class QueryViewStore:
         with self._write_transaction():
             owner = self._conn.execute(
                 "SELECT status, generation, current_version, build_nonce "
-                "FROM lcm_query_views WHERE view_id = ?",
+                "FROM trove_query_views WHERE view_id = ?",
                 (token.view_id,),
             ).fetchone()
             if owner is None:
@@ -863,7 +863,7 @@ class QueryViewStore:
             current_corpus = self.corpus_snapshot()
             if current_corpus.generation != int(token.corpus_generation):
                 self._conn.execute(
-                    "UPDATE lcm_query_views SET status='stale', generation=generation+1, "
+                    "UPDATE trove_query_views SET status='stale', generation=generation+1, "
                     "stale_reason='corpus_changed_during_build', build_nonce='', "
                     "lease_expires_at=NULL, updated_at=? WHERE view_id=? "
                     "AND generation=? AND build_nonce=? AND status='building'",
@@ -878,7 +878,7 @@ class QueryViewStore:
             version = base_version + 1
             self._conn.execute(
                 """
-                INSERT INTO lcm_query_view_versions(
+                INSERT INTO trove_query_view_versions(
                     view_id, version, manifest_json, trace_json, completeness,
                     search_policy_version, corpus_generation, coverage_store_id,
                     published_at, expires_at, supersedes_version
@@ -900,7 +900,7 @@ class QueryViewStore:
             )
             self._conn.executemany(
                 """
-                INSERT INTO lcm_query_view_sources(
+                INSERT INTO trove_query_view_sources(
                     view_id, version, source_store_id, source_content_sha256,
                     source_session_id, source_conversation_id, source_name, source_role,
                     source_timestamp, span_start, span_end, quote, assertion_id
@@ -927,7 +927,7 @@ class QueryViewStore:
             )
             cur = self._conn.execute(
                 """
-                UPDATE lcm_query_views
+                UPDATE trove_query_views
                    SET status='ready', current_version=?, build_nonce='',
                        lease_expires_at=NULL, stale_reason='', updated_at=?,
                        expires_at=?
@@ -952,7 +952,7 @@ class QueryViewStore:
         with self._write_transaction():
             cur = self._conn.execute(
                 """
-                UPDATE lcm_query_views
+                UPDATE trove_query_views
                    SET status='failed', stale_reason=?, build_nonce='',
                        lease_expires_at=NULL, updated_at=?
                  WHERE view_id=? AND generation=? AND build_nonce=?
@@ -973,7 +973,7 @@ class QueryViewStore:
         with self._write_transaction():
             cur = self._conn.execute(
                 """
-                UPDATE lcm_query_views
+                UPDATE trove_query_views
                    SET status='stale', generation=generation+1,
                        stale_reason='build_lease_expired', build_nonce='',
                        lease_expires_at=NULL, updated_at=?
@@ -985,7 +985,7 @@ class QueryViewStore:
 
     def _dependencies_for(self, view_id: str, version: int) -> list[dict[str, Any]]:
         rows = self._conn.execute(
-            "SELECT * FROM lcm_query_view_sources "
+            "SELECT * FROM trove_query_view_sources "
             "WHERE view_id=? AND version=? "
             "ORDER BY source_store_id, span_start, span_end",
             (view_id, int(version)),
@@ -997,7 +997,7 @@ class QueryViewStore:
     ) -> tuple[tuple[dict[str, Any], ...], bool]:
         bounded = min(1_000, max(1, int(limit)))
         rows = self._conn.execute(
-            "SELECT * FROM lcm_query_corpus_events WHERE generation > ? "
+            "SELECT * FROM trove_query_corpus_events WHERE generation > ? "
             "ORDER BY generation LIMIT ?",
             (int(since_generation), bounded + 1),
         ).fetchall()
@@ -1014,7 +1014,7 @@ class QueryViewStore:
         view_id = identity.view_id
         canonical = identity.canonical_json
         row = self._conn.execute(
-            "SELECT * FROM lcm_query_views WHERE view_id = ?", (view_id,)
+            "SELECT * FROM trove_query_views WHERE view_id = ?", (view_id,)
         ).fetchone()
         if row is None:
             return QueryViewLookup("miss", "typed intent has no materialized view")
@@ -1030,7 +1030,7 @@ class QueryViewStore:
         if version <= 0:
             return QueryViewLookup("miss", "view has no published evidence version")
         version_row = self._conn.execute(
-            "SELECT * FROM lcm_query_view_versions WHERE view_id=? AND version=?",
+            "SELECT * FROM trove_query_view_versions WHERE view_id=? AND version=?",
             (view_id, version),
         ).fetchone()
         if version_row is None:
@@ -1040,7 +1040,7 @@ class QueryViewStore:
         if expires_at is not None and float(expires_at) <= current_time:
             with self._write_transaction():
                 self._conn.execute(
-                    "UPDATE lcm_query_views SET status='expired', generation=generation+1, "
+                    "UPDATE trove_query_views SET status='expired', generation=generation+1, "
                     "stale_reason='ttl_expired', updated_at=? "
                     "WHERE view_id=? AND current_version=? AND status<>'expired'",
                     (current_time, view_id, version),
@@ -1076,13 +1076,13 @@ class QueryViewStore:
                 reason = "corpus advanced beyond the negative-space watermark"
             with self._write_transaction():
                 self._conn.execute(
-                    "UPDATE lcm_query_views SET status='stale', generation=generation+1, "
+                    "UPDATE trove_query_views SET status='stale', generation=generation+1, "
                     "stale_reason=?, build_nonce='', lease_expires_at=NULL, updated_at=? "
                     "WHERE view_id=? AND status='ready' AND current_version=?",
                     (reason, current_time, view_id, version),
                 )
             row = self._conn.execute(
-                "SELECT * FROM lcm_query_views WHERE view_id=?", (view_id,)
+                "SELECT * FROM trove_query_views WHERE view_id=?", (view_id,)
             ).fetchone()
             events, truncated = self.delta_events(
                 covered_generation, limit=delta_limit
@@ -1103,7 +1103,7 @@ class QueryViewStore:
         if record_hit:
             with self._write_transaction():
                 cur = self._conn.execute(
-                    "UPDATE lcm_query_views SET hit_count=hit_count+1, "
+                    "UPDATE trove_query_views SET hit_count=hit_count+1, "
                     "promotion_status=CASE WHEN hit_count+1 >= 2 THEN 'promoted' "
                     "ELSE promotion_status END, updated_at=? "
                     "WHERE view_id=? AND status='ready' AND current_version=? "
@@ -1111,7 +1111,7 @@ class QueryViewStore:
                     (current_time, view_id, version, generation),
                 )
             row = self._conn.execute(
-                "SELECT * FROM lcm_query_views WHERE view_id=?", (view_id,)
+                "SELECT * FROM trove_query_views WHERE view_id=?", (view_id,)
             ).fetchone()
             confirmed = (
                 int(cur.rowcount or 0) == 1
@@ -1186,7 +1186,7 @@ class QueryViewStore:
         bounded = min(1_000, max(1, int(limit)))
         with self._write_transaction():
             rows = self._conn.execute(
-                "SELECT view_id FROM lcm_query_views WHERE expires_at <= ? "
+                "SELECT view_id FROM trove_query_views WHERE expires_at <= ? "
                 "AND status <> 'expired' ORDER BY expires_at LIMIT ?",
                 (cutoff, bounded),
             ).fetchall()
@@ -1194,7 +1194,7 @@ class QueryViewStore:
             if ids:
                 placeholders = ",".join("?" for _ in ids)
                 self._conn.execute(
-                    f"UPDATE lcm_query_views SET status='expired', "
+                    f"UPDATE trove_query_views SET status='expired', "
                     f"generation=generation+1, stale_reason='ttl_expired', "
                     f"updated_at=? WHERE view_id IN ({placeholders})",
                     (cutoff, *ids),
@@ -1205,7 +1205,7 @@ class QueryViewStore:
         bounded = min(1_000, max(1, int(limit)))
         with self._write_transaction():
             rows = self._conn.execute(
-                "SELECT view_id FROM lcm_query_views WHERE status='expired' "
+                "SELECT view_id FROM trove_query_views WHERE status='expired' "
                 "AND updated_at < ? ORDER BY updated_at LIMIT ?",
                 (float(older_than), bounded),
             ).fetchall()
@@ -1213,15 +1213,15 @@ class QueryViewStore:
             if ids:
                 placeholders = ",".join("?" for _ in ids)
                 self._conn.execute(
-                    f"DELETE FROM lcm_query_view_sources WHERE view_id IN ({placeholders})",
+                    f"DELETE FROM trove_query_view_sources WHERE view_id IN ({placeholders})",
                     ids,
                 )
                 self._conn.execute(
-                    f"DELETE FROM lcm_query_view_versions WHERE view_id IN ({placeholders})",
+                    f"DELETE FROM trove_query_view_versions WHERE view_id IN ({placeholders})",
                     ids,
                 )
                 self._conn.execute(
-                    f"DELETE FROM lcm_query_views WHERE view_id IN ({placeholders})",
+                    f"DELETE FROM trove_query_views WHERE view_id IN ({placeholders})",
                     ids,
                 )
         return len(ids)
@@ -1231,8 +1231,8 @@ class QueryViewStore:
         current = self.corpus_snapshot().generation
         floor_row = self._conn.execute(
             "SELECT min(version.corpus_generation) AS floor "
-            "FROM lcm_query_views AS view "
-            "JOIN lcm_query_view_versions AS version "
+            "FROM trove_query_views AS view "
+            "JOIN trove_query_view_versions AS version "
             "ON version.view_id=view.view_id AND version.version=view.current_version "
             "WHERE view.status IN ('ready', 'stale', 'building')"
         ).fetchone()
@@ -1244,7 +1244,7 @@ class QueryViewStore:
         safe_floor = min(active_floor, max(0, current - keep))
         with self._write_transaction():
             cur = self._conn.execute(
-                "DELETE FROM lcm_query_corpus_events WHERE generation <= ?",
+                "DELETE FROM trove_query_corpus_events WHERE generation <= ?",
                 (safe_floor,),
             )
         return int(cur.rowcount or 0)

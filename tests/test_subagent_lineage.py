@@ -1,7 +1,7 @@
 """WS5.7: explicit subagent-lineage signal takes precedence over the frame walk.
 
 Hosts that expose the plugin hook bus fire ``subagent_start`` / ``subagent_stop``
-with an explicit ``child_session_id`` -> ``parent_session_id`` linkage. LCM records
+with an explicit ``child_session_id`` -> ``parent_session_id`` linkage. TROVE records
 that linkage and uses it to identify a subagent session from the host's own signal
 instead of walking the call stack and reading private agent attributes. The frame
 walk stays as a fallback for hosts that do not fire these hooks.
@@ -11,9 +11,9 @@ import importlib.util
 import sys
 from pathlib import Path
 
-import hermes_lcm.aux_session as aux
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.engine import LCMEngine
+import hermes_trove.aux_session as aux
+from hermes_trove.config import TROVEConfig
+from hermes_trove.engine import TROVEEngine
 
 
 def _clear_lineage():
@@ -63,7 +63,7 @@ def test_missing_child_session_id_is_ignored():
 
 def test_explicit_parent_takes_precedence_over_frame_walk(tmp_path):
     _clear_lineage()
-    engine = LCMEngine(config=LCMConfig(database_path=str(tmp_path / "lineage.db")))
+    engine = TROVEEngine(config=TROVEConfig(database_path=str(tmp_path / "lineage.db")))
 
     # No explicit signal and no auxiliary caller frame -> the frame walk yields "".
     assert engine._in_process_parent_session_id({}, session_id="child-9") == ""
@@ -90,7 +90,7 @@ def test_explicit_parent_takes_precedence_over_frame_walk(tmp_path):
 
 def test_register_subscribes_to_subagent_hooks(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    module = _load_plugin_module("hermes_lcm_ws57_hooks")
+    module = _load_plugin_module("hermes_trove_ws57_hooks")
     captured = {}
 
     class _Ctx:
@@ -104,7 +104,7 @@ def test_register_subscribes_to_subagent_hooks(tmp_path, monkeypatch):
 
     # register() imports the plugin's aux_session submodule (via the engine and
     # the hook wiring), so it is now available under the synthetic package name.
-    aux_mod = sys.modules["hermes_lcm_ws57_hooks.aux_session"]
+    aux_mod = sys.modules["hermes_trove_ws57_hooks.aux_session"]
     aux_mod._SUBAGENT_LINEAGE_BY_SESSION_ID.clear()
 
     assert "subagent_start" in captured
@@ -121,7 +121,7 @@ def test_register_subscribes_to_subagent_hooks(tmp_path, monkeypatch):
 
 def test_register_without_hook_bus_is_a_noop(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    module = _load_plugin_module("hermes_lcm_ws57_nohooks")
+    module = _load_plugin_module("hermes_trove_ws57_nohooks")
 
     class _CtxNoHooks:
         def register_context_engine(self, engine):

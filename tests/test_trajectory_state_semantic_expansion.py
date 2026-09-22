@@ -21,8 +21,8 @@ import struct
 
 import pytest
 
-import hermes_lcm.tokens as token_module
-from hermes_lcm.trajectory_store import (
+import hermes_trove.tokens as token_module
+from hermes_trove.trajectory_store import (
     CorpusIdentity,
     TrajectorySource,
     TrajectoryState,
@@ -154,8 +154,8 @@ _QUERY = "widget configuration export"
 def _state_id(store, trajectory_id: str, state_index: int) -> int:
     row = store._conn.execute(
         """
-        SELECT s.state_id FROM lcm_trajectory_states s
-        JOIN lcm_trajectory_sources src ON src.source_id = s.source_id
+        SELECT s.state_id FROM trove_trajectory_states s
+        JOIN trove_trajectory_sources src ON src.source_id = s.source_id
         WHERE src.trajectory_id = ? AND s.state_index = ?
         """,
         (trajectory_id, state_index),
@@ -183,7 +183,7 @@ def _build_invisible_semantic_store(tmp_path: Path, *, provider=None):
     asset_root.mkdir()
     provider = provider or StateVectorProvider()
     store = TrajectoryStore(
-        tmp_path / "lcm.db",
+        tmp_path / "trove.db",
         _identity(),
         asset_root=asset_root,
         embedding_provider=provider,
@@ -290,7 +290,7 @@ def test_quota_caps_admissions(tmp_path):
     asset_root.mkdir()
     provider = StateVectorProvider()
     store = TrajectoryStore(
-        tmp_path / "lcm.db", _identity(), asset_root=asset_root,
+        tmp_path / "trove.db", _identity(), asset_root=asset_root,
         embedding_provider=provider,
     )
     store.insert(_source(
@@ -318,7 +318,7 @@ def test_pool_incumbents_are_not_readmitted(tmp_path):
     asset_root.mkdir()
     provider = StateVectorProvider()
     store = TrajectoryStore(
-        tmp_path / "lcm.db", _identity(), asset_root=asset_root,
+        tmp_path / "trove.db", _identity(), asset_root=asset_root,
         embedding_provider=provider,
     )
     store.insert(_source(
@@ -356,7 +356,7 @@ def test_delivery_unchanged_when_ranked_pool_fills_nucleus(tmp_path):
     asset_root.mkdir()
     provider = StateVectorProvider()
     store = TrajectoryStore(
-        tmp_path / "lcm.db", _identity(), asset_root=asset_root,
+        tmp_path / "trove.db", _identity(), asset_root=asset_root,
         embedding_provider=provider,
     )
     order = []
@@ -403,7 +403,7 @@ def test_five_per_trajectory_cap_preserved_at_selection(tmp_path):
     asset_root.mkdir()
     provider = StateVectorProvider()
     store = TrajectoryStore(
-        tmp_path / "lcm.db", _identity(), asset_root=asset_root,
+        tmp_path / "trove.db", _identity(), asset_root=asset_root,
         embedding_provider=provider,
     )
     # A long trajectory: one lexical seed + seven invisible alpha states, so the
@@ -458,7 +458,7 @@ def test_backfill_is_idempotent_and_resumable(tmp_path):
     asset_root.mkdir()
     provider = StateVectorProvider()
     store = TrajectoryStore(
-        tmp_path / "lcm.db", _identity(), asset_root=asset_root,
+        tmp_path / "trove.db", _identity(), asset_root=asset_root,
         embedding_provider=provider,
     )
     store.insert(_source(
@@ -498,7 +498,7 @@ def test_interrupted_profile_rebuild_leaves_no_active_profile_until_cutover(
     asset_root.mkdir()
     initial = StateVectorProvider()
     store = TrajectoryStore(
-        tmp_path / "lcm.db", _identity(), asset_root=asset_root,
+        tmp_path / "trove.db", _identity(), asset_root=asset_root,
         embedding_provider=initial,
     )
     store.insert(_source(
@@ -527,13 +527,13 @@ def test_interrupted_profile_rebuild_leaves_no_active_profile_until_cutover(
 
     assert store.active_state_semantic_profile() is None
     assert store._conn.execute(
-        "SELECT COUNT(*) FROM lcm_trajectory_state_embedding_profiles "
+        "SELECT COUNT(*) FROM trove_trajectory_state_embedding_profiles "
         "WHERE active = 1"
     ).fetchone()[0] == 0
     staged = store._conn.execute(
         """
         SELECT profile_digest, active
-        FROM lcm_trajectory_state_embedding_profiles
+        FROM trove_trajectory_state_embedding_profiles
         WHERE model_name = ?
         """,
         ("fake-state-v2",),
@@ -541,7 +541,7 @@ def test_interrupted_profile_rebuild_leaves_no_active_profile_until_cutover(
     assert staged is not None and int(staged["active"]) == 0
     assert staged["profile_digest"] != prior["profile_digest"]
     staged_count = store._conn.execute(
-        "SELECT COUNT(*) FROM lcm_trajectory_state_embeddings "
+        "SELECT COUNT(*) FROM trove_trajectory_state_embeddings "
         "WHERE profile_digest = ?",
         (staged["profile_digest"],),
     ).fetchone()[0]
@@ -558,7 +558,7 @@ def test_interrupted_profile_rebuild_leaves_no_active_profile_until_cutover(
     assert active["model_name"] == "fake-state-v2"
     assert active["profile_digest"] == staged["profile_digest"]
     assert store._conn.execute(
-        "SELECT COUNT(*) FROM lcm_trajectory_state_embedding_profiles "
+        "SELECT COUNT(*) FROM trove_trajectory_state_embedding_profiles "
         "WHERE active = 1"
     ).fetchone()[0] == 1
 
@@ -568,7 +568,7 @@ def test_forced_same_profile_rebuild_discards_prior_rows(tmp_path):
     asset_root.mkdir()
     initial = StateVectorProvider()
     store = TrajectoryStore(
-        tmp_path / "lcm.db", _identity(), asset_root=asset_root,
+        tmp_path / "trove.db", _identity(), asset_root=asset_root,
         embedding_provider=initial,
     )
     store.insert(_source(
@@ -597,7 +597,7 @@ def test_forced_same_profile_rebuild_discards_prior_rows(tmp_path):
         )
 
     assert store._conn.execute(
-        "SELECT COUNT(*) FROM lcm_trajectory_state_embeddings "
+        "SELECT COUNT(*) FROM trove_trajectory_state_embeddings "
         "WHERE profile_digest = ?",
         (completed["profile_digest"],),
     ).fetchone()[0] == 1
@@ -615,7 +615,7 @@ def test_dimension_probe_is_bounded_by_document_token_budget(tmp_path):
     asset_root.mkdir()
     provider = ProbeBudgetProvider(token_limit=5)
     store = TrajectoryStore(
-        tmp_path / "lcm.db", _identity(), asset_root=asset_root,
+        tmp_path / "trove.db", _identity(), asset_root=asset_root,
         embedding_provider=provider,
     )
     store.insert(_source(
@@ -680,7 +680,7 @@ def test_exact_budget_document_stays_normal_and_oversize_is_chunked(tmp_path):
     asset_root.mkdir()
     provider = StateVectorProvider()
     store = TrajectoryStore(
-        tmp_path / "lcm.db", _identity(), asset_root=asset_root,
+        tmp_path / "trove.db", _identity(), asset_root=asset_root,
         embedding_provider=provider,
     )
     exact_budget_text = "widget configuration export panel form"
@@ -709,7 +709,7 @@ def test_exact_budget_document_stays_normal_and_oversize_is_chunked(tmp_path):
     assert stats["states_embedded"] == 2
     oversize = _state_id(store, "answerpath", 1)
     row = store._conn.execute(
-        "SELECT vector FROM lcm_trajectory_state_embeddings WHERE state_id = ?",
+        "SELECT vector FROM trove_trajectory_state_embeddings WHERE state_id = ?",
         (oversize,),
     ).fetchone()
     assert row is not None and len(bytes(row["vector"])) == stats["dim"] * 4
@@ -720,7 +720,7 @@ def test_oversize_chunks_pack_by_item_and_token_budgets(tmp_path):
     asset_root.mkdir()
     provider = RequestBudgetProvider(token_limit=9)
     store = TrajectoryStore(
-        tmp_path / "lcm.db",
+        tmp_path / "trove.db",
         _identity(),
         asset_root=asset_root,
         embedding_provider=provider,
@@ -753,7 +753,7 @@ def test_smaller_batch_budget_routes_normal_document_through_chunks(tmp_path):
     asset_root.mkdir()
     provider = RequestBudgetProvider(token_limit=5)
     store = TrajectoryStore(
-        tmp_path / "lcm.db",
+        tmp_path / "trove.db",
         _identity(),
         asset_root=asset_root,
         embedding_provider=provider,
@@ -785,7 +785,7 @@ def test_oversize_progress_can_stop_between_chunks_with_partial_spend(tmp_path):
     asset_root.mkdir()
     provider = StateVectorProvider()
     store = TrajectoryStore(
-        tmp_path / "lcm.db",
+        tmp_path / "trove.db",
         _identity(),
         asset_root=asset_root,
         embedding_provider=provider,
@@ -830,7 +830,7 @@ def test_normal_batch_persist_failure_still_ledgers_spend(tmp_path):
     asset_root.mkdir()
     provider = StateVectorProvider()
     store = TrajectoryStore(
-        tmp_path / "lcm.db",
+        tmp_path / "trove.db",
         _identity(),
         asset_root=asset_root,
         embedding_provider=provider,
@@ -849,7 +849,7 @@ def test_normal_batch_persist_failure_still_ledgers_spend(tmp_path):
     store._conn.execute(
         """
         CREATE TRIGGER fail_state_embedding_insert
-        BEFORE INSERT ON lcm_trajectory_state_embeddings
+        BEFORE INSERT ON trove_trajectory_state_embeddings
         BEGIN
             SELECT RAISE(FAIL, 'simulated persist failure');
         END
@@ -874,7 +874,7 @@ def test_dimension_probe_progress_can_stop_before_document_request(tmp_path):
     asset_root.mkdir()
     provider = StateVectorProvider()
     store = TrajectoryStore(
-        tmp_path / "lcm.db",
+        tmp_path / "trove.db",
         _identity(),
         asset_root=asset_root,
         embedding_provider=provider,
@@ -956,7 +956,7 @@ def test_state_matrix_cache_refreshes_after_same_profile_rewrite(tmp_path):
 
     store._conn.execute(
         """
-        UPDATE lcm_trajectory_state_embeddings
+        UPDATE trove_trajectory_state_embeddings
         SET vector = CASE state_id
                 WHEN ? THEN ?
                 WHEN ? THEN ?
@@ -981,7 +981,7 @@ def test_arm_inert_without_provider_or_index(tmp_path):
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     # No provider attached and no state backfill performed.
-    store = TrajectoryStore(tmp_path / "lcm.db", _identity(), asset_root=asset_root)
+    store = TrajectoryStore(tmp_path / "trove.db", _identity(), asset_root=asset_root)
     store.insert(_source(
         asset_root,
         trajectory_id="answerpath",

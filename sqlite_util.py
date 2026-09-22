@@ -1,4 +1,4 @@
-"""SQLite lock-contention helpers shared by the LCM engine.
+"""SQLite lock-contention helpers shared by the TROVE engine.
 
 Isolated from ``engine.py`` (WS5 seam): lock-contention detection, bounded
 ``busy_timeout`` changes, and transaction-preserving savepoints are pure SQLite
@@ -204,7 +204,7 @@ def _sqlite_savepoint(conn: sqlite3.Connection) -> Iterator[None]:
     """Isolate helper writes without taking ownership of a caller transaction."""
     # UUID hex contains only identifier-safe characters and keeps every nested
     # helper's SAVEPOINT name unique with a fixed upper bound on name length.
-    name = f"lcm_{uuid.uuid4().hex}"
+    name = f"trove_{uuid.uuid4().hex}"
     conn.execute(f"SAVEPOINT {name}")
     try:
         yield

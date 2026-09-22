@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from hermes_lcm.adaptive_retrieval import (
+from hermes_trove.adaptive_retrieval import (
     MAX_CANDIDATE_REFS,
     MAX_CONTEXT_CHARS,
     MAX_CONTEXT_TOKENS,
@@ -16,14 +16,14 @@ from hermes_lcm.adaptive_retrieval import (
     EvidenceRequirement,
     requirements_digest,
 )
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.engine import LCMEngine
-import hermes_lcm.tools as lcm_tools
+from hermes_trove.config import TROVEConfig
+from hermes_trove.engine import TROVEEngine
+import hermes_trove.tools as trove_tools
 
 
-def _engine(tmp_path, *, enabled=True, name="lcm.db") -> LCMEngine:
-    engine = LCMEngine(
-        config=LCMConfig(
+def _engine(tmp_path, *, enabled=True, name="trove.db") -> TROVEEngine:
+    engine = TROVEEngine(
+        config=TROVEConfig(
             database_path=str(tmp_path / name),
             adaptive_retrieval_enabled=enabled,
         )
@@ -32,7 +32,7 @@ def _engine(tmp_path, *, enabled=True, name="lcm.db") -> LCMEngine:
     return engine
 
 
-def _append(engine: LCMEngine, content: str, *, day="2024-03-01") -> int:
+def _append(engine: TROVEEngine, content: str, *, day="2024-03-01") -> int:
     store_id = engine._store.append("session-a", {
         "role": "user",
         "content": content,
@@ -72,12 +72,12 @@ def _requirements(*, minimum_refs=1, description="visited places"):
     }]
 
 
-def _call(engine: LCMEngine, **args):
-    return json.loads(engine.handle_tool_call("lcm_retrieve", args))
+def _call(engine: TROVEEngine, **args):
+    return json.loads(engine.handle_tool_call("trove_retrieve", args))
 
 
 def _start(
-    engine: LCMEngine,
+    engine: TROVEEngine,
     *,
     question="Where did I travel?",
     operation="evidence_only",
@@ -97,13 +97,13 @@ def _start(
     )
 
 
-def _search(engine: LCMEngine, retrieval_id: str, store_id: int, **extra):
+def _search(engine: TROVEEngine, retrieval_id: str, store_id: int, **extra):
     return _call(
         engine,
         action="search",
         retrieval_id=retrieval_id,
         missing_slot="visits",
-        tool="lcm_expand",
+        tool="trove_expand",
         tool_args={"store_id": store_id},
         **extra,
     )
@@ -121,9 +121,9 @@ def _operand(evidence: dict, *, key: str):
 
 
 def test_retrieve_schema_matches_strict_runtime_contract():
-    from hermes_lcm.schemas import LCM_RETRIEVE
+    from hermes_trove.schemas import TROVE_RETRIEVE
 
-    parameters = LCM_RETRIEVE["parameters"]
+    parameters = TROVE_RETRIEVE["parameters"]
     assert parameters["additionalProperties"] is False
     assert "requirements" in parameters["properties"]
 
@@ -140,9 +140,9 @@ def test_retrieve_schema_matches_strict_runtime_contract():
 
 
 def test_default_off_and_env_opt_in_are_provider_neutral(monkeypatch, tmp_path):
-    monkeypatch.delenv("LCM_ADAPTIVE_RETRIEVAL_ENABLED", raising=False)
-    assert LCMConfig().adaptive_retrieval_enabled is False
-    assert LCMConfig.from_env().adaptive_retrieval_enabled is False
+    monkeypatch.delenv("TROVE_ADAPTIVE_RETRIEVAL_ENABLED", raising=False)
+    assert TROVEConfig().adaptive_retrieval_enabled is False
+    assert TROVEConfig.from_env().adaptive_retrieval_enabled is False
 
     disabled = _engine(tmp_path, enabled=False, name="disabled.db")
     try:
@@ -157,11 +157,11 @@ def test_default_off_and_env_opt_in_are_provider_neutral(monkeypatch, tmp_path):
     def provider_call_forbidden(*args, **kwargs):
         raise AssertionError("controller initialization must not call a provider")
 
-    monkeypatch.setattr(lcm_tools, "resolve_provider", provider_call_forbidden)
-    monkeypatch.setenv("LCM_ADAPTIVE_RETRIEVAL_ENABLED", "true")
-    config = LCMConfig.from_env()
+    monkeypatch.setattr(trove_tools, "resolve_provider", provider_call_forbidden)
+    monkeypatch.setenv("TROVE_ADAPTIVE_RETRIEVAL_ENABLED", "true")
+    config = TROVEConfig.from_env()
     assert config.adaptive_retrieval_enabled is True
-    enabled = LCMEngine(config=LCMConfig(
+    enabled = TROVEEngine(config=TROVEConfig(
         database_path=str(tmp_path / "enabled.db"),
         adaptive_retrieval_enabled=True,
     ))
@@ -283,7 +283,7 @@ def test_persisted_slot_refs_include_only_selected_evidence(tmp_path):
             action="search",
             retrieval_id=started["retrieval_id"],
             missing_slot="visits",
-            tool="lcm_load_session",
+            tool="trove_load_session",
             tool_args={"session_id": "session-a", "limit": 8},
         )
         refs_by_store_id = {
@@ -526,7 +526,7 @@ def test_summary_handle_is_bounded_lead_progress_not_evidence(
                     "node_id": "node-123",
                     "session_id": "session-a",
                     "summary": "Travel was discussed, but exact sources need expansion.",
-                    "expand_hint": "lcm_expand(node_id=node-123)",
+                    "expand_hint": "trove_expand(node_id=node-123)",
                 }],
                 "provenance": {
                     "provider": "voyage",
@@ -536,14 +536,14 @@ def test_summary_handle_is_bounded_lead_progress_not_evidence(
                 "metrics": {"query_count": 1},
             })
 
-        monkeypatch.setattr(lcm_tools, "lcm_recent", summary_only)
+        monkeypatch.setattr(trove_tools, "trove_recent", summary_only)
         started = _start(engine)
         result = _call(
             engine,
             action="search",
             retrieval_id=started["retrieval_id"],
             missing_slot="visits",
-            tool="lcm_recent",
+            tool="trove_recent",
             tool_args={"period": "month", "scope": "global"},
         )
         assert result["status"] == "active"
@@ -611,8 +611,8 @@ def test_round_budget_and_session_ownership_are_enforced(tmp_path):
 def test_profile_rebind_clears_ephemeral_controller_state(tmp_path):
     home_a = tmp_path / "profile-a"
     home_b = tmp_path / "profile-b"
-    engine = LCMEngine(
-        config=LCMConfig(adaptive_retrieval_enabled=True),
+    engine = TROVEEngine(
+        config=TROVEConfig(adaptive_retrieval_enabled=True),
         hermes_home=str(home_a),
     )
     try:
@@ -629,7 +629,7 @@ def test_profile_rebind_clears_ephemeral_controller_state(tmp_path):
         )
         assert expired["status"] == "error"
         assert "unknown or expired" in expired["error"]
-        assert engine._query_views.db_path == home_b / "lcm.db"
+        assert engine._query_views.db_path == home_b / "trove.db"
     finally:
         engine.shutdown()
 
@@ -648,14 +648,14 @@ def test_candidate_and_context_caps_apply_before_return(monkeypatch, tmp_path):
                 ]
             })
 
-        monkeypatch.setattr(lcm_tools, "lcm_query_state", many_exact_refs)
+        monkeypatch.setattr(trove_tools, "trove_query_state", many_exact_refs)
         started = _start(engine, minimum_refs=25)
         result = _call(
             engine,
             action="search",
             retrieval_id=started["retrieval_id"],
             missing_slot="visits",
-            tool="lcm_query_state",
+            tool="trove_query_state",
             tool_args={"subject_key": "user:self", "limit": 500},
         )
         assert result["budgets"]["candidate_refs"] <= MAX_CANDIDATE_REFS
@@ -671,7 +671,7 @@ def test_candidate_and_context_caps_apply_before_return(monkeypatch, tmp_path):
 @pytest.mark.parametrize(
     "mutation, expected",
     [
-        ({"question_id": "forbidden"}, "unsupported lcm_retrieve arguments"),
+        ({"question_id": "forbidden"}, "unsupported trove_retrieve arguments"),
         ({"identity": {"intent_type": "travel", "reference_answer": "Paris"}},
          "unsupported fields"),
     ],

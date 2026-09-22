@@ -1,4 +1,4 @@
-"""Deterministic hermes-lcm stress release checks."""
+"""Deterministic hermes-trove stress release checks."""
 
 from __future__ import annotations
 
@@ -144,9 +144,9 @@ class StressRun:
 
     @contextlib.contextmanager
     def patched_summarizers(self) -> Iterator[None]:
-        _ensure_hermes_lcm_package(self.plugin_dir, reload_submodules=True)
-        import hermes_lcm.engine as engine_mod
-        import hermes_lcm.tools as tools_mod
+        _ensure_hermes_trove_package(self.plugin_dir, reload_submodules=True)
+        import hermes_trove.engine as engine_mod
+        import hermes_trove.tools as tools_mod
 
         self._engine_mod = engine_mod
         self._tools_mod = tools_mod
@@ -161,14 +161,14 @@ class StressRun:
             tools_mod._synthesize_expansion_answer = self._original_synthesize
 
     def make_engine(self, case: str, **overrides: Any):
-        _ensure_hermes_lcm_package(self.plugin_dir)
-        from hermes_lcm.config import LCMConfig
-        from hermes_lcm.engine import LCMEngine
+        _ensure_hermes_trove_package(self.plugin_dir)
+        from hermes_trove.config import TROVEConfig
+        from hermes_trove.engine import TROVEEngine
 
         hermes_home = self.sandbox_dir / case / "home"
-        db_path = self.sandbox_dir / case / "lcm.db"
+        db_path = self.sandbox_dir / case / "trove.db"
         hermes_home.mkdir(parents=True, exist_ok=True)
-        cfg = LCMConfig(
+        cfg = TROVEConfig(
             database_path=str(db_path),
             fresh_tail_count=overrides.pop("fresh_tail_count", 8),
             leaf_chunk_tokens=overrides.pop("leaf_chunk_tokens", 240),
@@ -181,7 +181,7 @@ class StressRun:
             reserve_tokens_floor=overrides.pop("reserve_tokens_floor", 0),
             **overrides,
         )
-        engine = LCMEngine(config=cfg, hermes_home=str(hermes_home))
+        engine = TROVEEngine(config=cfg, hermes_home=str(hermes_home))
         engine.on_session_start(
             f"stress-{case}",
             platform="cli",
@@ -261,7 +261,7 @@ def run_stress_check(
 def write_stress_summary(path: str | Path, results: dict[str, Any]) -> None:
     output_path = Path(path)
     lines = [
-        "# hermes-lcm stress release-check summary",
+        "# hermes-trove stress release-check summary",
         "",
         f"stress_check_version: {results.get('stress_check_version')}",
         f"tier: {results.get('tier')}",
@@ -315,7 +315,7 @@ def deterministic_expand_answer(*, prompt: str, context_blocks: list[dict[str, A
     return "Deterministic expansion answer. " + ("; ".join(canaries[:20]) if canaries else "No canaries found.")
 
 
-def _clear_hermes_lcm_submodules(pkg: str = "hermes_lcm") -> None:
+def _clear_hermes_trove_submodules(pkg: str = "hermes_trove") -> None:
     package = sys.modules.get(pkg)
     prefix = f"{pkg}."
     for name in list(sys.modules):
@@ -328,15 +328,15 @@ def _clear_hermes_lcm_submodules(pkg: str = "hermes_lcm") -> None:
                 delattr(package, child_name)
 
 
-def _ensure_hermes_lcm_package(plugin_dir: Path, *, reload_submodules: bool = False) -> None:
+def _ensure_hermes_trove_package(plugin_dir: Path, *, reload_submodules: bool = False) -> None:
     ensure_agent_context_engine_importable()
-    pkg = "hermes_lcm"
+    pkg = "hermes_trove"
     if pkg in sys.modules:
         module = sys.modules[pkg]
         module_path = Path(getattr(module, "__path__", [plugin_dir])[0]).resolve()
         if module_path == plugin_dir.resolve():
             if reload_submodules:
-                _clear_hermes_lcm_submodules(pkg)
+                _clear_hermes_trove_submodules(pkg)
             return
         for name in list(sys.modules):
             if name == pkg or name.startswith(f"{pkg}."):
@@ -347,7 +347,7 @@ def _ensure_hermes_lcm_package(plugin_dir: Path, *, reload_submodules: bool = Fa
         submodule_search_locations=[str(plugin_dir)],
     )
     if spec is None:
-        raise RuntimeError(f"cannot create hermes_lcm package spec for {plugin_dir}")
+        raise RuntimeError(f"cannot create hermes_trove package spec for {plugin_dir}")
     mod = importlib.util.module_from_spec(spec)
     mod.__path__ = [str(plugin_dir)]
     mod.__package__ = pkg
@@ -436,7 +436,7 @@ def _db_counts(db_path: Path) -> dict[str, int]:
     out: dict[str, int] = {}
     con = sqlite3.connect(db_path)
     try:
-        for table in ["messages", "summary_nodes", "messages_fts", "nodes_fts", "lcm_lifecycle_state"]:
+        for table in ["messages", "summary_nodes", "messages_fts", "nodes_fts", "trove_lifecycle_state"]:
             try:
                 out[table] = int(con.execute(f"select count(*) from {table}").fetchone()[0])
             except sqlite3.Error:
@@ -456,7 +456,7 @@ def _sqlite_artifact_total_bytes(db_path: Path) -> int:
 
 
 def _externalized_payload_files(hermes_home: str | Path) -> list[Path]:
-    payload_dir = Path(hermes_home) / "lcm-large-outputs"
+    payload_dir = Path(hermes_home) / "trove-large-outputs"
     if not payload_dir.exists():
         return []
     return sorted(payload_dir.glob("*.json"))
@@ -481,8 +481,8 @@ def _json_contains(payload: Any, *needles: str) -> bool:
     return all(needle in serialized for needle in needles)
 
 
-def _lcm_grep_result_rows(payload: Any) -> list[Any]:
-    """Collect every result container supported by lcm_grep response variants."""
+def _trove_grep_result_rows(payload: Any) -> list[Any]:
+    """Collect every result container supported by trove_grep response variants."""
     if not isinstance(payload, dict):
         return []
     rows: list[Any] = []
@@ -501,15 +501,15 @@ def _tool_recall_contains(
     args: dict[str, Any] | None = None,
 ) -> tuple[bool, dict[str, Any]]:
     grep_args = {"query": query, "limit": 5, **(args or {})}
-    grep = run.call_tool(engine, "lcm_grep", grep_args)
-    grep_rows = _lcm_grep_result_rows(grep)
+    grep = run.call_tool(engine, "trove_grep", grep_args)
+    grep_rows = _trove_grep_result_rows(grep)
     if _json_contains(grep_rows, *needles):
         return True, {"grep": grep, "expanded": []}
     expanded_samples: list[dict[str, Any]] = []
     for result in grep_rows:
         if not isinstance(result, dict) or not result.get("store_id"):
             continue
-        expanded = run.call_tool(engine, "lcm_expand", {"store_id": int(result["store_id"]), "max_tokens": 800})
+        expanded = run.call_tool(engine, "trove_expand", {"store_id": int(result["store_id"]), "max_tokens": 800})
         expanded_samples.append({"store_id": int(result["store_id"]), "expand": expanded})
         if _json_contains(expanded, *needles):
             return True, {"grep": grep, "expanded": expanded_samples}
@@ -548,12 +548,12 @@ def _no_orphan_tool_results(messages: list[dict[str, Any]]) -> tuple[bool, list[
 
 
 def _case_multi_cycle_canary_recall(run: StressRun) -> None:
-    _ensure_hermes_lcm_package(run.plugin_dir)
-    from hermes_lcm.tokens import count_messages_tokens
+    _ensure_hermes_trove_package(run.plugin_dir)
+    from hermes_trove.tokens import count_messages_tokens
 
     case = "multi_cycle_canary_recall"
     engine = run.make_engine(case, fresh_tail_count=10, leaf_chunk_tokens=220, condensation_fanin=2)
-    messages: list[dict[str, Any]] = [{"role": "system", "content": "System anchor for LCM stress."}]
+    messages: list[dict[str, Any]] = [{"role": "system", "content": "System anchor for TROVE stress."}]
     expected: dict[str, str] = {}
     compressed_lengths: list[int] = []
     try:
@@ -585,8 +585,8 @@ def _case_multi_cycle_canary_recall(run: StressRun) -> None:
         expanded_missed: list[dict[str, Any]] = []
         for index in run.tier.multi_sample_indexes:
             cid = f"CANARY_LONG_{index:04d}"
-            grep = run.call_tool(engine, "lcm_grep", {"query": cid, "limit": 5, "sort": "relevance"})
-            grep_rows = _lcm_grep_result_rows(grep)
+            grep = run.call_tool(engine, "trove_grep", {"query": cid, "limit": 5, "sort": "relevance"})
+            grep_rows = _trove_grep_result_rows(grep)
             hay = _fts_plain(json.dumps(grep_rows, ensure_ascii=False))
             if cid not in hay or expected[cid] not in hay:
                 missed.append({"canary": cid, "grep": grep})
@@ -600,7 +600,7 @@ def _case_multi_cycle_canary_recall(run: StressRun) -> None:
             found_expanded = False
             expanded_samples: list[dict[str, Any]] = []
             for store_id in store_ids[:5]:
-                expanded = run.call_tool(engine, "lcm_expand", {"store_id": store_id, "max_tokens": 500})
+                expanded = run.call_tool(engine, "trove_expand", {"store_id": store_id, "max_tokens": 500})
                 expanded_samples.append({"store_id": store_id, "expand": expanded})
                 ehay = _fts_plain(json.dumps(expanded, ensure_ascii=False))
                 if cid in ehay and expected[cid] in ehay:
@@ -609,18 +609,18 @@ def _case_multi_cycle_canary_recall(run: StressRun) -> None:
             if not found_expanded:
                 expanded_missed.append({"canary": cid, "store_ids": store_ids[:5], "expand_samples": expanded_samples})
         if missed:
-            run.fail(case, "grep_canary_recall_miss", "lcm_grep failed to recover planted canaries from compacted session", {"missed": missed})
+            run.fail(case, "grep_canary_recall_miss", "trove_grep failed to recover planted canaries from compacted session", {"missed": missed})
         if expanded_missed:
-            run.fail(case, "expand_canary_recall_miss", "lcm_expand failed to recover raw planted canary content from grep result", {"missed": expanded_missed})
+            run.fail(case, "expand_canary_recall_miss", "trove_expand failed to recover raw planted canary content from grep result", {"missed": expanded_missed})
 
-        status = run.call_tool(engine, "lcm_status", {})
-        doctor = run.call_tool(engine, "lcm_doctor", {})
+        status = run.call_tool(engine, "trove_status", {})
+        doctor = run.call_tool(engine, "trove_doctor", {})
         run.record(case, "compressed_lengths", compressed_lengths[-10:])
         run.record(case, "status", status)
         run.record(case, "doctor", doctor)
         run.record(case, "db_counts", _db_counts(Path(engine._store.db_path)))
         if "error" in doctor:
-            run.fail(case, "doctor_error_after_stress", "lcm_doctor returned an error after normal stress compaction", {"doctor": doctor})
+            run.fail(case, "doctor_error_after_stress", "trove_doctor returned an error after normal stress compaction", {"doctor": doctor})
     finally:
         engine.shutdown()
 
@@ -633,7 +633,7 @@ def _case_redaction_and_externalization_boundaries(run: StressRun) -> None:
         "correct horse battery staple",
         "-----BEGIN SECRET-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCSTRESSKEY\n-----END PRIVATE KEY-----",
     ]
-    large_blob = base64.b64encode(("LCM-LARGE-PAYLOAD-" * 800).encode()).decode()
+    large_blob = base64.b64encode(("TROVE-LARGE-PAYLOAD-" * 800).encode()).decode()
     data_url = "data:image/png;base64," + large_blob
     engine = run.make_engine(
         case,
@@ -669,7 +669,7 @@ def _case_redaction_and_externalization_boundaries(run: StressRun) -> None:
                 leaked.append({"where": "sqlite_rows", "secret_prefix": secret[:80]})
             if secret and secret.encode() in db_file_bytes:
                 leaked.append({"where": "sqlite_file_bytes", "secret_prefix": secret[:80]})
-        ext_dir = Path(engine._hermes_home) / "lcm-large-outputs"
+        ext_dir = Path(engine._hermes_home) / "trove-large-outputs"
         ext_files = sorted(str(p) for p in ext_dir.glob("*.json")) if ext_dir.exists() else []
         ext_text = "\n".join(Path(p).read_text(errors="ignore") for p in ext_files)
         for secret in secret_values:
@@ -677,13 +677,13 @@ def _case_redaction_and_externalization_boundaries(run: StressRun) -> None:
                 leaked.append({"where": "externalized_payload_file", "secret_prefix": secret[:80]})
         if leaked:
             run.fail(case, "sensitive_or_large_payload_leak", "Sensitive or oversized payload material was persisted raw across storage boundaries", {"leaked": leaked, "externalized_files": ext_files[:5]})
-        grep_secret = run.call_tool(engine, "lcm_grep", {"query": secret_values[0], "limit": 10})
+        grep_secret = run.call_tool(engine, "trove_grep", {"query": secret_values[0], "limit": 10})
         grep_secret_results_text = _fts_plain(
-            json.dumps(_lcm_grep_result_rows(grep_secret), ensure_ascii=False)
+            json.dumps(_trove_grep_result_rows(grep_secret), ensure_ascii=False)
         )
         if secret_values[0] in grep_secret_results_text:
-            run.fail(case, "grep_returns_raw_secret", "lcm_grep returned a raw secret after sensitive-pattern redaction was enabled", {"grep": grep_secret})
-        grep_canary = run.call_tool(engine, "lcm_grep", {"query": "CANARY_SECRET_0001", "limit": 5})
+            run.fail(case, "grep_returns_raw_secret", "trove_grep returned a raw secret after sensitive-pattern redaction was enabled", {"grep": grep_secret})
+        grep_canary = run.call_tool(engine, "trove_grep", {"query": "CANARY_SECRET_0001", "limit": 5})
         if "CANARY_SECRET_0001" not in _fts_plain(json.dumps(grep_canary, ensure_ascii=False)):
             run.fail(case, "redaction_broke_nonsecret_recall", "Sensitive redaction/externalization broke ordinary canary recall", {"grep": grep_canary})
         run.record(case, "externalized_files", ext_files)
@@ -710,30 +710,30 @@ def _case_cross_session_scope_and_pagination(run: StressRun) -> None:
             engine.on_session_end(sid, compressed)
         engine.on_session_start("scope-b", platform="cli", conversation_id="conv-scope", hermes_home=str(Path(engine._hermes_home)))
 
-        current_a = run.call_tool(engine, "lcm_grep", {"query": "CANARY_SCOPE_A_000", "limit": 5})
-        all_a = run.call_tool(engine, "lcm_grep", {"query": "CANARY_SCOPE_A_000", "limit": 5, "session_scope": "all"})
-        explicit_a = run.call_tool(engine, "lcm_grep", {"query": "CANARY_SCOPE_A_000", "limit": 5, "session_scope": "session", "session_id": "scope-a"})
-        load_a_1 = run.call_tool(engine, "lcm_load_session", {"session_id": "scope-a", "limit": 7, "max_content_chars": 80})
+        current_a = run.call_tool(engine, "trove_grep", {"query": "CANARY_SCOPE_A_000", "limit": 5})
+        all_a = run.call_tool(engine, "trove_grep", {"query": "CANARY_SCOPE_A_000", "limit": 5, "session_scope": "all"})
+        explicit_a = run.call_tool(engine, "trove_grep", {"query": "CANARY_SCOPE_A_000", "limit": 5, "session_scope": "session", "session_id": "scope-a"})
+        load_a_1 = run.call_tool(engine, "trove_load_session", {"session_id": "scope-a", "limit": 7, "max_content_chars": 80})
         cursor = load_a_1.get("next_cursor") or 0
-        load_a_2 = run.call_tool(engine, "lcm_load_session", {"session_id": "scope-a", "limit": 7, "after_store_id": cursor, "max_content_chars": 80})
+        load_a_2 = run.call_tool(engine, "trove_load_session", {"session_id": "scope-a", "limit": 7, "after_store_id": cursor, "max_content_chars": 80})
 
-        if _json_contains(_lcm_grep_result_rows(current_a), "CANARY_SCOPE_A_000"):
-            run.fail(case, "current_scope_cross_session_leak", "lcm_grep current scope returned another session's raw content", {"current_result": current_a})
-        if not _json_contains(_lcm_grep_result_rows(all_a), "CANARY_SCOPE_A_000"):
-            run.fail(case, "all_scope_missing_cross_session_hit", "lcm_grep session_scope=all failed to find another session's raw content", {"all_result": all_a})
+        if _json_contains(_trove_grep_result_rows(current_a), "CANARY_SCOPE_A_000"):
+            run.fail(case, "current_scope_cross_session_leak", "trove_grep current scope returned another session's raw content", {"current_result": current_a})
+        if not _json_contains(_trove_grep_result_rows(all_a), "CANARY_SCOPE_A_000"):
+            run.fail(case, "all_scope_missing_cross_session_hit", "trove_grep session_scope=all failed to find another session's raw content", {"all_result": all_a})
         if not _json_contains(
-            _lcm_grep_result_rows(explicit_a), "CANARY_SCOPE_A_000"
+            _trove_grep_result_rows(explicit_a), "CANARY_SCOPE_A_000"
         ):
-            run.fail(case, "explicit_session_scope_missing_hit", "lcm_grep session_scope=session failed to find the requested session content", {"explicit_result": explicit_a})
+            run.fail(case, "explicit_session_scope_missing_hit", "trove_grep session_scope=session failed to find the requested session content", {"explicit_result": explicit_a})
         rows1 = load_a_1.get("messages") or load_a_1.get("rows") or []
         rows2 = load_a_2.get("messages") or load_a_2.get("rows") or []
         if not rows1 or not rows2:
-            run.fail(case, "load_session_pagination_empty", "lcm_load_session pagination returned empty pages for a populated session", {"page1": load_a_1, "page2": load_a_2})
+            run.fail(case, "load_session_pagination_empty", "trove_load_session pagination returned empty pages for a populated session", {"page1": load_a_1, "page2": load_a_2})
         else:
             ids1 = [row.get("store_id") for row in rows1 if isinstance(row, dict)]
             ids2 = [row.get("store_id") for row in rows2 if isinstance(row, dict)]
             if set(ids1) & set(ids2):
-                run.fail(case, "load_session_pagination_overlap", "lcm_load_session after_store_id pagination repeated rows", {"ids1": ids1, "ids2": ids2, "cursor": cursor})
+                run.fail(case, "load_session_pagination_overlap", "trove_load_session after_store_id pagination repeated rows", {"ids1": ids1, "ids2": ids2, "cursor": cursor})
         run.record(case, "current_a", current_a)
         run.record(case, "all_a", all_a)
         run.record(case, "explicit_a", explicit_a)
@@ -745,8 +745,8 @@ def _case_cross_session_scope_and_pagination(run: StressRun) -> None:
 
 
 def _case_query_fuzz_no_crash(run: StressRun) -> None:
-    _ensure_hermes_lcm_package(run.plugin_dir)
-    from hermes_lcm.tokens import count_messages_tokens
+    _ensure_hermes_trove_package(run.plugin_dir)
+    from hermes_trove.tokens import count_messages_tokens
 
     case = "query_fuzz_no_crash"
     engine = run.make_engine(case, fresh_tail_count=4, leaf_chunk_tokens=80)
@@ -763,14 +763,14 @@ def _case_query_fuzz_no_crash(run: StressRun) -> None:
         queries = weird_terms + ["\"quoted term\"", "owner/repo#123 OR 中文片段", "C++ NOT java", "***", "((((", "role:user", "CANARY_FUZZ_001", "FUZZ_001 term=owner/repo#123"]
         for query in queries:
             for sort in ["recency", "relevance", "hybrid", "not-a-sort"]:
-                res = run.call_tool(engine, "lcm_grep", {"query": query, "limit": 10, "sort": sort})
+                res = run.call_tool(engine, "trove_grep", {"query": query, "limit": 10, "sort": sort})
                 serialized = json.dumps(res, ensure_ascii=False)
                 if "Traceback" in serialized or ("error" in res and "must" not in str(res.get("error")) and "query" not in str(res.get("error")).lower()):
                     errors.append({"query": query, "sort": sort, "result": res})
         if errors:
-            run.fail(case, "grep_query_fuzz_errors", "lcm_grep returned internal errors for punctuation/unicode query fuzzing", {"errors": errors[:20]})
+            run.fail(case, "grep_query_fuzz_errors", "trove_grep returned internal errors for punctuation/unicode query fuzzing", {"errors": errors[:20]})
         run.record(case, "query_count", len(queries) * 4)
-        run.record(case, "sample_result", run.call_tool(engine, "lcm_grep", {"query": "CANARY_FUZZ_001", "limit": 3}))
+        run.record(case, "sample_result", run.call_tool(engine, "trove_grep", {"query": "CANARY_FUZZ_001", "limit": 3}))
     finally:
         engine.shutdown()
 
@@ -789,7 +789,7 @@ def _case_concurrent_read_write_smoke(run: StressRun) -> None:
             try:
                 with lock:
                     snapshot = list(messages)
-                res = run.call_tool(engine, "lcm_grep", {"query": "CANARY_CONCURRENT", "limit": 5}, messages=snapshot)
+                res = run.call_tool(engine, "trove_grep", {"query": "CANARY_CONCURRENT", "limit": 5}, messages=snapshot)
                 serialized = json.dumps(res).lower()
                 if "database is locked" in serialized or "traceback" in serialized:
                     thread_errors.append({"reader": idx, "result": res})
@@ -815,7 +815,7 @@ def _case_concurrent_read_write_smoke(run: StressRun) -> None:
         engine.on_session_end(engine.current_session_id, messages)
         if thread_errors:
             run.fail(case, "concurrent_read_write_errors", "Concurrent read/write smoke produced lock or internal errors", {"errors": thread_errors[:20]})
-        final = run.call_tool(engine, "lcm_grep", {"query": "CANARY_CONCURRENT_000", "limit": 5})
+        final = run.call_tool(engine, "trove_grep", {"query": "CANARY_CONCURRENT_000", "limit": 5})
         if "CANARY_CONCURRENT_000" not in _fts_plain(json.dumps(final, ensure_ascii=False)):
             run.fail(case, "concurrent_old_canary_missing", "Old canary missing after concurrent read/write stress", {"grep": final})
         run.record(case, "thread_errors_count", len(thread_errors))
@@ -826,18 +826,18 @@ def _case_concurrent_read_write_smoke(run: StressRun) -> None:
 
 
 def _case_lifecycle_soak_and_profile_rebinds(run: StressRun) -> None:
-    _ensure_hermes_lcm_package(run.plugin_dir)
-    from hermes_lcm.config import LCMConfig
-    from hermes_lcm.engine import LCMEngine
-    from hermes_lcm.tokens import count_messages_tokens
+    _ensure_hermes_trove_package(run.plugin_dir)
+    from hermes_trove.config import TROVEConfig
+    from hermes_trove.engine import TROVEEngine
+    from hermes_trove.tokens import count_messages_tokens
 
     case = "lifecycle_soak_and_profile_rebinds"
     case_dir = run.sandbox_dir / case
     hermes_home = case_dir / "primary-home"
-    db_path = case_dir / "lcm.db"
+    db_path = case_dir / "trove.db"
     conversation_id = "conv-lifecycle-soak"
     current_session = "lifecycle-session-000"
-    cfg = LCMConfig(
+    cfg = TROVEConfig(
         database_path=str(db_path),
         fresh_tail_count=5,
         leaf_chunk_tokens=120,
@@ -856,7 +856,7 @@ def _case_lifecycle_soak_and_profile_rebinds(run: StressRun) -> None:
     )
 
     def new_engine() -> Any:
-        engine = LCMEngine(config=cfg, hermes_home=str(hermes_home))
+        engine = TROVEEngine(config=cfg, hermes_home=str(hermes_home))
         engine.update_model("stress-model", 4_000, provider="benchmark")
         return engine
 
@@ -1044,7 +1044,7 @@ def _case_lifecycle_soak_and_profile_rebinds(run: StressRun) -> None:
                 continue
             pair = matching_pairs[0]
             engine.on_session_start(session_id, platform="cli", conversation_id=conversation_id, hermes_home=str(hermes_home))
-            expanded = run.call_tool(engine, "lcm_expand", {"externalized_ref": path.name, "max_tokens": 20_000})
+            expanded = run.call_tool(engine, "trove_expand", {"externalized_ref": path.name, "max_tokens": 20_000})
             expanded_ok = _json_contains(expanded, pair["canary"], pair["value"])
             payload_integrity_checks.append({
                 "ref": path.name,
@@ -1070,9 +1070,9 @@ def _case_lifecycle_soak_and_profile_rebinds(run: StressRun) -> None:
         wal_max_bytes = max(wal_max_bytes, _sqlite_artifact_bytes(db_path).get(f"{db_path.name}-wal", 0))
         if wal_max_bytes > run.tier.lifecycle_wal_soft_limit_bytes:
             run.fail(case, "wal_growth_exceeded_soft_limit", "Lifecycle soak SQLite WAL grew past the tier soft limit", {"wal_max_bytes": wal_max_bytes, "soft_limit": run.tier.lifecycle_wal_soft_limit_bytes})
-        doctor = run.call_tool(engine, "lcm_doctor", {})
+        doctor = run.call_tool(engine, "trove_doctor", {})
         if "error" in doctor:
-            run.fail(case, "doctor_error_after_lifecycle_soak", "lcm_doctor returned an error after lifecycle soak", {"doctor": doctor})
+            run.fail(case, "doctor_error_after_lifecycle_soak", "trove_doctor returned an error after lifecycle soak", {"doctor": doctor})
         fragmentation = engine._lifecycle.get_fragmentation_stats()
         if fragmentation.get("lifecycle_rows", 0) < 1:
             run.fail(case, "lifecycle_state_missing", "Lifecycle soak produced messages without lifecycle state rows", {"fragmentation": fragmentation})
@@ -1107,15 +1107,15 @@ def _case_lifecycle_soak_and_profile_rebinds(run: StressRun) -> None:
 
 
 def _profile_rebind_probe(run: StressRun, case: str) -> dict[str, Any]:
-    _ensure_hermes_lcm_package(run.plugin_dir)
-    from hermes_lcm.config import LCMConfig
-    from hermes_lcm.engine import LCMEngine
-    from hermes_lcm.tokens import count_messages_tokens
+    _ensure_hermes_trove_package(run.plugin_dir)
+    from hermes_trove.config import TROVEConfig
+    from hermes_trove.engine import TROVEEngine
+    from hermes_trove.tokens import count_messages_tokens
 
     root = run.sandbox_dir / case / "profiles"
     profile_a = root / "profile-a"
     profile_b = root / "profile-b"
-    cfg = LCMConfig(
+    cfg = TROVEConfig(
         fresh_tail_count=3,
         leaf_chunk_tokens=40,
         context_threshold=0.50,
@@ -1124,7 +1124,7 @@ def _profile_rebind_probe(run: StressRun, case: str) -> dict[str, Any]:
         large_output_externalization_threshold_chars=300,
         large_output_transcript_gc_enabled=True,
     )
-    engine = LCMEngine(config=cfg, hermes_home=str(profile_a))
+    engine = TROVEEngine(config=cfg, hermes_home=str(profile_a))
     engine.update_model("stress-model", 4_000, provider="benchmark")
     try:
         engine.on_session_start("profile-a-session", platform="cli", conversation_id="profile-a-conv", hermes_home=str(profile_a))
@@ -1146,7 +1146,7 @@ def _profile_rebind_probe(run: StressRun, case: str) -> dict[str, Any]:
         ]
         messages_b = engine.compress(messages_b, current_tokens=max(4_200, count_messages_tokens(messages_b)))
         engine.on_session_end("profile-b-session", messages_b)
-        profile_b_probe_for_a = run.call_tool(engine, "lcm_grep", {"query": "CANARY_PROFILE_A_000", "session_scope": "all", "limit": 5})
+        profile_b_probe_for_a = run.call_tool(engine, "trove_grep", {"query": "CANARY_PROFILE_A_000", "session_scope": "all", "limit": 5})
 
         engine.on_session_start("profile-a-session-2", platform="cli", conversation_id="profile-a-conv-2", hermes_home=str(profile_a))
         profile_a_recall, profile_a_probe = _tool_recall_contains(

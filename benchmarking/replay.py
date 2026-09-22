@@ -1,4 +1,4 @@
-"""Deterministic LCM replay runner for benchmark-driven preset tuning."""
+"""Deterministic TROVE replay runner for benchmark-driven preset tuning."""
 
 from __future__ import annotations
 
@@ -13,29 +13,29 @@ from typing import Any, Iterator
 
 from .metrics import canary_present, count_active_canaries, normalize_message_content
 from .standalone import ensure_agent_context_engine_importable
-from .types import LCMPolicy, ReplayFixture, ReplayMetrics, SummaryFailureMode, _summary_failure_mode
+from .types import TROVEPolicy, ReplayFixture, ReplayMetrics, SummaryFailureMode, _summary_failure_mode
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _CANARY_LINE_RE = re.compile(r"\b(CANARY_[A-Z0-9_]+)\s*=\s*([A-Z0-9_:-]+)")
 
 
-def _ensure_hermes_lcm_package() -> None:
-    """Make this source checkout importable as `hermes_lcm` without plugin registration."""
+def _ensure_hermes_trove_package() -> None:
+    """Make this source checkout importable as `hermes_trove` without plugin registration."""
     ensure_agent_context_engine_importable()
-    if "hermes_lcm" in sys.modules:
+    if "hermes_trove" in sys.modules:
         return
     spec = importlib.util.spec_from_file_location(
-        "hermes_lcm",
+        "hermes_trove",
         _REPO_ROOT / "__init__.py",
         submodule_search_locations=[str(_REPO_ROOT)],
     )
     if spec is None:
-        raise RuntimeError("could not create hermes_lcm package spec")
+        raise RuntimeError("could not create hermes_trove package spec")
     module = importlib.util.module_from_spec(spec)
     module.__path__ = [str(_REPO_ROOT)]
-    module.__package__ = "hermes_lcm"
-    sys.modules["hermes_lcm"] = module
+    module.__package__ = "hermes_trove"
+    sys.modules["hermes_trove"] = module
 
 
 def _safe_name(value: str) -> str:
@@ -43,7 +43,7 @@ def _safe_name(value: str) -> str:
     return safe or "replay"
 
 
-def _policy_run_key(policy: LCMPolicy) -> str:
+def _policy_run_key(policy: TROVEPolicy) -> str:
     return f"{_safe_name(policy.name)}__v{_safe_name(policy.policy_version)}"
 
 
@@ -81,27 +81,27 @@ def deterministic_summary(
 
 @contextmanager
 def patched_deterministic_summarizer(max_canaries: int = 1) -> Iterator[None]:
-    """Patch LCM summarization inside a fail-closed deterministic context."""
-    _ensure_hermes_lcm_package()
-    import hermes_lcm.engine as lcm_engine
+    """Patch TROVE summarization inside a fail-closed deterministic context."""
+    _ensure_hermes_trove_package()
+    import hermes_trove.engine as trove_engine
 
-    original = lcm_engine.summarize_with_escalation
+    original = trove_engine.summarize_with_escalation
 
     def _stub(**kwargs: Any) -> tuple[str, int]:
         return deterministic_summary(max_canaries=max_canaries, **kwargs)
 
-    lcm_engine.summarize_with_escalation = _stub
+    trove_engine.summarize_with_escalation = _stub
     try:
         yield
     finally:
-        lcm_engine.summarize_with_escalation = original
+        trove_engine.summarize_with_escalation = original
 
 
-def _config_from_policy(policy: LCMPolicy, database_path: Path):
-    _ensure_hermes_lcm_package()
-    from hermes_lcm.config import LCMConfig
+def _config_from_policy(policy: TROVEPolicy, database_path: Path):
+    _ensure_hermes_trove_package()
+    from hermes_trove.config import TROVEConfig
 
-    return LCMConfig(
+    return TROVEConfig(
         fresh_tail_count=policy.fresh_tail_count,
         leaf_chunk_tokens=policy.leaf_chunk_tokens,
         context_threshold=policy.context_threshold,
@@ -112,16 +112,16 @@ def _config_from_policy(policy: LCMPolicy, database_path: Path):
     )
 
 
-def _new_engine(policy: LCMPolicy, run_dir: Path):
-    _ensure_hermes_lcm_package()
-    from hermes_lcm.engine import LCMEngine
+def _new_engine(policy: TROVEPolicy, run_dir: Path):
+    _ensure_hermes_trove_package()
+    from hermes_trove.engine import TROVEEngine
 
     policy_key = _policy_run_key(policy)
-    db_path = run_dir / f"{policy_key}.lcm.db"
+    db_path = run_dir / f"{policy_key}.trove.db"
     hermes_home = run_dir / "hermes-home"
     hermes_home.mkdir(parents=True, exist_ok=True)
     config = _config_from_policy(policy, db_path)
-    engine = LCMEngine(config=config, hermes_home=str(hermes_home))
+    engine = TROVEEngine(config=config, hermes_home=str(hermes_home))
     session_id = f"bench-{policy_key}"
     conversation_id = f"bench-{policy_key}"
     engine.on_session_start(
@@ -143,7 +143,7 @@ def _new_engine(policy: LCMPolicy, run_dir: Path):
 def _grep_canary(engine: Any, canary: Any) -> bool:
     query = canary.expected_query or canary.id
     try:
-        grep_payload = json.loads(engine.handle_tool_call("lcm_grep", {"query": query, "limit": 5}))
+        grep_payload = json.loads(engine.handle_tool_call("trove_grep", {"query": query, "limit": 5}))
     except Exception:
         return False
     for hit in grep_payload.get("results", []):
@@ -158,7 +158,7 @@ def _grep_canary(engine: Any, canary: Any) -> bool:
         try:
             expanded = json.loads(
                 engine.handle_tool_call(
-                    "lcm_expand",
+                    "trove_expand",
                     {"store_id": int(store_id), "max_tokens": 100_000},
                 )
             )
@@ -189,14 +189,14 @@ def _summary_profile(fixture: ReplayFixture) -> tuple[int, SummaryFailureMode]:
 
 def run_replay(
     fixture: ReplayFixture,
-    policy: LCMPolicy,
+    policy: TROVEPolicy,
     *,
     output_dir: str | Path,
     max_summary_canaries: int = 2,
 ) -> ReplayMetrics:
-    """Replay one fixture against one LCM policy with deterministic summarization."""
-    _ensure_hermes_lcm_package()
-    from hermes_lcm.tokens import count_messages_tokens
+    """Replay one fixture against one TROVE policy with deterministic summarization."""
+    _ensure_hermes_trove_package()
+    from hermes_trove.tokens import count_messages_tokens
 
     root_dir = Path(output_dir)
     run_dir = root_dir / f"{_safe_name(fixture.name)}__{_policy_run_key(policy)}"
@@ -308,7 +308,7 @@ def run_replay(
 
 def run_replays(
     fixtures: list[ReplayFixture],
-    policies: list[LCMPolicy],
+    policies: list[TROVEPolicy],
     *,
     output_dir: str | Path,
 ) -> list[ReplayMetrics]:

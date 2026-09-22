@@ -7,18 +7,18 @@ import time
 
 import pytest
 
-from hermes_lcm import tools as lcm_tools
-from hermes_lcm.command import handle_lcm_command
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.engine import LCMEngine
-from hermes_lcm.store import MessageStore
+from hermes_trove import tools as trove_tools
+from hermes_trove.command import handle_trove_command
+from hermes_trove.config import TROVEConfig
+from hermes_trove.engine import TROVEEngine
+from hermes_trove.store import MessageStore
 
 
 @pytest.fixture
 def engine(tmp_path):
-    config = LCMConfig()
-    config.database_path = str(tmp_path / "lcm_test.db")
-    e = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+    config = TROVEConfig()
+    config.database_path = str(tmp_path / "trove_test.db")
+    e = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     e._session_id = "test-session"
     e._conversation_id = "conv-1"
     e.update_model("gpt-test", 200000, provider="openai-codex", api_mode="responses")
@@ -48,7 +48,7 @@ def _telemetry(engine):
 def _slash_status_fields(engine):
     return {
         key.strip(): value.strip()
-        for line in handle_lcm_command("status", engine).splitlines()
+        for line in handle_trove_command("status", engine).splitlines()
         if ":" in line
         for key, value in [line.split(":", 1)]
     }
@@ -56,7 +56,7 @@ def _slash_status_fields(engine):
 
 def _assert_total_compaction_surfaces(engine, expected):
     status = engine.get_status()
-    tool_status = json.loads(lcm_tools.lcm_status({}, engine=engine))
+    tool_status = json.loads(trove_tools.trove_status({}, engine=engine))
     slash_status = _slash_status_fields(engine)
 
     assert status["total_compactions"] == expected
@@ -179,10 +179,10 @@ def test_total_compactions_includes_first_compaction_after_session_rollover(
 
 
 def test_total_compactions_includes_first_compaction_after_engine_restart(tmp_path):
-    config = LCMConfig()
-    config.database_path = str(tmp_path / "lcm_test.db")
+    config = TROVEConfig()
+    config.database_path = str(tmp_path / "trove_test.db")
 
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     first.on_session_start(
         "test-session",
         platform="discord",
@@ -192,7 +192,7 @@ def test_total_compactions_includes_first_compaction_after_engine_restart(tmp_pa
     first.update_from_response(_hot_usage())
     first.shutdown()
 
-    restarted = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+    restarted = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     try:
         restarted.on_session_start(
             "test-session-next",
@@ -229,10 +229,10 @@ def test_total_compactions_rebaseline_when_session_id_binds_new_conversation(eng
 
 @pytest.mark.parametrize("record_mode", ["successful_compaction", "response_hook"])
 def test_compactions_increment_total_atomically_across_engines(tmp_path, record_mode):
-    config = LCMConfig(database_path=str(tmp_path / "lcm_test.db"))
+    config = TROVEConfig(database_path=str(tmp_path / "trove_test.db"))
     engines = [
-        LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home_a")),
-        LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home_b")),
+        TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home_a")),
+        TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home_b")),
     ]
     barrier = threading.Barrier(2, timeout=5)
     errors = []
@@ -284,10 +284,10 @@ def test_compactions_increment_total_atomically_across_engines(tmp_path, record_
 
 
 def test_zero_delta_snapshot_cannot_overwrite_concurrent_increment(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm_test.db"))
+    config = TROVEConfig(database_path=str(tmp_path / "trove_test.db"))
     engines = [
-        LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home_a")),
-        LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home_b")),
+        TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home_a")),
+        TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home_b")),
     ]
     barrier = threading.Barrier(2, timeout=5)
     errors = []
@@ -346,12 +346,12 @@ def test_zero_delta_snapshot_cannot_overwrite_concurrent_increment(tmp_path):
 
 
 def test_zero_delta_snapshot_preserves_concurrent_compaction_metadata(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm_test.db"))
-    snapshot_engine = LCMEngine(
+    config = TROVEConfig(database_path=str(tmp_path / "trove_test.db"))
+    snapshot_engine = TROVEEngine(
         config=config,
         hermes_home=str(tmp_path / "hermes_home_snapshot"),
     )
-    compaction_engine = LCMEngine(
+    compaction_engine = TROVEEngine(
         config=config,
         hermes_home=str(tmp_path / "hermes_home_compaction"),
     )
@@ -410,7 +410,7 @@ def test_zero_delta_snapshot_preserves_concurrent_compaction_metadata(tmp_path):
 
 
 def test_compaction_telemetry_lock_contention_is_nonblocking(tmp_path):
-    db_path = tmp_path / "lcm_test.db"
+    db_path = tmp_path / "trove_test.db"
     lock_owner = MessageStore(db_path)
     telemetry_store = MessageStore(db_path)
     lock_ready = threading.Event()
@@ -463,8 +463,8 @@ def test_compaction_telemetry_lock_contention_is_nonblocking(tmp_path):
 
 
 def test_successful_compaction_is_durable_before_response_hook(tmp_path, monkeypatch):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm_test.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove_test.db"),
         fresh_tail_count=2,
         leaf_chunk_tokens=1,
     )
@@ -479,7 +479,7 @@ def test_successful_compaction_is_durable_before_response_hook(tmp_path, monkeyp
         {"role": "assistant", "content": "fresh answer"},
     ]
 
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     first.on_session_start(
         "test-session",
         platform="cli",
@@ -508,7 +508,7 @@ def test_successful_compaction_is_durable_before_response_hook(tmp_path, monkeyp
     # the next per-turn telemetry snapshot.
     first.shutdown()
 
-    restarted = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+    restarted = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     try:
         restarted.on_session_start(
             "test-session-next",

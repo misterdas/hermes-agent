@@ -1,4 +1,4 @@
-"""Public lcm_* tool contract drift guards."""
+"""Public trove_* tool contract drift guards."""
 
 import ast
 import importlib
@@ -8,15 +8,15 @@ import textwrap
 from pathlib import Path
 from types import ModuleType
 
-import hermes_lcm.schemas as schemas
-import hermes_lcm.tools as lcm_tools
-from hermes_lcm.config import LCMConfig
+import hermes_trove.schemas as schemas
+import hermes_trove.tools as trove_tools
+from hermes_trove.config import TROVEConfig
 
 
-def _import_lcm_engine():
+def _import_trove_engine():
     try:
-        module = importlib.import_module("hermes_lcm.engine")
-        engine = getattr(module, "LCMEngine", None)
+        module = importlib.import_module("hermes_trove.engine")
+        engine = getattr(module, "TROVEEngine", None)
         if engine is not None:
             return engine
         # tests/conftest.py deliberately tolerates optional host imports and may
@@ -40,11 +40,11 @@ def _import_lcm_engine():
         setattr(context_engine_module, "ContextEngine", ContextEngine)
         sys.modules["agent.context_engine"] = context_engine_module
         setattr(agent_module, "context_engine", context_engine_module)
-        sys.modules.pop("hermes_lcm.engine", None)
-        return getattr(importlib.import_module("hermes_lcm.engine"), "LCMEngine")
+        sys.modules.pop("hermes_trove.engine", None)
+        return getattr(importlib.import_module("hermes_trove.engine"), "TROVEEngine")
 
 
-LCMEngine = _import_lcm_engine()
+TROVEEngine = _import_trove_engine()
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -72,12 +72,12 @@ def _manifest_tool_names() -> list[str]:
 def _schema_by_tool_name() -> dict[str, dict]:
     public_schemas = {}
     for symbol, value in vars(schemas).items():
-        if not symbol.startswith("LCM_"):
+        if not symbol.startswith("TROVE_"):
             continue
         if not isinstance(value, dict) or not isinstance(value.get("name"), str):
             continue
         name = value["name"]
-        if not name.startswith("lcm_"):
+        if not name.startswith("trove_"):
             continue
         expected_symbol = name.upper()
         assert symbol == expected_symbol, f"{symbol} should be exported as {expected_symbol}"
@@ -86,8 +86,8 @@ def _schema_by_tool_name() -> dict[str, dict]:
 
 
 def _engine_tool_schemas(tmp_path) -> list[dict]:
-    config = LCMConfig(database_path=str(tmp_path / "contract.db"))
-    engine = LCMEngine(config=config)
+    config = TROVEConfig(database_path=str(tmp_path / "contract.db"))
+    engine = TROVEEngine(config=config)
     try:
         return engine.get_tool_schemas()
     finally:
@@ -95,7 +95,7 @@ def _engine_tool_schemas(tmp_path) -> list[dict]:
 
 
 def _dispatch_tool_names() -> list[str]:
-    source = textwrap.dedent(inspect.getsource(LCMEngine.handle_tool_call))
+    source = textwrap.dedent(inspect.getsource(TROVEEngine.handle_tool_call))
     tree = ast.parse(source)
 
     for node in ast.walk(tree):
@@ -129,8 +129,8 @@ def test_public_tool_names_are_synchronized_across_contract_surfaces(tmp_path):
 
     _assert_unique("plugin.yaml provides_tools", manifest_tools)
     _assert_unique("schemas.py", list(schema_by_name))
-    _assert_unique("LCMEngine.get_tool_schemas", engine_tools)
-    _assert_unique("LCMEngine.handle_tool_call", dispatch_tools)
+    _assert_unique("TROVEEngine.get_tool_schemas", engine_tools)
+    _assert_unique("TROVEEngine.handle_tool_call", dispatch_tools)
 
     assert manifest_tools == engine_tools
     assert manifest_tools == dispatch_tools
@@ -142,8 +142,8 @@ def test_public_tool_names_are_synchronized_across_contract_surfaces(tmp_path):
 
 def test_engine_dispatch_handles_every_declared_public_tool(tmp_path, monkeypatch):
     manifest_tools = _manifest_tool_names()
-    config = LCMConfig(database_path=str(tmp_path / "dispatch.db"))
-    engine = LCMEngine(config=config)
+    config = TROVEConfig(database_path=str(tmp_path / "dispatch.db"))
+    engine = TROVEEngine(config=config)
     calls = []
 
     def make_fake_handler(expected_tool_name):
@@ -154,7 +154,7 @@ def test_engine_dispatch_handles_every_declared_public_tool(tmp_path, monkeypatc
         return fake_handler
 
     for tool_name in manifest_tools:
-        monkeypatch.setattr(lcm_tools, tool_name, make_fake_handler(tool_name))
+        monkeypatch.setattr(trove_tools, tool_name, make_fake_handler(tool_name))
 
     try:
         for tool_name in manifest_tools:
@@ -162,13 +162,13 @@ def test_engine_dispatch_handles_every_declared_public_tool(tmp_path, monkeypatc
             assert engine.handle_tool_call(tool_name, args) == f"handled:{tool_name}"
             assert calls[-1] == (tool_name, args, engine)
 
-        unknown = engine.handle_tool_call("lcm_missing", {})
-        assert "Unknown LCM tool: lcm_missing" in unknown
+        unknown = engine.handle_tool_call("trove_missing", {})
+        assert "Unknown TROVE tool: trove_missing" in unknown
     finally:
         engine.shutdown()
 
 
-def test_schema_module_exports_only_declared_public_lcm_tool_schemas():
+def test_schema_module_exports_only_declared_public_trove_tool_schemas():
     manifest_tools = _manifest_tool_names()
     schema_by_name = _schema_by_tool_name()
 
@@ -191,6 +191,6 @@ def test_public_tools_are_documented_in_readme_and_retrieval_reference():
         assert f"`{tool_name}`" in readme
         assert f"`{tool_name}`" in retrieval_reference
 
-    assert "lcm_inspect" in retrieval_reference
+    assert "trove_inspect" in retrieval_reference
     assert "metadata only" in retrieval_reference
-    assert "use `lcm_load_session`/`lcm_expand` when you need content" in retrieval_reference
+    assert "use `trove_load_session`/`trove_expand` when you need content" in retrieval_reference

@@ -11,22 +11,22 @@ import sys
 import types
 
 
-EXPECTED_LCM_TOOLS = {
-    "lcm_grep",
-    "lcm_recall",
-    "lcm_query_state",
-    "lcm_compute",
-    "lcm_compile_evidence",
-    "lcm_evidence_pack",
-    "lcm_retrieve",
-    "lcm_recent",
-    "lcm_load_session",
-    "lcm_describe",
-    "lcm_expand",
-    "lcm_expand_query",
-    "lcm_status",
-    "lcm_inspect",
-    "lcm_doctor",
+EXPECTED_TROVE_TOOLS = {
+    "trove_grep",
+    "trove_recall",
+    "trove_query_state",
+    "trove_compute",
+    "trove_compile_evidence",
+    "trove_evidence_pack",
+    "trove_retrieve",
+    "trove_recent",
+    "trove_load_session",
+    "trove_describe",
+    "trove_expand",
+    "trove_expand_query",
+    "trove_status",
+    "trove_inspect",
+    "trove_doctor",
 }
 
 
@@ -105,7 +105,7 @@ def _register_plugin_with_command(
     monkeypatch.setitem(sys.modules, "gateway", fake_gateway)
     monkeypatch.setitem(sys.modules, "gateway.session_context", fake_session_context)
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / module_name))
-    monkeypatch.setenv("LCM_ENABLE_SLASH_COMMAND", "1")
+    monkeypatch.setenv("TROVE_ENABLE_SLASH_COMMAND", "1")
 
     module = _load_plugin_entrypoint_module(module_name)
 
@@ -254,7 +254,7 @@ def test_plugin_manifest_lists_all_registered_tools():
     repo_root = Path(__file__).resolve().parent.parent
     manifest = (repo_root / "plugin.yaml").read_text(encoding="utf-8")
 
-    for tool_name in EXPECTED_LCM_TOOLS:
+    for tool_name in EXPECTED_TROVE_TOOLS:
         assert f"  - {tool_name}\n" in manifest
 
 
@@ -276,16 +276,16 @@ def test_install_script_creates_profile_aware_symlink_and_prints_activation_step
         text=True,
     )
 
-    target = hermes_home / "profiles" / "sandbox" / "plugins" / "hermes-lcm"
-    skill_target = hermes_home / "profiles" / "sandbox" / "skills" / "hermes-lcm"
+    target = hermes_home / "profiles" / "sandbox" / "plugins" / "hermes-trove"
+    skill_target = hermes_home / "profiles" / "sandbox" / "skills" / "hermes-trove"
     assert target.is_symlink()
     assert target.resolve() == repo_root.resolve()
     assert skill_target.is_symlink()
-    assert skill_target.resolve() == (repo_root / "skills" / "hermes-lcm").resolve()
+    assert skill_target.resolve() == (repo_root / "skills" / "hermes-trove").resolve()
     assert "plugins:" in result.stdout
-    assert "- hermes-lcm" in result.stdout
+    assert "- hermes-trove" in result.stdout
     assert "context:" in result.stdout
-    assert "engine: lcm" in result.stdout
+    assert "engine: trove" in result.stdout
     assert "Discoverable skill:" in result.stdout
     assert str(skill_target) in result.stdout
 
@@ -308,16 +308,16 @@ def test_install_script_is_idempotent_for_plugin_and_skill_links(tmp_path):
             text=True,
         )
 
-    assert (hermes_home / "plugins" / "hermes-lcm").resolve() == repo_root.resolve()
-    assert (hermes_home / "skills" / "hermes-lcm").resolve() == (
-        repo_root / "skills" / "hermes-lcm"
+    assert (hermes_home / "plugins" / "hermes-trove").resolve() == repo_root.resolve()
+    assert (hermes_home / "skills" / "hermes-trove").resolve() == (
+        repo_root / "skills" / "hermes-trove"
     ).resolve()
 
 
 def test_install_script_preflights_skill_conflict_before_creating_plugin_link(tmp_path):
     repo_root = Path(__file__).resolve().parent.parent
     hermes_home = tmp_path / "hermes-home"
-    skill_target = hermes_home / "skills" / "hermes-lcm"
+    skill_target = hermes_home / "skills" / "hermes-trove"
     skill_target.mkdir(parents=True)
     (skill_target / "SKILL.md").write_text("existing skill\n", encoding="utf-8")
 
@@ -335,18 +335,18 @@ def test_install_script_preflights_skill_conflict_before_creating_plugin_link(tm
 
     assert result.returncode != 0
     assert "Refusing to replace existing skill path" in result.stderr
-    assert not (hermes_home / "plugins" / "hermes-lcm").exists()
+    assert not (hermes_home / "plugins" / "hermes-trove").exists()
 
 
 def test_install_script_accepts_checkout_already_in_canonical_plugin_path(tmp_path):
     repo_root = Path(__file__).resolve().parent.parent
     hermes_home = tmp_path / "hermes-home"
-    checkout = hermes_home / "plugins" / "hermes-lcm"
+    checkout = hermes_home / "plugins" / "hermes-trove"
     (checkout / "scripts").mkdir(parents=True)
-    (checkout / "skills" / "hermes-lcm").mkdir(parents=True)
+    (checkout / "skills" / "hermes-trove").mkdir(parents=True)
     shutil.copy2(repo_root / "scripts" / "install.sh", checkout / "scripts" / "install.sh")
-    (checkout / "skills" / "hermes-lcm" / "SKILL.md").write_text(
-        "---\nname: hermes-lcm\ndescription: test\n---\n",
+    (checkout / "skills" / "hermes-trove" / "SKILL.md").write_text(
+        "---\nname: hermes-trove\ndescription: test\n---\n",
         encoding="utf-8",
     )
 
@@ -364,15 +364,15 @@ def test_install_script_accepts_checkout_already_in_canonical_plugin_path(tmp_pa
 
     assert result.returncode == 0, result.stderr
     assert checkout.is_dir()
-    skill_target = hermes_home / "skills" / "hermes-lcm"
+    skill_target = hermes_home / "skills" / "hermes-trove"
     assert skill_target.is_symlink()
-    assert skill_target.resolve() == (checkout / "skills" / "hermes-lcm").resolve()
+    assert skill_target.resolve() == (checkout / "skills" / "hermes-trove").resolve()
 
 
 def test_install_script_refuses_to_replace_existing_non_symlink_path(tmp_path):
     repo_root = Path(__file__).resolve().parent.parent
     hermes_home = tmp_path / "hermes-home"
-    target = hermes_home / "plugins" / "hermes-lcm"
+    target = hermes_home / "plugins" / "hermes-trove"
     target.mkdir(parents=True)
     (target / "README.txt").write_text("existing checkout", encoding="utf-8")
 
@@ -395,11 +395,11 @@ def test_install_script_refuses_to_replace_existing_non_symlink_path(tmp_path):
     assert target.is_dir()
 
 
-def test_lcm_grep_time_filters_use_anyof_not_union_type_arrays():
-    engine = _register_plugin_engine("hermes_lcm_schema_shape")
+def test_trove_grep_time_filters_use_anyof_not_union_type_arrays():
+    engine = _register_plugin_engine("hermes_trove_schema_shape")
     assert engine is not None
     schemas = {schema["name"]: schema for schema in engine.get_tool_schemas()}
-    properties = schemas["lcm_grep"]["parameters"]["properties"]
+    properties = schemas["trove_grep"]["parameters"]["properties"]
 
     for name in ("time_from", "time_to"):
         field = properties[name]
@@ -407,9 +407,9 @@ def test_lcm_grep_time_filters_use_anyof_not_union_type_arrays():
         assert "type" not in field
 
 
-def test_lcm_grep_declares_opt_in_externalized_content_scope():
-    engine = _register_plugin_engine("hermes_lcm_externalized_search_schema")
-    schema = next(item for item in engine.get_tool_schemas() if item["name"] == "lcm_grep")
+def test_trove_grep_declares_opt_in_externalized_content_scope():
+    engine = _register_plugin_engine("hermes_trove_externalized_search_schema")
+    schema = next(item for item in engine.get_tool_schemas() if item["name"] == "trove_grep")
     properties = schema["parameters"]["properties"]
 
     assert properties["content_scope"]["default"] == "history"
@@ -417,14 +417,14 @@ def test_lcm_grep_declares_opt_in_externalized_content_scope():
     assert properties["externalized_refs"]["maxItems"] == 256
 
 
-def test_plugin_entrypoint_registers_lcm_context_engine():
-    engine = _register_plugin_engine("hermes_lcm_packaging_entrypoint")
+def test_plugin_entrypoint_registers_trove_context_engine():
+    engine = _register_plugin_engine("hermes_trove_packaging_entrypoint")
 
     assert engine is not None
-    assert engine.name == "lcm"
+    assert engine.name == "trove"
     identity = engine.get_status()["runtime_identity"]
     repo_root = Path(__file__).resolve().parent.parent
-    assert identity["plugin_name"] == "hermes-lcm"
+    assert identity["plugin_name"] == "hermes-trove"
     assert identity["plugin_version"] == "1.0.0"
     assert Path(identity["plugin_path"]) == repo_root
     assert identity["database_path_source"] in {"config.database_path", "hermes_home", "default_home"}
@@ -435,11 +435,11 @@ def test_plugin_entrypoint_registers_lcm_context_engine():
     assert "plugin_git_dirty" in identity
 
     tool_names = {schema["name"] for schema in engine.get_tool_schemas()}
-    assert EXPECTED_LCM_TOOLS.issubset(tool_names)
+    assert EXPECTED_TROVE_TOOLS.issubset(tool_names)
 
 
-def test_plugin_entrypoint_registers_declared_lcm_tools():
-    module = _load_plugin_entrypoint_module("hermes_lcm_packaging_tool_registration")
+def test_plugin_entrypoint_registers_declared_trove_tools():
+    module = _load_plugin_entrypoint_module("hermes_trove_packaging_tool_registration")
     registered = []
 
     class _Ctx:
@@ -467,7 +467,7 @@ def test_plugin_entrypoint_registers_declared_lcm_tools():
     module.register(ctx)
 
     assert ctx.engine is not None
-    assert {entry["name"] for entry in registered} == EXPECTED_LCM_TOOLS
+    assert {entry["name"] for entry in registered} == EXPECTED_TROVE_TOOLS
     assert {entry["toolset"] for entry in registered} == {"context_engine"}
     for entry in registered:
         assert entry["schema"]["name"] == entry["name"]
@@ -475,8 +475,8 @@ def test_plugin_entrypoint_registers_declared_lcm_tools():
         assert callable(entry["handler"])
 
 
-def test_plugin_entrypoint_skips_registered_lcm_tools_without_message_forwarding():
-    module = _load_plugin_entrypoint_module("hermes_lcm_packaging_tool_registration_unsafe_host")
+def test_plugin_entrypoint_skips_registered_trove_tools_without_message_forwarding():
+    module = _load_plugin_entrypoint_module("hermes_trove_packaging_tool_registration_unsafe_host")
     registered = {}
 
     class _HermesAgentLikeCtx:
@@ -504,11 +504,11 @@ def test_plugin_entrypoint_skips_registered_lcm_tools_without_message_forwarding
 
     assert ctx.engine is not None
     assert registered == {}
-    assert EXPECTED_LCM_TOOLS.issubset({schema["name"] for schema in ctx.engine.get_tool_schemas()})
+    assert EXPECTED_TROVE_TOOLS.issubset({schema["name"] for schema in ctx.engine.get_tool_schemas()})
 
 
 def test_capability_false_host_log_describes_expected_path_b_fallback(caplog):
-    module = _load_plugin_entrypoint_module("hermes_lcm_packaging_expected_path_b_fallback")
+    module = _load_plugin_entrypoint_module("hermes_trove_packaging_expected_path_b_fallback")
     registered = []
 
     class _HermesAgentV016LikeCtx:
@@ -529,14 +529,14 @@ def test_capability_false_host_log_describes_expected_path_b_fallback(caplog):
     messages = "\n".join(record.getMessage() for record in caplog.records)
     assert ctx.engine is not None
     assert registered == []
-    assert EXPECTED_LCM_TOOLS.issubset({schema["name"] for schema in ctx.engine.get_tool_schemas()})
-    assert "LCM tools are available through context-engine schemas" in messages
+    assert EXPECTED_TROVE_TOOLS.issubset({schema["name"] for schema in ctx.engine.get_tool_schemas()})
+    assert "TROVE tools are available through context-engine schemas" in messages
     assert "expected Path B fallback" in messages
     assert "tool registration skipped because" not in messages
 
 
 def test_register_gracefully_degrades_when_host_lacks_register_tool():
-    module = _load_plugin_entrypoint_module("hermes_lcm_packaging_no_register_tool")
+    module = _load_plugin_entrypoint_module("hermes_trove_packaging_no_register_tool")
 
     class _CtxNoTool:
         def __init__(self):
@@ -549,11 +549,11 @@ def test_register_gracefully_degrades_when_host_lacks_register_tool():
     module.register(ctx)
 
     assert ctx.engine is not None
-    assert ctx.engine.name == "lcm"
+    assert ctx.engine.name == "trove"
 
 
-def test_plugin_entrypoint_registers_bundled_skill_and_active_lcm_recall_policy(tmp_path, monkeypatch):
-    module = _load_plugin_entrypoint_module("hermes_lcm_packaging_skill_and_policy")
+def test_plugin_entrypoint_registers_bundled_skill_and_active_trove_recall_policy(tmp_path, monkeypatch):
+    module = _load_plugin_entrypoint_module("hermes_trove_packaging_skill_and_policy")
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
     registered_skills = []
     hooks = {}
@@ -576,8 +576,8 @@ def test_plugin_entrypoint_registers_bundled_skill_and_active_lcm_recall_policy(
 
     assert len(registered_skills) == 1
     name, path, description = registered_skills[0]
-    assert name == "hermes-lcm"
-    assert path == Path(module.__file__).resolve().parent / "skills" / "hermes-lcm"
+    assert name == "hermes-trove"
+    assert path == Path(module.__file__).resolve().parent / "skills" / "hermes-trove"
     assert (path / "SKILL.md").is_file()
     assert "recall" in description.lower()
     assert len(hooks["pre_llm_call"]) == 1
@@ -590,19 +590,19 @@ def test_plugin_entrypoint_registers_bundled_skill_and_active_lcm_recall_policy(
     second = policy_hook(session_id="active-session")
     assert first == second
     assert first == {"context": module.get_recall_policy()}
-    assert "Hermes-LCM Recall Policy" in first["context"]
-    assert "lcm_recall" in first["context"]
-    assert "lcm_expand_query" in first["context"]
+    assert "Hermes-TROVE Recall Policy" in first["context"]
+    assert "trove_recall" in first["context"]
+    assert "trove_expand_query" in first["context"]
     ctx.engine.shutdown()
 
 
 def test_pre_llm_hook_disabled_toolset_is_identical_and_routed_adds_exact_session_evidence(
     tmp_path, monkeypatch
 ):
-    module = _load_plugin_entrypoint_module("hermes_lcm_packaging_preanswer_hook")
+    module = _load_plugin_entrypoint_module("hermes_trove_packaging_preanswer_hook")
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
-    monkeypatch.setenv("LCM_PREANSWER_EVIDENCE_ENABLED", "true")
-    monkeypatch.setenv("LCM_EMBEDDINGS_ENABLED", "false")
+    monkeypatch.setenv("TROVE_PREANSWER_EVIDENCE_ENABLED", "true")
+    monkeypatch.setenv("TROVE_EMBEDDINGS_ENABLED", "false")
     hooks = {}
 
     class _Ctx:
@@ -645,7 +645,7 @@ def test_pre_llm_hook_disabled_toolset_is_identical_and_routed_adds_exact_sessio
         user_message="Where do I live now?",
         baseline_refs=[
             {
-                "exact_ref": f"lcm:{source_id}:0-{len(source_text)}",
+                "exact_ref": f"trove:{source_id}:0-{len(source_text)}",
                 "quote": source_text,
             }
         ],
@@ -660,10 +660,10 @@ def test_pre_llm_hook_disabled_toolset_is_identical_and_routed_adds_exact_sessio
 
     assert disabled == {"context": policy}
     assert active["context"].startswith(
-        policy + "\n\n[Hermes-LCM selective session evidence"
+        policy + "\n\n[Hermes-TROVE selective session evidence"
     ), ctx.engine._last_preanswer_evidence_trace
     assert "Denver" in active["context"]
-    assert f"lcm:{current_id}:0-{len(current_text)}" in active["context"]
+    assert f"trove:{current_id}:0-{len(current_text)}" in active["context"]
     trace = ctx.engine._last_preanswer_evidence_trace
     assert trace["status"] == "augmented"
     assert trace["provenance"]["selector_calls"] == 0
@@ -674,10 +674,10 @@ def test_pre_llm_hook_disabled_toolset_is_identical_and_routed_adds_exact_sessio
 def test_pre_llm_hook_ordinary_path_makes_no_recall_or_selector_call(
     tmp_path, monkeypatch
 ):
-    module = _load_plugin_entrypoint_module("hermes_lcm_packaging_host_envelope")
+    module = _load_plugin_entrypoint_module("hermes_trove_packaging_host_envelope")
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
-    monkeypatch.setenv("LCM_PREANSWER_EVIDENCE_ENABLED", "true")
-    monkeypatch.setenv("LCM_EMBEDDINGS_ENABLED", "false")
+    monkeypatch.setenv("TROVE_PREANSWER_EVIDENCE_ENABLED", "true")
+    monkeypatch.setenv("TROVE_EMBEDDINGS_ENABLED", "false")
     hooks = {}
 
     class _Ctx:
@@ -714,10 +714,10 @@ def test_pre_llm_hook_ordinary_path_makes_no_recall_or_selector_call(
 
 
 def test_pre_llm_hook_routed_path_creates_one_answer_ready_baseline(tmp_path, monkeypatch):
-    module = _load_plugin_entrypoint_module("hermes_lcm_packaging_selective_baseline")
+    module = _load_plugin_entrypoint_module("hermes_trove_packaging_selective_baseline")
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
-    monkeypatch.setenv("LCM_PREANSWER_EVIDENCE_ENABLED", "true")
-    monkeypatch.setenv("LCM_EMBEDDINGS_ENABLED", "false")
+    monkeypatch.setenv("TROVE_PREANSWER_EVIDENCE_ENABLED", "true")
+    monkeypatch.setenv("TROVE_EMBEDDINGS_ENABLED", "false")
     hooks = {}
 
     class _Ctx:
@@ -744,7 +744,7 @@ def test_pre_llm_hook_routed_path_creates_one_answer_ready_baseline(tmp_path, mo
 
     def handle(tool, args, **_kwargs):
         calls.append((tool, args))
-        assert tool == "lcm_recall"
+        assert tool == "trove_recall"
         return json.dumps(
             {
                 "hits": [
@@ -768,7 +768,7 @@ def test_pre_llm_hook_routed_path_creates_one_answer_ready_baseline(tmp_path, mo
 
     assert len(calls) == 1
     assert calls[0][1]["detail"] == "answer_ready"
-    assert f"lcm:{fact_id}:0-{len(fact)}" in response["context"]
+    assert f"trove:{fact_id}:0-{len(fact)}" in response["context"]
     assert ctx.engine._last_preanswer_evidence_trace["status"] == "augmented"
     ctx.engine.shutdown()
 
@@ -776,12 +776,12 @@ def test_pre_llm_hook_routed_path_creates_one_answer_ready_baseline(tmp_path, mo
 def test_pre_llm_hook_selective_compiler_uses_existing_auxiliary_seam_and_fails_open(
     tmp_path, monkeypatch
 ):
-    module = _load_plugin_entrypoint_module("hermes_lcm_packaging_selective_compiler")
+    module = _load_plugin_entrypoint_module("hermes_trove_packaging_selective_compiler")
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
-    monkeypatch.setenv("LCM_PREANSWER_EVIDENCE_ENABLED", "true")
-    monkeypatch.setenv("LCM_SELECTIVE_COMPILER_ENABLED", "true")
-    monkeypatch.setenv("LCM_SELECTIVE_COMPILER_MODEL", "selector-test-model")
-    monkeypatch.setenv("LCM_EMBEDDINGS_ENABLED", "false")
+    monkeypatch.setenv("TROVE_PREANSWER_EVIDENCE_ENABLED", "true")
+    monkeypatch.setenv("TROVE_SELECTIVE_COMPILER_ENABLED", "true")
+    monkeypatch.setenv("TROVE_SELECTIVE_COMPILER_MODEL", "selector-test-model")
+    monkeypatch.setenv("TROVE_EMBEDDINGS_ENABLED", "false")
     hooks = {}
 
     class _Ctx:
@@ -810,8 +810,8 @@ def test_pre_llm_hook_selective_compiler_uses_existing_auxiliary_seam_and_fails_
         "purchase-b", {"role": "user", "content": second, "timestamp": observed_at}
     )
     refs = [
-        {"exact_ref": f"lcm:{first_id}:0-{len(first)}", "quote": first},
-        {"exact_ref": f"lcm:{second_id}:0-{len(second)}", "quote": second},
+        {"exact_ref": f"trove:{first_id}:0-{len(first)}", "quote": first},
+        {"exact_ref": f"trove:{second_id}:0-{len(second)}", "quote": second},
     ]
     selective = importlib.import_module(f"{module.__name__}.selective_compiler")
     calls = []
@@ -859,7 +859,7 @@ def test_pre_llm_hook_selective_compiler_uses_existing_auxiliary_seam_and_fails_
     )
     assert calls[0][0]["operation"] == "sum"
     assert calls[0][1:] == ("selector-test-model", 8.0)
-    assert "lcm-selective-evidence" in compiled["context"]
+    assert "trove-selective-evidence" in compiled["context"]
     assert ctx.engine._last_preanswer_evidence_trace["computation"]["result_value"] == 50
 
     def fail(*_args, **_kwargs):
@@ -873,7 +873,7 @@ def test_pre_llm_hook_selective_compiler_uses_existing_auxiliary_seam_and_fails_
         enabled_toolsets=["context_engine"],
         baseline_refs=refs,
     )
-    assert "lcm-selective-evidence" not in fallback["context"]
+    assert "trove-selective-evidence" not in fallback["context"]
     assert fallback["context"].startswith(module.get_recall_policy())
     ctx.engine.shutdown()
 
@@ -882,12 +882,12 @@ def test_pre_llm_hook_requirements_mode_uses_compiler_without_selector(
     tmp_path, monkeypatch
 ):
     _ensure_agent_context_engine_importable(monkeypatch)
-    module = _load_plugin_entrypoint_module("hermes_lcm_packaging_requirements_v1")
+    module = _load_plugin_entrypoint_module("hermes_trove_packaging_requirements_v1")
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
-    monkeypatch.setenv("LCM_PREANSWER_EVIDENCE_ENABLED", "true")
-    monkeypatch.setenv("LCM_PREANSWER_EVIDENCE_MODE", "requirements_v1")
-    monkeypatch.setenv("LCM_SELECTIVE_COMPILER_ENABLED", "true")
-    monkeypatch.setenv("LCM_EMBEDDINGS_ENABLED", "false")
+    monkeypatch.setenv("TROVE_PREANSWER_EVIDENCE_ENABLED", "true")
+    monkeypatch.setenv("TROVE_PREANSWER_EVIDENCE_MODE", "requirements_v1")
+    monkeypatch.setenv("TROVE_SELECTIVE_COMPILER_ENABLED", "true")
+    monkeypatch.setenv("TROVE_EMBEDDINGS_ENABLED", "false")
     hooks = {}
 
     class _Ctx:
@@ -923,7 +923,7 @@ def test_pre_llm_hook_requirements_mode_uses_compiler_without_selector(
             "timestamp": observed_before_question,
         },
     )
-    baseline = [{"exact_ref": f"lcm:{prompt_id}:0-{len(prompt)}", "quote": prompt}]
+    baseline = [{"exact_ref": f"trove:{prompt_id}:0-{len(prompt)}", "quote": prompt}]
     product_calls = []
 
     def handle(tool, args, **_kwargs):
@@ -941,9 +941,9 @@ def test_pre_llm_hook_requirements_mode_uses_compiler_without_selector(
     )
 
     assert product_calls == []
-    assert "lcm-answer-brief" in response["context"]
+    assert "trove-answer-brief" in response["context"]
     assert "35 minutes" in response["context"]
-    assert f"lcm:{answer_id}:" in response["context"]
+    assert f"trove:{answer_id}:" in response["context"]
     trace = ctx.engine._last_preanswer_evidence_trace
     assert trace["state"] == "answer_sufficient"
     assert trace["provenance"]["selector_calls"] == 0
@@ -955,12 +955,12 @@ def test_pre_llm_hook_renders_internally_recalled_answer_sufficient_fact(
 ):
     _ensure_agent_context_engine_importable(monkeypatch)
     module = _load_plugin_entrypoint_module(
-        "hermes_lcm_packaging_requirements_internal_baseline"
+        "hermes_trove_packaging_requirements_internal_baseline"
     )
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
-    monkeypatch.setenv("LCM_PREANSWER_EVIDENCE_ENABLED", "true")
-    monkeypatch.setenv("LCM_PREANSWER_EVIDENCE_MODE", "requirements_v1")
-    monkeypatch.setenv("LCM_EMBEDDINGS_ENABLED", "false")
+    monkeypatch.setenv("TROVE_PREANSWER_EVIDENCE_ENABLED", "true")
+    monkeypatch.setenv("TROVE_PREANSWER_EVIDENCE_MODE", "requirements_v1")
+    monkeypatch.setenv("TROVE_EMBEDDINGS_ENABLED", "false")
     hooks = {}
 
     class _Ctx:
@@ -982,12 +982,12 @@ def test_pre_llm_hook_renders_internally_recalled_answer_sufficient_fact(
     )
 
     def handle(tool, args, **_kwargs):
-        assert tool == "lcm_recall"
+        assert tool == "trove_recall"
         return json.dumps(
             {
                 "hits": [
                     {
-                        "exact_ref": f"lcm:{fact_id}:0-{len(fact)}",
+                        "exact_ref": f"trove:{fact_id}:0-{len(fact)}",
                         "content": fact,
                     }
                 ]
@@ -1002,9 +1002,9 @@ def test_pre_llm_hook_renders_internally_recalled_answer_sufficient_fact(
         enabled_toolsets=["context_engine"],
     )
 
-    assert "lcm-answer-brief" in response["context"]
+    assert "trove-answer-brief" in response["context"]
     assert "15 point" in response["context"]
-    assert f"lcm:{fact_id}:9-18" in response["context"]
+    assert f"trove:{fact_id}:9-18" in response["context"]
     trace = ctx.engine._last_preanswer_evidence_trace
     assert trace["state"] == "answer_sufficient"
     assert trace["reason_code"] == "baseline_already_answer_sufficient"
@@ -1015,11 +1015,11 @@ def test_pre_llm_hook_requirements_ordinary_and_disabled_toolset_are_byte_identi
     tmp_path, monkeypatch
 ):
     _ensure_agent_context_engine_importable(monkeypatch)
-    module = _load_plugin_entrypoint_module("hermes_lcm_packaging_requirements_noop")
+    module = _load_plugin_entrypoint_module("hermes_trove_packaging_requirements_noop")
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
-    monkeypatch.setenv("LCM_PREANSWER_EVIDENCE_ENABLED", "true")
-    monkeypatch.setenv("LCM_PREANSWER_EVIDENCE_MODE", "requirements_v1")
-    monkeypatch.setenv("LCM_EMBEDDINGS_ENABLED", "false")
+    monkeypatch.setenv("TROVE_PREANSWER_EVIDENCE_ENABLED", "true")
+    monkeypatch.setenv("TROVE_PREANSWER_EVIDENCE_MODE", "requirements_v1")
+    monkeypatch.setenv("TROVE_EMBEDDINGS_ENABLED", "false")
     hooks = {}
 
     class _Ctx:
@@ -1061,7 +1061,7 @@ def test_pre_llm_hook_requirements_ordinary_and_disabled_toolset_are_byte_identi
 def test_plugin_entrypoint_gracefully_degrades_without_skill_or_hook_registration(
     tmp_path, monkeypatch
 ):
-    module = _load_plugin_entrypoint_module("hermes_lcm_packaging_legacy_guidance_host")
+    module = _load_plugin_entrypoint_module("hermes_trove_packaging_legacy_guidance_host")
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
 
     class _LegacyCtx:
@@ -1075,12 +1075,12 @@ def test_plugin_entrypoint_gracefully_degrades_without_skill_or_hook_registratio
     module.register(ctx)
 
     assert ctx.engine is not None
-    assert ctx.engine.name == "lcm"
+    assert ctx.engine.name == "trove"
     ctx.engine.shutdown()
 
 
 def test_register_gracefully_degrades_when_register_tool_hook_raises():
-    module = _load_plugin_entrypoint_module("hermes_lcm_packaging_register_tool_raises")
+    module = _load_plugin_entrypoint_module("hermes_trove_packaging_register_tool_raises")
 
     class _CtxRaisesTool:
         context_engine_tool_handlers_receive_messages = True
@@ -1100,12 +1100,12 @@ def test_register_gracefully_degrades_when_register_tool_hook_raises():
     module.register(ctx)
 
     assert ctx.engine is not None
-    assert ctx.engine.name == "lcm"
+    assert ctx.engine.name == "trove"
     assert ctx.register_tool_calls
 
 
 def test_registered_tool_handlers_route_through_engine_handle_tool_call(monkeypatch):
-    module = _load_plugin_entrypoint_module("hermes_lcm_packaging_tool_handler_route")
+    module = _load_plugin_entrypoint_module("hermes_trove_packaging_tool_handler_route")
     registered = {}
 
     class _Ctx:
@@ -1131,7 +1131,7 @@ def test_registered_tool_handlers_route_through_engine_handle_tool_call(monkeypa
     ctx = _Ctx()
     module.register(ctx)
     assert ctx.engine is not None
-    assert set(registered) == EXPECTED_LCM_TOOLS
+    assert set(registered) == EXPECTED_TROVE_TOOLS
 
     calls = []
 
@@ -1146,14 +1146,14 @@ def test_registered_tool_handlers_route_through_engine_handle_tool_call(monkeypa
         args = {"query": "current turn"}
         assert ctx.registry_dispatch(tool_name, args, messages) == f"handled:{tool_name}"
 
-    assert {name for name, _, _ in calls} == EXPECTED_LCM_TOOLS
+    assert {name for name, _, _ in calls} == EXPECTED_TROVE_TOOLS
     for name, args, kwargs in calls:
         assert args == {"query": "current turn"}
         assert kwargs["messages"] == messages
 
 
 def test_git_runtime_identity_preserves_unknown_dirty_state_when_git_probe_fails(tmp_path, monkeypatch):
-    module_name = "hermes_lcm_packaging_entrypoint_git_probe_failure"
+    module_name = "hermes_trove_packaging_entrypoint_git_probe_failure"
     _register_plugin_engine(module_name)
     identity_module = sys.modules[f"{module_name}.runtime_identity"]
 
@@ -1173,7 +1173,7 @@ def test_git_runtime_identity_preserves_unknown_dirty_state_when_git_probe_fails
 
 
 def test_git_runtime_identity_reports_untracked_files_as_dirty(tmp_path, monkeypatch):
-    module_name = "hermes_lcm_packaging_entrypoint_git_untracked"
+    module_name = "hermes_trove_packaging_entrypoint_git_untracked"
     _register_plugin_engine(module_name)
     identity_module = sys.modules[f"{module_name}.runtime_identity"]
 
@@ -1200,16 +1200,16 @@ def test_git_runtime_identity_reports_untracked_files_as_dirty(tmp_path, monkeyp
     assert identity["plugin_git_dirty"] is True
 
 
-def test_plugin_entrypoint_registration_is_repeatable_and_returns_lcm_engine():
-    engine = _register_plugin_engine("hermes_lcm_packaging_entrypoint_repeat")
+def test_plugin_entrypoint_registration_is_repeatable_and_returns_trove_engine():
+    engine = _register_plugin_engine("hermes_trove_packaging_entrypoint_repeat")
 
     assert engine is not None
-    assert engine.name == "lcm"
+    assert engine.name == "trove"
 
 
 def test_register_gracefully_degrades_when_legacy_host_lacks_register_tool():
     """Guard regression: register() must not raise when ctx lacks register_tool."""
-    module = _load_plugin_entrypoint_module("hermes_lcm_no_register_tool")
+    module = _load_plugin_entrypoint_module("hermes_trove_no_register_tool")
 
     class _CtxNoTool:
         def __init__(self):
@@ -1221,12 +1221,12 @@ def test_register_gracefully_degrades_when_legacy_host_lacks_register_tool():
     # Must not raise AttributeError on hosts without register_tool
     module.register(ctx)
     assert ctx.engine is not None
-    assert ctx.engine.name == "lcm"
+    assert ctx.engine.name == "trove"
 
 
 def test_register_continues_when_register_tool_raises_type_error():
     """Regression: register() must not abort when register_tool exists but raises TypeError."""
-    module = _load_plugin_entrypoint_module("hermes_lcm_type_error_tool")
+    module = _load_plugin_entrypoint_module("hermes_trove_type_error_tool")
 
     class _CtxRaisingTool:
         context_engine_tool_handlers_receive_messages = True
@@ -1242,7 +1242,7 @@ def test_register_continues_when_register_tool_raises_type_error():
     # Must not raise — should log warning and continue
     module.register(ctx)
     assert ctx.engine is not None
-    assert ctx.engine.name == "lcm"
+    assert ctx.engine.name == "trove"
 
 
 def test_registered_tool_handler_forwards_messages_to_engine_handle_tool_call(monkeypatch):
@@ -1254,7 +1254,7 @@ def test_registered_tool_handler_forwards_messages_to_engine_handle_tool_call(mo
     register_tool signatures will NOT have tools registered — they rely on
     the native context-engine path instead.
     """
-    module = _load_plugin_entrypoint_module("hermes_lcm_handler_forward")
+    module = _load_plugin_entrypoint_module("hermes_trove_handler_forward")
 
     registered = {}  # tool_name -> handler
 
@@ -1282,7 +1282,7 @@ def test_registered_tool_handler_forwards_messages_to_engine_handle_tool_call(mo
 
     # Call each registered handler with messages=... kwarg
     test_messages = [{"role": "user", "content": "test"}]
-    for tool_name in ("lcm_grep", "lcm_status", "lcm_inspect", "lcm_doctor"):
+    for tool_name in ("trove_grep", "trove_status", "trove_inspect", "trove_doctor"):
         handler = registered.get(tool_name)
         assert handler is not None, f"handler for {tool_name} not registered"
         result = handler({"query": tool_name}, messages=test_messages)
@@ -1291,9 +1291,9 @@ def test_registered_tool_handler_forwards_messages_to_engine_handle_tool_call(mo
 
     # Verify handle_tool_call was invoked for each
     called_names = {c[0] for c in calls}
-    assert "lcm_grep" in called_names
-    assert "lcm_status" in called_names
-    assert "lcm_doctor" in called_names
+    assert "trove_grep" in called_names
+    assert "trove_status" in called_names
+    assert "trove_doctor" in called_names
 
     # Verify messages=... kwarg was forwarded
     for name, args, kwargs in calls:
@@ -1309,11 +1309,11 @@ def test_slash_status_matches_active_tool_clone_after_rebind_and_side_channel(
     session_values = {
         "HERMES_SESSION_KEY": "agent:main:discord:dm:42",
     }
-    monkeypatch.setenv("LCM_STATELESS_SESSION_PATTERNS", "side-channel")
+    monkeypatch.setenv("TROVE_STATELESS_SESSION_PATTERNS", "side-channel")
     ctx = _register_plugin_with_command(
         monkeypatch,
         tmp_path,
-        "hermes_lcm_slash_active_clone",
+        "hermes_trove_slash_active_clone",
         session_values,
     )
     prototype = ctx.engine
@@ -1326,8 +1326,8 @@ def test_slash_status_matches_active_tool_clone_after_rebind_and_side_channel(
             conversation_id="agent:main:discord:dm:42",
         )
 
-        tool_status = json.loads(clone.handle_tool_call("lcm_status", {}))
-        slash_status = _slash_status_fields(ctx.commands["lcm"]("status"))
+        tool_status = json.loads(clone.handle_tool_call("trove_status", {}))
+        slash_status = _slash_status_fields(ctx.commands["trove"]("status"))
         assert slash_status["session_id"] == tool_status["session_id"]
         assert (
             slash_status["conversation_id"]
@@ -1347,7 +1347,7 @@ def test_slash_status_matches_active_tool_clone_after_rebind_and_side_channel(
         session_values.update({
             "HERMES_SESSION_KEY": "agent:main:discord:dm:84",
         })
-        rebound = _slash_status_fields(ctx.commands["lcm"]("status"))
+        rebound = _slash_status_fields(ctx.commands["trove"]("status"))
         assert rebound["session_id"] == "discord-session-b"
         assert rebound["conversation_id"] == "agent:main:discord:dm:84"
 
@@ -1358,7 +1358,7 @@ def test_slash_status_matches_active_tool_clone_after_rebind_and_side_channel(
         )
         assert clone.bound_session_id == "side-channel"
         assert clone.current_session_id == "discord-session-b"
-        side_channel = _slash_status_fields(ctx.commands["lcm"]("status"))
+        side_channel = _slash_status_fields(ctx.commands["trove"]("status"))
         assert side_channel["session_id"] == "discord-session-b"
         assert side_channel["conversation_id"] == "agent:main:discord:dm:84"
         assert side_channel["side_channel_active"] == "yes"
@@ -1377,11 +1377,11 @@ def test_slash_status_stays_unbound_until_lane_has_an_active_runtime(
     ctx = _register_plugin_with_command(
         monkeypatch,
         tmp_path,
-        "hermes_lcm_slash_host_context",
+        "hermes_trove_slash_host_context",
         session_values,
     )
     try:
-        cold = _slash_status_fields(ctx.commands["lcm"]("status"))
+        cold = _slash_status_fields(ctx.commands["trove"]("status"))
         assert cold["session_id"] == "(unbound)"
         assert cold["model"] == "(uninitialized)"
         assert cold["context_length"] == "(uninitialized)"
@@ -1392,7 +1392,7 @@ def test_slash_status_stays_unbound_until_lane_has_an_active_runtime(
 
 
 def test_post_llm_hook_resolves_registered_active_clone_without_host_context_compressor(monkeypatch, tmp_path):
-    module = _load_plugin_entrypoint_module("hermes_lcm_post_hook_registered_clone")
+    module = _load_plugin_entrypoint_module("hermes_trove_post_hook_registered_clone")
     manager = types.SimpleNamespace(_hooks={})
     fake_plugins = types.SimpleNamespace(get_plugin_manager=lambda: manager)
     fake_hermes_cli = types.SimpleNamespace(plugins=fake_plugins)
@@ -1449,14 +1449,14 @@ def test_post_llm_hook_resolves_registered_active_clone_without_host_context_com
 
 
 def test_post_llm_hook_does_not_foreground_match_side_channel_clone(monkeypatch, tmp_path):
-    module = _load_plugin_entrypoint_module("hermes_lcm_post_hook_side_channel_clone")
+    module = _load_plugin_entrypoint_module("hermes_trove_post_hook_side_channel_clone")
     manager = types.SimpleNamespace(_hooks={})
     fake_plugins = types.SimpleNamespace(get_plugin_manager=lambda: manager)
     fake_hermes_cli = types.SimpleNamespace(plugins=fake_plugins)
     monkeypatch.setitem(sys.modules, "hermes_cli", fake_hermes_cli)
     monkeypatch.setitem(sys.modules, "hermes_cli.plugins", fake_plugins)
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_home"))
-    monkeypatch.setenv("LCM_STATELESS_SESSION_PATTERNS", "side-channel")
+    monkeypatch.setenv("TROVE_STATELESS_SESSION_PATTERNS", "side-channel")
 
     class _CtxNoTool:
         def __init__(self):
@@ -1504,7 +1504,7 @@ def test_post_llm_hook_does_not_foreground_match_side_channel_clone(monkeypatch,
 
 def test_post_llm_hook_ignores_stale_registered_clone_after_rebind(monkeypatch, tmp_path):
     for lookup_mode in ("session", "conversation", "mismatched_conversation"):
-        module = _load_plugin_entrypoint_module(f"hermes_lcm_post_hook_stale_{lookup_mode}")
+        module = _load_plugin_entrypoint_module(f"hermes_trove_post_hook_stale_{lookup_mode}")
         manager = types.SimpleNamespace(_hooks={})
         fake_plugins = types.SimpleNamespace(get_plugin_manager=lambda: manager)
         fake_hermes_cli = types.SimpleNamespace(plugins=fake_plugins)
@@ -1572,8 +1572,8 @@ def test_post_llm_hook_ignores_stale_registered_clone_after_rebind(monkeypatch, 
         ctx.engine.shutdown()
 
 
-def test_post_llm_hook_prefers_active_lcm_clone(monkeypatch, tmp_path):
-    module = _load_plugin_entrypoint_module("hermes_lcm_post_hook_active_clone")
+def test_post_llm_hook_prefers_active_trove_clone(monkeypatch, tmp_path):
+    module = _load_plugin_entrypoint_module("hermes_trove_post_hook_active_clone")
     manager = types.SimpleNamespace(_hooks={})
     fake_plugins = types.SimpleNamespace(get_plugin_manager=lambda: manager)
     fake_hermes_cli = types.SimpleNamespace(plugins=fake_plugins)
@@ -1593,7 +1593,7 @@ def test_post_llm_hook_prefers_active_lcm_clone(monkeypatch, tmp_path):
     assert ctx.engine is not None
 
     class _ActiveClone:
-        name = "lcm"
+        name = "trove"
 
         def __init__(self):
             self.current_session_id = ""
@@ -1636,7 +1636,7 @@ def test_post_llm_hook_prefers_active_lcm_clone(monkeypatch, tmp_path):
 
 
 def test_post_llm_hook_rebinds_legacy_singleton_between_gateway_lanes(monkeypatch, tmp_path):
-    module = _load_plugin_entrypoint_module("hermes_lcm_post_hook_singleton_rebind")
+    module = _load_plugin_entrypoint_module("hermes_trove_post_hook_singleton_rebind")
     manager = types.SimpleNamespace(_hooks={})
     fake_plugins = types.SimpleNamespace(get_plugin_manager=lambda: manager)
     fake_hermes_cli = types.SimpleNamespace(plugins=fake_plugins)

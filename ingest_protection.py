@@ -1,10 +1,10 @@
 """Storage-boundary protection for payloads that should not live inline in SQLite.
 
-Hermes core may hand LCM messages that already contain inline media/base64
-payloads. LCM remains lossless by externalizing those payload strings and
+Hermes core may hand TROVE messages that already contain inline media/base64
+payloads. TROVE remains lossless by externalizing those payload strings and
 storing compact placeholders in ``messages.content`` / ``messages.tool_calls``.
 This avoids duplicating large/binary-ish payloads into SQLite rows, FTS shadow
-structures, WAL files, and backups while keeping recovery available through LCM
+structures, WAL files, and backups while keeping recovery available through TROVE
 externalized-payload tools.
 """
 
@@ -100,7 +100,7 @@ _BASE64_ALPHABET_RE = re.compile(r"^[A-Za-z0-9+/=_\s-]+$")
 _BASE64_LINE_ALPHABET_RE = re.compile(r"^[A-Za-z0-9+/=_-]+$")
 _PRIVATE_KEY_BEGIN_RE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----", re.IGNORECASE)
 _PRIVATE_KEY_END_RE = re.compile(r"-----END [A-Z0-9 ]*PRIVATE KEY-----", re.IGNORECASE)
-_EXTERNALIZED_PLACEHOLDER_PREFIX = "[Externalized LCM ingest payload:"
+_EXTERNALIZED_PLACEHOLDER_PREFIX = "[Externalized TROVE ingest payload:"
 _QUARANTINED_ASSISTANT_KIND = "quarantined_assistant_output"
 _QUARANTINED_ASSISTANT_REASON = "high_repetition"
 _QUARANTINED_ASSISTANT_MIN_CHARS = 65_536
@@ -113,7 +113,7 @@ _HEARTBEAT_NOISE_RE = re.compile(
 )
 _HEARTBEAT_NOISE_MAX_CHARS = 256
 _GENERIC_BASE64_MIN_CHARS = 4096
-_INGEST_PLACEHOLDER_RE = re.compile(r"\[Externalized LCM ingest payload:.*?;\s*ref=([^;\]\s]+)\]")
+_INGEST_PLACEHOLDER_RE = re.compile(r"\[Externalized TROVE ingest payload:.*?;\s*ref=([^;\]\s]+)\]")
 _EXTERNALIZED_PAYLOAD_PLACEHOLDER_RE = re.compile(
     r"\[(?:Externalized|GC'd externalized) (?:tool output|payload):.*?;\s*ref=([^;\]\s]+)\]"
 )
@@ -126,15 +126,15 @@ _PERSISTED_OUTPUT_PREVIEW_RE = re.compile(
 )
 _PERSISTED_OUTPUT_CHAR_COUNT_RE = re.compile(r"too large\s*\((?P<count>[\d,]+)\s+characters\b", re.IGNORECASE)
 _PERSISTED_OUTPUT_INLINE_PREVIEW_SHA256_RE = re.compile(
-    r"\r?\n\[LCM persisted-output marker identity: preview_sha256=(?P<sha256>[0-9a-f]{64})\]"
-    r"(?:\r?\n\[LCM persisted-output file generation: size=\d+; mtime_ns=\d+; ctime_ns=\d+\])?"
+    r"\r?\n\[TROVE persisted-output marker identity: preview_sha256=(?P<sha256>[0-9a-f]{64})\]"
+    r"(?:\r?\n\[TROVE persisted-output file generation: size=\d+; mtime_ns=\d+; ctime_ns=\d+\])?"
     r"\r?\n</persisted-output>\s*$"
 )
 _PERSISTED_OUTPUT_INLINE_GENERATION_RE = re.compile(
-    r"\r?\n\[LCM persisted-output file generation: size=(?P<size>\d+); mtime_ns=(?P<mtime_ns>\d+); ctime_ns=(?P<ctime_ns>\d+)\]\r?\n</persisted-output>\s*$"
+    r"\r?\n\[TROVE persisted-output file generation: size=(?P<size>\d+); mtime_ns=(?P<mtime_ns>\d+); ctime_ns=(?P<ctime_ns>\d+)\]\r?\n</persisted-output>\s*$"
 )
 _PERSISTED_OUTPUT_INLINE_METADATA_RE = re.compile(
-    r"\r?\n\[LCM persisted-output (?:file generation|marker identity):[^\r\n]*\]\s*$"
+    r"\r?\n\[TROVE persisted-output (?:file generation|marker identity):[^\r\n]*\]\s*$"
 )
 _UNRECOVERABLE_TRUNCATION_RE = re.compile(
     r"\[Truncated:\s*tool response was [\d,]+ chars\.\s*Full output could not be saved to sandbox\.\]",
@@ -142,7 +142,7 @@ _UNRECOVERABLE_TRUNCATION_RE = re.compile(
 )
 _HERMES_RESULTS_DIRNAME = "hermes-results"
 _MAX_RECOVERED_PERSISTED_OUTPUT_BYTES = 64 * 1024 * 1024
-_SENSITIVE_PLACEHOLDER_PREFIX = "[LCM sensitive redaction:"
+_SENSITIVE_PLACEHOLDER_PREFIX = "[TROVE sensitive redaction:"
 _SENSITIVE_PATTERN_CATALOG: dict[str, re.Pattern[str]] = {
     "api_key": re.compile(
         r"(?P<prefix>(?:\\?[\"']?)\b(?:api[_-]?key|api[_-]?token|access[_-]?token|secret[_-]?key|client[_-]?secret)\b\s*(?:\\?[\"']?)\s*[:=]\s*(?:\\?[\"']?))"
@@ -440,7 +440,7 @@ def _persisted_output_marker_identity_digest(text: str | None) -> str | None:
 def _has_lossy_sensitive_redaction(text: str | None) -> bool:
     if not isinstance(text, str) or _SENSITIVE_PLACEHOLDER_PREFIX not in text:
         return False
-    for match in re.finditer(r"\[LCM sensitive redaction: (?P<body>[^\]]+)\]", text):
+    for match in re.finditer(r"\[TROVE sensitive redaction: (?P<body>[^\]]+)\]", text):
         body = match.group("body")
         fields = {
             key: value
@@ -581,7 +581,7 @@ def _add_inline_persisted_output_generation_metadata(text: str, file_stat: dict[
     if not file_stat or not isinstance(text, str) or "</persisted-output>" not in text:
         return text
     generation = (
-        "[LCM persisted-output file generation: "
+        "[TROVE persisted-output file generation: "
         f"size={file_stat['size']}; "
         f"mtime_ns={file_stat['mtime_ns']}; "
         f"ctime_ns={file_stat['ctime_ns']}]"
@@ -601,7 +601,7 @@ def _add_inline_persisted_output_identity_metadata(text: str, preview_sha256: st
         return text
     if _has_lossy_sensitive_redaction(text) or _persisted_output_inline_preview_sha256(text):
         return text
-    identity = f"[LCM persisted-output marker identity: preview_sha256={preview_sha256}]"
+    identity = f"[TROVE persisted-output marker identity: preview_sha256={preview_sha256}]"
     return text.replace("</persisted-output>", f"{identity}\n</persisted-output>", 1)
 
 
@@ -660,7 +660,7 @@ def sensitive_pattern_status(config) -> dict[str, Any]:
         "active_patterns": active if enabled else [],
         "unknown_patterns": unknown,
         "source": getattr(config, "sensitive_patterns_source", "default"),
-        "placeholder_format": "[LCM sensitive redaction: name=<pattern>; chars=<n>; bytes=<n>; sha256=<16 for non-password>]",
+        "placeholder_format": "[TROVE sensitive redaction: name=<pattern>; chars=<n>; bytes=<n>; sha256=<16 for non-password>]",
         "lossless_recovery": False if enabled and active else None,
     }
 
@@ -885,7 +885,7 @@ def assistant_output_quarantine_reason(text: str) -> str | None:
 
 def _quarantined_assistant_placeholder(summary: Dict[str, Any], *, reason: str) -> str:
     return (
-        "[Externalized LCM ingest payload: assistant output quarantined; "
+        "[Externalized TROVE ingest payload: assistant output quarantined; "
         f"kind={_safe_placeholder_metadata(summary.get('kind') or _QUARANTINED_ASSISTANT_KIND)}; "
         f"reason={_safe_placeholder_metadata(reason)}; "
         f"field={_safe_placeholder_metadata(summary.get('field_path') or 'content')}; "
@@ -897,7 +897,7 @@ def _quarantined_assistant_placeholder(summary: Dict[str, Any], *, reason: str) 
 def _volatile_quarantined_assistant_placeholder(content: str, *, reason: str) -> str:
     digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
     return (
-        "[LCM active replay placeholder: assistant output quarantined; "
+        "[TROVE active replay placeholder: assistant output quarantined; "
         f"kind={_QUARANTINED_ASSISTANT_KIND}; "
         f"reason={_safe_placeholder_metadata(reason)}; "
         "scope=ignored_message_pattern; field=content; "
@@ -937,7 +937,7 @@ def _externalize_quarantined_assistant_output(
     )
     if result is None:
         logger.warning(
-            "LCM ingest protection could not quarantine repetitive assistant output; preserving inline content for lossless recovery"
+            "TROVE ingest protection could not quarantine repetitive assistant output; preserving inline content for lossless recovery"
         )
         return None
 
@@ -1053,7 +1053,7 @@ def _placeholder_for_payload(
     )
     if result is None:
         logger.warning(
-            "LCM ingest protection could not externalize payload at %s; preserving inline content for lossless recovery",
+            "TROVE ingest protection could not externalize payload at %s; preserving inline content for lossless recovery",
             field_path,
         )
         return None
@@ -1373,7 +1373,7 @@ def protect_message_for_ingest(
 
     # A host-side truncation marker without durable recovered storage is not
     # lossless. Keep the marker/preview visible inline instead of hiding it
-    # behind an LCM externalized-payload ref that would look recoverable.
+    # behind an TROVE externalized-payload ref that would look recoverable.
     preserve_truncation_marker_inline = (
         role == "tool"
         and recovered_externalized is None
@@ -1680,7 +1680,7 @@ def _extract_unescaped_externalized_payload_refs(text: str, *, ignore_quoted_spa
 
 
 def _refs_for_externalized_integrity_scan(value: str, *, role: str, field: str) -> list[str]:
-    """Return refs that plausibly came from LCM storage-boundary placeholders.
+    """Return refs that plausibly came from TROVE storage-boundary placeholders.
 
     Tool outputs and tool-call arguments often contain escaped code snippets,
     pytest failures, or docs that mention placeholder examples. Counting those
@@ -1916,7 +1916,7 @@ def scan_sqlite_payload_risks(conn, *, limit: int = 5) -> dict[str, Any]:
             SELECT store_id, session_id, source, role, COALESCE(length(content), 0) AS content_len, content
             FROM messages
             WHERE role = 'assistant'
-              AND content LIKE '%Externalized LCM ingest payload:%quarantined_assistant_output%'
+              AND content LIKE '%Externalized TROVE ingest payload:%quarantined_assistant_output%'
             ORDER BY store_id DESC
             LIMIT ?
             """,
@@ -1931,7 +1931,7 @@ def scan_sqlite_payload_risks(conn, *, limit: int = 5) -> dict[str, Any]:
         FROM messages
         WHERE role = 'assistant'
           AND COALESCE(length(content), 0) >= ?
-          AND content NOT LIKE '%Externalized LCM ingest payload:%quarantined_assistant_output%'
+          AND content NOT LIKE '%Externalized TROVE ingest payload:%quarantined_assistant_output%'
         ORDER BY content_len DESC
         LIMIT ?
         """,

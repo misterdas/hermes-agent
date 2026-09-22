@@ -2,7 +2,7 @@
 
 Base: `fork/bench/w3b-on-wave1` at `4bd8401d96fb00fbcf37cc0ad0852a4ec7e0ea12`.
 
-1. `query_view_store.py` query-family discovery — **CONFIRMED-FIXED**. The verifier now discovers the full gated `lcm_query%` prefix. The `lcm_querycache` regression classifies the database as genuinely newer and refuses downgrade.
+1. `query_view_store.py` query-family discovery — **CONFIRMED-FIXED**. The verifier now discovers the full gated `trove_query%` prefix. The `trove_querycache` regression classifies the database as genuinely newer and refuses downgrade.
 2. `tools.py` reference-strict delta after response-cap eviction — **CONFIRMED-FIXED**. Delta refs and progress fields are rebuilt from surviving delivered hits after whole-hit eviction. The regression asserts delivered refs equal delta refs and omitted refs remain unseen. **V1-DELIVERY-AFFECTING: cap-eviction path only.**
 3. `trajectory_store.py` chunked-state spend progress — **CONFIRMED-FIXED**. Every successful chunk request emits cumulative progress before the next request. The low-cap regression stops after one chunk and preserves its provider-call and billed-token spend in the callback ledger.
 4. `tools.py` conditional `rows` binding — **CONFIRMED-FIXED**. `rows` is always bound to the batch result or `{}`. The related shallow-copy nit is also aligned by replacing `read_store._write_lock`.

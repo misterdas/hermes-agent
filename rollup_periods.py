@@ -69,21 +69,21 @@ def _load_source_lineage_staged(
         raise RuntimeError(f"source lineage exceeds bounded work limit ({limit})")
 
     connection.execute(
-        "CREATE TEMP TABLE IF NOT EXISTS lcm_lineage_frontier "
+        "CREATE TEMP TABLE IF NOT EXISTS trove_lineage_frontier "
         "(node_id INTEGER PRIMARY KEY) WITHOUT ROWID"
     )
     connection.execute(
-        "CREATE TEMP TABLE IF NOT EXISTS lcm_lineage_seen "
+        "CREATE TEMP TABLE IF NOT EXISTS trove_lineage_seen "
         "(node_id INTEGER PRIMARY KEY) WITHOUT ROWID"
     )
     connection.execute(
-        "CREATE TEMP TABLE IF NOT EXISTS lcm_lineage_current "
+        "CREATE TEMP TABLE IF NOT EXISTS trove_lineage_current "
         "(node_id INTEGER PRIMARY KEY) WITHOUT ROWID"
     )
-    for table in ("lcm_lineage_frontier", "lcm_lineage_seen", "lcm_lineage_current"):
+    for table in ("trove_lineage_frontier", "trove_lineage_seen", "trove_lineage_current"):
         connection.execute(f"DELETE FROM temp.{table}")
     connection.executemany(
-        "INSERT INTO temp.lcm_lineage_frontier(node_id) VALUES(?)",
+        "INSERT INTO temp.trove_lineage_frontier(node_id) VALUES(?)",
         ((node_id,) for node_id in roots),
     )
 
@@ -95,7 +95,7 @@ def _load_source_lineage_staged(
             remaining = work_limit - node_work
             if remaining <= 0:
                 pending = connection.execute(
-                    "SELECT 1 FROM temp.lcm_lineage_frontier LIMIT 1"
+                    "SELECT 1 FROM temp.trove_lineage_frontier LIMIT 1"
                 ).fetchone()
                 if pending is not None:
                     raise RuntimeError(
@@ -106,7 +106,7 @@ def _load_source_lineage_staged(
             rows = connection.execute(
                 """
                 SELECT frontier.node_id, node.source_type
-                FROM temp.lcm_lineage_frontier frontier
+                FROM temp.trove_lineage_frontier frontier
                 LEFT JOIN summary_nodes node ON node.node_id = frontier.node_id
                 LIMIT ?
                 """,
@@ -117,17 +117,17 @@ def _load_source_lineage_staged(
 
             current_ids = [int(row[0]) for row in rows]
             node_work += len(current_ids)
-            connection.execute("DELETE FROM temp.lcm_lineage_current")
+            connection.execute("DELETE FROM temp.trove_lineage_current")
             connection.executemany(
-                "INSERT INTO temp.lcm_lineage_current(node_id) VALUES(?)",
+                "INSERT INTO temp.trove_lineage_current(node_id) VALUES(?)",
                 ((node_id,) for node_id in current_ids),
             )
             connection.executemany(
-                "DELETE FROM temp.lcm_lineage_frontier WHERE node_id=?",
+                "DELETE FROM temp.trove_lineage_frontier WHERE node_id=?",
                 ((node_id,) for node_id in current_ids),
             )
             connection.executemany(
-                "INSERT OR IGNORE INTO temp.lcm_lineage_seen(node_id) VALUES(?)",
+                "INSERT OR IGNORE INTO temp.trove_lineage_seen(node_id) VALUES(?)",
                 ((node_id,) for node_id in current_ids),
             )
 
@@ -135,7 +135,7 @@ def _load_source_lineage_staged(
             edge_rows = connection.execute(
                 """
                 SELECT parent.node_id, CAST(edge.value AS INTEGER)
-                FROM temp.lcm_lineage_current current
+                FROM temp.trove_lineage_current current
                 JOIN summary_nodes parent ON parent.node_id = current.node_id
                 JOIN json_each(parent.source_ids) edge
                 WHERE parent.source_type = 'nodes'
@@ -161,19 +161,19 @@ def _load_source_lineage_staged(
             if edge_rows:
                 connection.executemany(
                     """
-                    INSERT OR IGNORE INTO temp.lcm_lineage_frontier(node_id)
+                    INSERT OR IGNORE INTO temp.trove_lineage_frontier(node_id)
                     SELECT ?
                     WHERE NOT EXISTS(
-                        SELECT 1 FROM temp.lcm_lineage_seen WHERE node_id=?
+                        SELECT 1 FROM temp.trove_lineage_seen WHERE node_id=?
                     )
                     """,
                     ((int(source_id), int(source_id)) for _parent_id, source_id in edge_rows),
                 )
     finally:
         for table in (
-            "lcm_lineage_frontier",
-            "lcm_lineage_seen",
-            "lcm_lineage_current",
+            "trove_lineage_frontier",
+            "trove_lineage_seen",
+            "trove_lineage_current",
         ):
             connection.execute(f"DELETE FROM temp.{table}")
     return lineage
@@ -291,7 +291,7 @@ def _exclusive_day_end(value: date) -> datetime:
 
 
 def parse_recent_period(period: str, *, now: datetime | None = None) -> RecentPeriodWindow:
-    """Parse an ``lcm_recent`` period into a deterministic UTC window."""
+    """Parse an ``trove_recent`` period into a deterministic UTC window."""
     if not isinstance(period, str) or not period.strip():
         raise ValueError("period is required")
 

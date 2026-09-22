@@ -1,4 +1,4 @@
-"""Durable lifecycle/checkpoint state for hermes-lcm.
+"""Durable lifecycle/checkpoint state for hermes-trove.
 
 This is the smallest viable substrate for cross-turn/session lifecycle state:
 - which logical conversation a session belongs to
@@ -111,7 +111,7 @@ class LifecycleStateStore:
         return getattr(self, "_conn", None)
 
     def row_count(self) -> int:
-        row = self._conn.execute("SELECT COUNT(*) AS count FROM lcm_lifecycle_state").fetchone()
+        row = self._conn.execute("SELECT COUNT(*) AS count FROM trove_lifecycle_state").fetchone()
         return int(row["count"] if row else 0)
 
     def _row_to_state(self, row: sqlite3.Row | None) -> LifecycleState | None:
@@ -138,7 +138,7 @@ class LifecycleStateStore:
         if not conversation_id:
             return None
         row = self._conn.execute(
-            "SELECT * FROM lcm_lifecycle_state WHERE conversation_id = ?",
+            "SELECT * FROM trove_lifecycle_state WHERE conversation_id = ?",
             (conversation_id,),
         ).fetchone()
         return self._row_to_state(row)
@@ -149,7 +149,7 @@ class LifecycleStateStore:
         row = self._conn.execute(
             """
             SELECT *
-            FROM lcm_lifecycle_state
+            FROM trove_lifecycle_state
             WHERE current_session_id = ? OR last_finalized_session_id = ?
             ORDER BY CASE WHEN current_session_id = ? THEN 0 ELSE 1 END, updated_at DESC
             LIMIT 1
@@ -212,7 +212,7 @@ class LifecycleStateStore:
 
         self._conn.execute(
             """
-            INSERT INTO lcm_lifecycle_state(
+            INSERT INTO trove_lifecycle_state(
                 conversation_id,
                 current_session_id,
                 last_finalized_session_id,
@@ -287,7 +287,7 @@ class LifecycleStateStore:
         )
         self._conn.execute(
             """
-            UPDATE lcm_lifecycle_state
+            UPDATE trove_lifecycle_state
             SET current_session_id = ?,
                 last_finalized_session_id = ?,
                 current_frontier_store_id = ?,
@@ -335,7 +335,7 @@ class LifecycleStateStore:
         )
         self._conn.execute(
             """
-            INSERT INTO lcm_lifecycle_state(
+            INSERT INTO trove_lifecycle_state(
                 conversation_id,
                 current_session_id,
                 last_finalized_session_id,
@@ -398,14 +398,14 @@ class LifecycleStateStore:
 
         message_sessions = _session_ids("SELECT DISTINCT session_id FROM messages WHERE session_id IS NOT NULL")
         node_sessions = _session_ids("SELECT DISTINCT session_id FROM summary_nodes WHERE session_id IS NOT NULL")
-        lcm_any_sessions = message_sessions | node_sessions
+        trove_any_sessions = message_sessions | node_sessions
         state_sessions: set[str] = set()
         state_db_read_success = False
         lifecycle_current_sessions = _session_ids(
-            "SELECT DISTINCT current_session_id FROM lcm_lifecycle_state WHERE current_session_id IS NOT NULL"
+            "SELECT DISTINCT current_session_id FROM trove_lifecycle_state WHERE current_session_id IS NOT NULL"
         )
         lifecycle_last_finalized_sessions = _session_ids(
-            "SELECT DISTINCT last_finalized_session_id FROM lcm_lifecycle_state WHERE last_finalized_session_id IS NOT NULL"
+            "SELECT DISTINCT last_finalized_session_id FROM trove_lifecycle_state WHERE last_finalized_session_id IS NOT NULL"
         )
         lifecycle_referenced_sessions = lifecycle_current_sessions | lifecycle_last_finalized_sessions
 
@@ -413,7 +413,7 @@ class LifecycleStateStore:
         for row in conn.execute(
             """
             SELECT current_session_id, last_finalized_session_id
-            FROM lcm_lifecycle_state
+            FROM trove_lifecycle_state
             """
         ).fetchall():
             refs = {
@@ -421,26 +421,26 @@ class LifecycleStateStore:
                 for value in (row["current_session_id"], row["last_finalized_session_id"])
                 if value
             }
-            if not refs or refs.isdisjoint(lcm_any_sessions):
+            if not refs or refs.isdisjoint(trove_any_sessions):
                 empty_lifecycle_rows += 1
 
         stats: dict[str, Any] = {
             "read_only": True,
-            "lifecycle_rows": _count("SELECT COUNT(*) FROM lcm_lifecycle_state"),
+            "lifecycle_rows": _count("SELECT COUNT(*) FROM trove_lifecycle_state"),
             "empty_lifecycle_rows": empty_lifecycle_rows,
             "messages_total": _count("SELECT COUNT(*) FROM messages"),
             "summary_nodes_total": _count("SELECT COUNT(*) FROM summary_nodes"),
             "distinct_message_sessions": len(message_sessions),
             "distinct_node_sessions": len(node_sessions),
-            "distinct_lcm_any_sessions": len(lcm_any_sessions),
+            "distinct_trove_any_sessions": len(trove_any_sessions),
             "lifecycle_current_sessions": len(lifecycle_current_sessions),
             "lifecycle_last_finalized_sessions": len(lifecycle_last_finalized_sessions),
             "lifecycle_current_missing_in_messages": len(lifecycle_current_sessions - message_sessions),
             "lifecycle_current_missing_in_nodes": len(lifecycle_current_sessions - node_sessions),
-            "lifecycle_current_missing_in_lcm_any": len(lifecycle_current_sessions - lcm_any_sessions),
+            "lifecycle_current_missing_in_trove_any": len(lifecycle_current_sessions - trove_any_sessions),
             "lifecycle_last_finalized_missing_in_messages": len(lifecycle_last_finalized_sessions - message_sessions),
             "lifecycle_last_finalized_missing_in_nodes": len(lifecycle_last_finalized_sessions - node_sessions),
-            "lifecycle_last_finalized_missing_in_lcm_any": len(lifecycle_last_finalized_sessions - lcm_any_sessions),
+            "lifecycle_last_finalized_missing_in_trove_any": len(lifecycle_last_finalized_sessions - trove_any_sessions),
             "message_sessions_without_lifecycle_current": len(message_sessions - lifecycle_current_sessions),
             "message_sessions_without_lifecycle_reference": len(message_sessions - lifecycle_referenced_sessions),
             "node_sessions_without_lifecycle_reference": len(node_sessions - lifecycle_referenced_sessions),
@@ -449,10 +449,10 @@ class LifecycleStateStore:
             "state_sessions_total": 0,
             "lifecycle_current_missing_in_state": 0,
             "lifecycle_last_finalized_missing_in_state": 0,
-            "lcm_message_sessions_missing_in_state": 0,
-            "lcm_node_sessions_missing_in_state": 0,
-            "state_sessions_missing_in_lcm_messages": 0,
-            "state_sessions_missing_in_lcm_any": 0,
+            "trove_message_sessions_missing_in_state": 0,
+            "trove_node_sessions_missing_in_state": 0,
+            "state_sessions_missing_in_trove_messages": 0,
+            "state_sessions_missing_in_trove_any": 0,
         }
 
         if state_db_path:
@@ -474,10 +474,10 @@ class LifecycleStateStore:
                         "lifecycle_last_finalized_missing_in_state": len(
                             lifecycle_last_finalized_sessions - state_sessions
                         ),
-                        "lcm_message_sessions_missing_in_state": len(message_sessions - state_sessions),
-                        "lcm_node_sessions_missing_in_state": len(node_sessions - state_sessions),
-                        "state_sessions_missing_in_lcm_messages": len(state_sessions - message_sessions),
-                        "state_sessions_missing_in_lcm_any": len(state_sessions - lcm_any_sessions),
+                        "trove_message_sessions_missing_in_state": len(message_sessions - state_sessions),
+                        "trove_node_sessions_missing_in_state": len(node_sessions - state_sessions),
+                        "state_sessions_missing_in_trove_messages": len(state_sessions - message_sessions),
+                        "state_sessions_missing_in_trove_any": len(state_sessions - trove_any_sessions),
                     })
                 except Exception as exc:  # pragma: no cover - defensive
                     stats["state_db_error"] = str(exc)
@@ -490,7 +490,7 @@ class LifecycleStateStore:
             lifecycle_last_finalized_sessions=lifecycle_last_finalized_sessions,
             message_sessions=message_sessions,
             node_sessions=node_sessions,
-            lcm_any_sessions=lcm_any_sessions,
+            trove_any_sessions=trove_any_sessions,
             lifecycle_referenced_sessions=lifecycle_referenced_sessions,
             state_sessions=state_sessions,
             state_db_read_success=state_db_read_success,
@@ -506,7 +506,7 @@ class LifecycleStateStore:
         lifecycle_last_finalized_sessions: set[str],
         message_sessions: set[str],
         node_sessions: set[str],
-        lcm_any_sessions: set[str],
+        trove_any_sessions: set[str],
         lifecycle_referenced_sessions: set[str],
         state_sessions: set[str],
         state_db_read_success: bool,
@@ -539,55 +539,55 @@ class LifecycleStateStore:
 
         add_category(
             "stale_lifecycle_current",
-            lifecycle_current_sessions - lcm_any_sessions,
+            lifecycle_current_sessions - trove_any_sessions,
             severity="warn",
-            description="Lifecycle current-session references that no longer have raw messages or summary nodes in LCM.",
+            description="Lifecycle current-session references that no longer have raw messages or summary nodes in TROVE.",
             recommended_action="Inspect samples before cleanup; these are often old or ephemeral lifecycle rows, not automatic corruption.",
         )
         add_category(
             "stale_lifecycle_finalized",
-            lifecycle_last_finalized_sessions - lcm_any_sessions,
+            lifecycle_last_finalized_sessions - trove_any_sessions,
             severity="warn",
-            description="Lifecycle finalized-session references that no longer have raw messages or summary nodes in LCM.",
+            description="Lifecycle finalized-session references that no longer have raw messages or summary nodes in TROVE.",
             recommended_action="Inspect samples before cleanup; only remove with an explicit backup-first lifecycle cleanup flow.",
         )
         if lifecycle_rows > 0:
             add_category(
-                "lcm_message_sessions_without_lifecycle_reference",
+                "trove_message_sessions_without_lifecycle_reference",
                 message_sessions - lifecycle_referenced_sessions,
                 severity="notice",
-                description="Raw-message sessions exist in LCM but are not referenced by current or finalized lifecycle state.",
+                description="Raw-message sessions exist in TROVE but are not referenced by current or finalized lifecycle state.",
                 recommended_action="Usually safe as historical retained context; investigate only if the sessions should belong to an active conversation.",
             )
             add_category(
-                "lcm_node_sessions_without_lifecycle_reference",
+                "trove_node_sessions_without_lifecycle_reference",
                 node_sessions - lifecycle_referenced_sessions,
                 severity="notice",
-                description="Summary-node sessions exist in LCM but are not referenced by current or finalized lifecycle state.",
+                description="Summary-node sessions exist in TROVE but are not referenced by current or finalized lifecycle state.",
                 recommended_action="Usually safe as historical retained context; verify expand/search still work before considering cleanup.",
             )
 
         if state_db_read_success:
             add_category(
-                "lcm_message_sessions_missing_in_state",
+                "trove_message_sessions_missing_in_state",
                 message_sessions - state_sessions,
                 severity="notice",
-                description="LCM raw-message sessions are absent from the Hermes session database.",
+                description="TROVE raw-message sessions are absent from the Hermes session database.",
                 recommended_action="Treat as retained or imported context unless the session should still be browsable in host session history.",
             )
             add_category(
-                "lcm_node_sessions_missing_in_state",
+                "trove_node_sessions_missing_in_state",
                 node_sessions - state_sessions,
                 severity="notice",
-                description="LCM summary-node sessions are absent from the Hermes session database.",
-                recommended_action="Keep read-only; this can happen after host session pruning while LCM retained summaries remain useful.",
+                description="TROVE summary-node sessions are absent from the Hermes session database.",
+                recommended_action="Keep read-only; this can happen after host session pruning while TROVE retained summaries remain useful.",
             )
             add_category(
                 "state_only_sessions",
-                state_sessions - lcm_any_sessions,
+                state_sessions - trove_any_sessions,
                 severity="notice",
-                description="Hermes host sessions exist without raw messages or summary nodes in LCM.",
-                recommended_action="Usually benign for sessions outside LCM scope, ignored sessions, or sessions that never reached durable LCM ingest.",
+                description="Hermes host sessions exist without raw messages or summary nodes in TROVE.",
+                recommended_action="Usually benign for sessions outside TROVE scope, ignored sessions, or sessions that never reached durable TROVE ingest.",
             )
 
         warn_count = sum(1 for item in categories if item["severity"] == "warn")
@@ -620,7 +620,7 @@ class LifecycleStateStore:
         now = time.time()
         self._conn.execute(
             """
-            UPDATE lcm_lifecycle_state
+            UPDATE trove_lifecycle_state
             SET debt_kind = ?,
                 debt_size_estimate = ?,
                 debt_updated_at = ?,
@@ -641,7 +641,7 @@ class LifecycleStateStore:
         now = time.time()
         self._conn.execute(
             """
-            UPDATE lcm_lifecycle_state
+            UPDATE trove_lifecycle_state
             SET debt_kind = NULL,
                 debt_size_estimate = 0,
                 debt_updated_at = ?,
@@ -663,7 +663,7 @@ class LifecycleStateStore:
         now = time.time()
         self._conn.execute(
             """
-            UPDATE lcm_lifecycle_state
+            UPDATE trove_lifecycle_state
             SET last_maintenance_attempt_at = ?,
                 updated_at = ?
             WHERE conversation_id = ?
@@ -683,7 +683,7 @@ class LifecycleStateStore:
         now = time.time()
         self._conn.execute(
             """
-            UPDATE lcm_lifecycle_state
+            UPDATE trove_lifecycle_state
             SET last_reset_at = ?,
                 debt_kind = NULL,
                 debt_size_estimate = 0,
@@ -769,7 +769,7 @@ class LifecycleStateStore:
             deleted = 0
 
             rows = conn.execute(
-                "SELECT * FROM lcm_lifecycle_state"
+                "SELECT * FROM trove_lifecycle_state"
             ).fetchall()
             for row in rows:
                 cur = str(row["current_session_id"] or "")
@@ -800,7 +800,7 @@ class LifecycleStateStore:
                     continue
 
                 conn.execute(
-                    "DELETE FROM lcm_lifecycle_state WHERE conversation_id = ?",
+                    "DELETE FROM trove_lifecycle_state WHERE conversation_id = ?",
                     (row["conversation_id"],),
                 )
                 deleted += 1
@@ -826,7 +826,7 @@ class LifecycleStateStore:
         protected = {str(s) for s in (protected_session_ids or ()) if s}
         deleted = 0
         skipped = 0
-        rows = self._conn.execute("SELECT * FROM lcm_lifecycle_state").fetchall()
+        rows = self._conn.execute("SELECT * FROM trove_lifecycle_state").fetchall()
         for row in rows:
             refs = {
                 str(value)
@@ -840,7 +840,7 @@ class LifecycleStateStore:
                 continue
             if refs <= candidates:
                 self._conn.execute(
-                    "DELETE FROM lcm_lifecycle_state WHERE conversation_id = ?",
+                    "DELETE FROM trove_lifecycle_state WHERE conversation_id = ?",
                     (row["conversation_id"],),
                 )
                 deleted += 1
@@ -871,7 +871,7 @@ class LifecycleStateStore:
             # the checkpoint and force the same range to be compacted twice.
             cursor = conn.execute(
                 """
-                UPDATE lcm_lifecycle_state
+                UPDATE trove_lifecycle_state
                 SET current_frontier_store_id = MAX(current_frontier_store_id, ?),
                     updated_at = ?
                 WHERE conversation_id = ? AND current_session_id = ?

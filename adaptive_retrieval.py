@@ -1,7 +1,7 @@
 """Provider-neutral bounded retrieval state for one continuous answer turn.
 
 The answerer remains the only semantic selector.  This module validates its
-typed intent, tracks named evidence gaps, dispatches only existing LCM tools,
+typed intent, tracks named evidence gaps, dispatches only existing TROVE tools,
 normalizes exact raw/assertion refs, enforces hard budgets, and optionally
 persists a query-derived evidence view.  The controller contains no model or
 provider client and never stores final prose; dispatched retrieval tools retain
@@ -63,24 +63,24 @@ _FORBIDDEN_ARGUMENT_KEYS = frozenset({
     "question_type",
 })
 _ALLOWED_RETRIEVAL_TOOLS = frozenset({
-    "lcm_recall",
-    "lcm_recent",
-    "lcm_query_state",
-    "lcm_load_session",
-    "lcm_expand",
+    "trove_recall",
+    "trove_recent",
+    "trove_query_state",
+    "trove_load_session",
+    "trove_expand",
 })
 _TOOL_ARGUMENT_KEYS: dict[str, frozenset[str]] = {
-    "lcm_recall": frozenset({"query", "limit", "scope_bias", "include", "detail"}),
-    "lcm_recent": frozenset({"period", "scope", "limit"}),
-    "lcm_query_state": frozenset({
+    "trove_recall": frozenset({"query", "limit", "scope_bias", "include", "detail"}),
+    "trove_recent": frozenset({"period", "scope", "limit"}),
+    "trove_query_state": frozenset({
         "subject_key", "predicate_key", "kinds", "scope_key", "speaker_role",
         "as_of", "limit",
     }),
-    "lcm_load_session": frozenset({
+    "trove_load_session": frozenset({
         "session_id", "limit", "max_content_chars", "after_store_id", "roles",
         "time_from", "time_to",
     }),
-    "lcm_expand": frozenset({
+    "trove_expand": frozenset({
         "node_id", "externalized_ref", "store_id", "max_tokens", "source_offset",
         "source_limit", "content_offset",
     }),
@@ -417,19 +417,19 @@ def _bounded_tool_args(tool: str, raw: Any) -> dict[str, Any]:
             raise ValueError(f"{tool} {key} must be an integer") from exc
         return min(maximum, max(1, parsed))
 
-    if tool == "lcm_recall":
+    if tool == "trove_recall":
         args["detail"] = "answer_ready"
         args["limit"] = bounded_int("limit", 8, 8)
-    elif tool == "lcm_recent":
+    elif tool == "trove_recent":
         args["limit"] = bounded_int("limit", 8, 8)
-    elif tool == "lcm_query_state":
+    elif tool == "trove_query_state":
         args["limit"] = bounded_int("limit", 20, 20)
-    elif tool == "lcm_load_session":
+    elif tool == "trove_load_session":
         args["limit"] = bounded_int("limit", 8, 8)
         args["max_content_chars"] = bounded_int(
             "max_content_chars", MAX_EVIDENCE_CHARS, MAX_EVIDENCE_CHARS
         )
-    elif tool == "lcm_expand":
+    elif tool == "trove_expand":
         args["max_tokens"] = bounded_int("max_tokens", 1_800, 1_800)
     _canonical_json(args, field_name="tool_args", max_chars=MAX_TOOL_ARGS_CHARS)
     return args
@@ -484,7 +484,7 @@ def _candidate_from_item(
     assertion_id = str(item.get("assertion_id") or "").strip().casefold()
     if assertion_id and not _SHA256_RE.fullmatch(assertion_id):
         return None
-    citation = f"lcm:{store_id}:{start}-{end}"
+    citation = f"trove:{store_id}:{start}-{end}"
     public_stub = {
         "citation": citation,
         "store_id": store_id,
@@ -588,7 +588,7 @@ def _extract_search_leads(
                 bounded_args = {
                     str(key): bounded_value(item)
                     for key, item in expand_args.items()
-                    if str(key) in _TOOL_ARGUMENT_KEYS["lcm_expand"]
+                    if str(key) in _TOOL_ARGUMENT_KEYS["trove_expand"]
                     and bounded_value(item) not in (None, "")
                 }
                 if bounded_args:
@@ -710,7 +710,7 @@ def _tool_metadata_payload(value: Any) -> dict[str, Any]:
 
 def _evidence_from_view_dependency(value: Mapping[str, Any]) -> ExactEvidence:
     citation = (
-        f"lcm:{int(value['source_store_id'])}:"
+        f"trove:{int(value['source_store_id'])}:"
         f"{int(value['span_start'])}-{int(value['span_end'])}"
     )
     quote = str(value["quote"])
@@ -1170,11 +1170,11 @@ class AdaptiveRetrievalRegistry:
             return matches[0]
         try:
             return (
-                f"lcm:{int(operand['store_id'])}:"
+                f"trove:{int(operand['store_id'])}:"
                 f"{int(operand['span_start'])}-{int(operand['span_end'])}"
             )
         except (KeyError, TypeError, ValueError, OverflowError) as exc:
-            raise ValueError("raw computation operands require an exact LCM ref") from exc
+            raise ValueError("raw computation operands require an exact TROVE ref") from exc
 
     def _persist_view(
         self,
@@ -1342,10 +1342,10 @@ class AdaptiveRetrievalRegistry:
                 }
                 if "candidate_answer" in computation:
                     compute_args["candidate_answer"] = computation["candidate_answer"]
-                raw_compute = dispatch("lcm_compute", compute_args)
+                raw_compute = dispatch("trove_compute", compute_args)
                 parsed_compute = json.loads(raw_compute)
                 if not isinstance(parsed_compute, Mapping):
-                    raise ValueError("lcm_compute returned non-object JSON")
+                    raise ValueError("trove_compute returned non-object JSON")
                 compute_result = dict(parsed_compute)
 
             view_result = self._persist_view(

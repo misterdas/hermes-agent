@@ -6,7 +6,7 @@ recall find VERBATIM detail by meaning. Chunking never splits a message below
 the ~600-token target; larger messages split at ~600-token sentence boundaries
 with a one-sentence overlap so a span never severs a sentence. Every emitted
 chunk carries ``(store_id, chunk_index, char_start, char_end)`` so a KNN hit
-maps straight back to ``lcm_expand(store_id=..., content_offset=char_start)``.
+maps straight back to ``trove_expand(store_id=..., content_offset=char_start)``.
 
 The chunk_index is the message's natural window position, so a given physical
 span keeps a stable index regardless of which policy selected it — the head
@@ -68,7 +68,7 @@ def normalize_content_policy(value: Any) -> str:
     """Return a supported content policy, defaulting to ``conversational``.
 
     Unknown/empty values fall back to the default rather than raising so a
-    misconfigured ``LCM_EMBED_CONTENT_POLICY`` degrades to the safe posture.
+    misconfigured ``TROVE_EMBED_CONTENT_POLICY`` degrades to the safe posture.
     """
     normalized = str(value or "").strip().lower()
     return normalized if normalized in VALID_CONTENT_POLICIES else _DEFAULT_CONTENT_POLICY

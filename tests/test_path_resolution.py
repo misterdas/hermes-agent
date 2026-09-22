@@ -6,7 +6,7 @@ from pathlib import Path
 def test_state_db_path_resolves_to_absolute():
     """Test that _state_db_path resolves to an absolute path."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        from hermes_lcm.command import _state_db_path_for_engine
+        from hermes_trove.command import _state_db_path_for_engine
 
         # Create a mock engine with hermes_home in tmpdir
         hermes_home = Path(tmpdir) / "hermes"
@@ -25,7 +25,7 @@ def test_state_db_path_resolves_to_absolute():
 def test_get_large_output_storage_dir_resolves():
     """Test that get_large_output_storage_dir resolves paths."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        from hermes_lcm.externalize import get_large_output_storage_dir
+        from hermes_trove.externalize import get_large_output_storage_dir
 
         # Test with explicit path
         configured_path = str(Path(tmpdir) / "external")
@@ -43,7 +43,7 @@ def test_get_large_output_storage_dir_resolves():
 def test_path_escapes_via_traversal_rejected():
     """Test that paths with ../ sequences are properly resolved."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        from hermes_lcm.externalize import get_large_output_storage_dir
+        from hermes_trove.externalize import get_large_output_storage_dir
 
         # Create a path with ../ sequences - should be resolved
         base = Path(tmpdir) / "base"

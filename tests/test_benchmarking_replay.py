@@ -1,4 +1,4 @@
-"""Tests for deterministic LCM benchmark replay."""
+"""Tests for deterministic TROVE benchmark replay."""
 
 import json
 from pathlib import Path
@@ -7,11 +7,11 @@ import sys
 import pytest
 
 import benchmarking.h3_composition_replay as h3_composition_replay
-import hermes_lcm.engine as lcm_engine
+import hermes_trove.engine as trove_engine
 
 from benchmarking.fixtures import make_synthetic_fixture
 from benchmarking.replay import run_replay, run_replays
-from benchmarking.types import Canary, LCMPolicy, ReplayFixture, SummaryFailureMode
+from benchmarking.types import Canary, TROVEPolicy, ReplayFixture, SummaryFailureMode
 
 
 def _small_policy(**overrides):
@@ -26,7 +26,7 @@ def _small_policy(**overrides):
         "dynamic_leaf_chunk_enabled": False,
     }
     values.update(overrides)
-    return LCMPolicy(**values)
+    return TROVEPolicy(**values)
 
 
 def test_replay_below_threshold_does_not_compress(tmp_path):
@@ -112,7 +112,7 @@ def test_replay_above_threshold_compresses_and_reports_canary_recall(tmp_path):
 
 
 def test_replay_restores_summarizer_patch(tmp_path):
-    original = lcm_engine.summarize_with_escalation
+    original = trove_engine.summarize_with_escalation
     fixture = make_synthetic_fixture(
         name="restore",
         message_pairs=6,
@@ -122,7 +122,7 @@ def test_replay_restores_summarizer_patch(tmp_path):
 
     run_replay(fixture, _small_policy(), output_dir=tmp_path)
 
-    assert lcm_engine.summarize_with_escalation is original
+    assert trove_engine.summarize_with_escalation is original
 
 
 def test_replay_uses_output_directory_for_state_and_not_home(tmp_path, monkeypatch):
@@ -141,7 +141,7 @@ def test_replay_uses_output_directory_for_state_and_not_home(tmp_path, monkeypat
 
     assert Path(metrics.database_path).is_relative_to(output_dir)
     assert Path(metrics.hermes_home).is_relative_to(output_dir)
-    assert not (fake_home / ".hermes" / "lcm.db").exists()
+    assert not (fake_home / ".hermes" / "trove.db").exists()
 
 
 def test_replay_refuses_to_reuse_existing_non_empty_run_directory(tmp_path):

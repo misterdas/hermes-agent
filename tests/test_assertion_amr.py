@@ -6,7 +6,7 @@ import sqlite3
 
 import pytest
 
-from hermes_lcm.assertion_amr import (
+from hermes_trove.assertion_amr import (
     OUTCOME_ANCHOR_TAMPERED,
     OUTCOME_OK,
     OUTCOME_SOURCE_DRIFTED,
@@ -14,12 +14,12 @@ from hermes_lcm.assertion_amr import (
     verify_assertion_citations,
     verify_relation_citations,
 )
-from hermes_lcm.assertion_store import (
+from hermes_trove.assertion_store import (
     AssertionCandidate,
     AssertionRelationCandidate,
     AssertionStore,
 )
-from hermes_lcm.db_bootstrap import (
+from hermes_trove.db_bootstrap import (
     ASSERTION_EPISTEMIC_VALUES,
     _normalize_quote_for_hash,
     _quote_hash,
@@ -51,8 +51,8 @@ def _candidate(
 
 @pytest.fixture
 def amr_db(tmp_path):
-    db_path = tmp_path / "lcm.db"
-    from hermes_lcm.store import MessageStore
+    db_path = tmp_path / "trove.db"
+    from hermes_trove.store import MessageStore
 
     messages = MessageStore(db_path)
     assertions = AssertionStore(db_path)
@@ -182,7 +182,7 @@ def test_verifier_anchor_tampered_when_hash_disagrees(amr_db):
     assertions.publish_source(snapshot, [_candidate(content, "Honest record")])
     with sqlite3.connect(_db_path) as raw:
         raw.execute(
-            "UPDATE lcm_assertions SET source_quote_hash = ? WHERE source_store_id = ?",
+            "UPDATE trove_assertions SET source_quote_hash = ? WHERE source_store_id = ?",
             ("sha256:" + "0" * 64, store_id),
         )
     report = verify_assertion_citations(assertions, source_store_id=store_id)
@@ -201,12 +201,12 @@ def test_schema_rejects_bare_digest_and_wrong_length(amr_db):
     with sqlite3.connect(_db_path) as raw:
         with pytest.raises(sqlite3.IntegrityError):
             raw.execute(
-                "UPDATE lcm_assertions SET source_quote_hash = ? WHERE source_store_id = ?",
+                "UPDATE trove_assertions SET source_quote_hash = ? WHERE source_store_id = ?",
                 ("a" * 64, store_id),
             )
         with pytest.raises(sqlite3.IntegrityError):
             raw.execute(
-                "UPDATE lcm_assertions SET source_quote_hash = ? WHERE source_store_id = ?",
+                "UPDATE trove_assertions SET source_quote_hash = ? WHERE source_store_id = ?",
                 ("md5:" + "a" * 32, store_id),
             )
         # Case enforcement: same length, same prefix, uppercase hex must be
@@ -214,12 +214,12 @@ def test_schema_rejects_bare_digest_and_wrong_length(amr_db):
         # character classes match a single char followed by any chars).
         with pytest.raises(sqlite3.IntegrityError):
             raw.execute(
-                "UPDATE lcm_assertions SET source_quote_hash = ? WHERE source_store_id = ?",
+                "UPDATE trove_assertions SET source_quote_hash = ? WHERE source_store_id = ?",
                 ("sha256:" + "a" * 63 + "A", store_id),
             )
         with pytest.raises(sqlite3.IntegrityError):
             raw.execute(
-                "UPDATE lcm_assertions SET source_quote_hash = ? WHERE source_store_id = ?",
+                "UPDATE trove_assertions SET source_quote_hash = ? WHERE source_store_id = ?",
                 ("sha256:" + "a" * 30 + "F" + "a" * 33, store_id),
             )
 
@@ -244,7 +244,7 @@ def test_verifier_source_missing_when_message_gone(amr_db):
 
 
 def test_migration_preserves_rows_and_invalidations(tmp_path):
-    from hermes_lcm.store import MessageStore
+    from hermes_trove.store import MessageStore
 
     db_path = tmp_path / "legacy.db"
     messages = MessageStore(db_path)
@@ -260,7 +260,7 @@ def test_migration_preserves_rows_and_invalidations(tmp_path):
     with sqlite3.connect(db_path) as raw:
         raw.execute("UPDATE messages SET content = ? WHERE store_id = ?", (content_v2, store_id))
         raw.execute(
-            "UPDATE lcm_assertion_sources"
+            "UPDATE trove_assertion_sources"
             " SET invalidated_at = 1000.0, invalidation_reason = 'source_updated'"
             " WHERE source_store_id = ?",
             (store_id,),
@@ -271,7 +271,7 @@ def test_migration_preserves_rows_and_invalidations(tmp_path):
         snapshot2, [_candidate(content_v2, "now updated")], extraction_version="assertions-v2"
     )
     legacy_assertion = assertions.connection.execute(
-        "SELECT assertion_id, source_quote FROM lcm_assertions"
+        "SELECT assertion_id, source_quote FROM trove_assertions"
         " WHERE extraction_version = 'assertions-v1'"
     ).fetchone()
     legacy_relations_count = 0
@@ -283,22 +283,22 @@ def test_migration_preserves_rows_and_invalidations(tmp_path):
     reopened = AssertionStore(db_path)
     try:
         assert reopened.connection.execute(
-            "SELECT COUNT(*) FROM lcm_assertions"
+            "SELECT COUNT(*) FROM trove_assertions"
         ).fetchone()[0] == 2
         row = reopened.connection.execute(
-            "SELECT source_quote_hash, epistemic FROM lcm_assertions"
+            "SELECT source_quote_hash, epistemic FROM trove_assertions"
             " WHERE assertion_id = ?",
             (legacy_assertion[0],),
         ).fetchone()
         assert row["source_quote_hash"] == _quote_hash(legacy_assertion[1])
         assert row["epistemic"] is None
         findings = reopened.connection.execute(
-            "SELECT COUNT(*) FROM lcm_assertions WHERE source_quote_hash IS NULL"
+            "SELECT COUNT(*) FROM trove_assertions WHERE source_quote_hash IS NULL"
         ).fetchone()[0]
         assert findings == 0
         # Sources untouched, including the invalidation history.
         invalidated = reopened.connection.execute(
-            "SELECT invalidation_reason FROM lcm_assertion_sources"
+            "SELECT invalidation_reason FROM trove_assertion_sources"
             " WHERE invalidated_at IS NOT NULL"
         ).fetchone()
         assert invalidated is not None

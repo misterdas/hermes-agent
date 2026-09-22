@@ -1,10 +1,10 @@
 # Architecture
 
-Hermes-LCM keeps raw messages in profile-local SQLite and builds a summary DAG to keep active context bounded.
+Hermes-TROVE keeps raw messages in profile-local SQLite and builds a summary DAG to keep active context bounded.
 
 ## Core flow
 
-1. The active context engine ingests messages into `lcm.db`.
+1. The active context engine ingests messages into `trove.db`.
 2. Older eligible messages are compacted into leaf summaries.
 3. Summary nodes can be condensed to higher DAG depths.
 4. Context assembly combines selected summaries with a protected fresh raw tail.
@@ -15,9 +15,9 @@ Raw messages are source truth. Summary nodes, embeddings, temporal rollups, quer
 ## Scope model
 
 - Current-session DAG operations use the active engine/session binding.
-- `lcm_recall` searches all conversations already stored in the local LCM database.
-- `lcm_load_session` enumerates a known LCM session.
-- Hermes `session_search` covers host-tracked history outside `lcm.db`.
+- `trove_recall` searches all conversations already stored in the local TROVE database.
+- `trove_load_session` enumerates a known TROVE session.
+- Hermes `session_search` covers host-tracked history outside `trove.db`.
 
 Do not silently treat those stores or scopes as interchangeable.
 

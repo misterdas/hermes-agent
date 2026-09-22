@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the versioned Hermes-LCM host-owned dependency contract."""
+"""Validate the versioned Hermes-TROVE host-owned dependency contract."""
 
 from __future__ import annotations
 

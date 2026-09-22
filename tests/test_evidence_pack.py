@@ -8,14 +8,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.evidence_pack import build_evidence_pack
-from hermes_lcm.store import MessageStore
-from hermes_lcm.tools import lcm_evidence_pack
+from hermes_trove.config import TROVEConfig
+from hermes_trove.evidence_pack import build_evidence_pack
+from hermes_trove.store import MessageStore
+from hermes_trove.tools import trove_evidence_pack
 
 
 def _engine(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm.db"))
+    config = TROVEConfig(database_path=str(tmp_path / "trove.db"))
     store = MessageStore(config.database_path, ingest_protection_config=config)
     return SimpleNamespace(
         _config=config,
@@ -40,7 +40,7 @@ def _append(
 
 def _whole_ref(store_id: int, content: str, **facets):
     return {
-        "exact_ref": f"lcm:{store_id}:0-{len(content)}",
+        "exact_ref": f"trove:{store_id}:0-{len(content)}",
         **facets,
     }
 
@@ -51,7 +51,7 @@ def test_pack_normalizes_date_anchor_and_repairs_unique_exact_spans(tmp_path):
     store_id = _append(engine, content)
     engine._session_occurrence_dates = {"session-a": "2023-05-29"}
     try:
-        payload = json.loads(lcm_evidence_pack({
+        payload = json.loads(trove_evidence_pack({
             "question": "What is the difference between the taxi and train fares?",
             "question_date": "2023-05-30T23:42:00",
             "baseline_refs": [
@@ -87,9 +87,9 @@ def test_pack_normalizes_date_anchor_and_repairs_unique_exact_spans(tmp_path):
     assert payload["completeness"]["state"] == "closed"
     assert payload["computation"]["result"] == "$40"
     assert [item["exact_ref"] for item in payload["evidence"]] == [
-        f"lcm:{store_id}:{content.index('taxi costs $60')}-"
+        f"trove:{store_id}:{content.index('taxi costs $60')}-"
         f"{content.index('taxi costs $60') + len('taxi costs $60')}",
-        f"lcm:{store_id}:{content.index('train costs $20')}-"
+        f"trove:{store_id}:{content.index('train costs $20')}-"
         f"{content.index('train costs $20') + len('train costs $20')}",
     ]
 
@@ -99,7 +99,7 @@ def test_pack_rejects_ambiguous_quote_inside_declared_ref(tmp_path):
     content = "The fare is $20. Later the fare is $20."
     store_id = _append(engine, content)
     try:
-        payload = json.loads(lcm_evidence_pack({
+        payload = json.loads(trove_evidence_pack({
             "question": "What was the total fare?",
             "baseline_refs": [
                 _whole_ref(store_id, content, quote="fare is $20", value=20, unit="USD")
@@ -118,7 +118,7 @@ def test_pack_rejects_label_not_grounded_in_exact_quote(tmp_path):
     content = "The invoice total is 20 USD."
     store_id = _append(engine, content)
     try:
-        payload = json.loads(lcm_evidence_pack({
+        payload = json.loads(trove_evidence_pack({
             "question": "What is the invoice total?",
             "baseline_refs": [
                 _whole_ref(store_id, content, quote=content, value=20, label="rent")
@@ -137,7 +137,7 @@ def test_pack_rejects_trailing_question_date_garbage(tmp_path):
     content = "The project is green."
     store_id = _append(engine, content)
     try:
-        payload = json.loads(lcm_evidence_pack({
+        payload = json.loads(trove_evidence_pack({
             "question": "What is the project status?",
             "question_date": "2024-03-20garbage",
             "baseline_refs": [_whole_ref(store_id, content)],
@@ -169,7 +169,7 @@ def test_pack_rejects_overlong_facets_instead_of_truncating(
     candidate = _whole_ref(store_id, content, quote=content, value=20)
     candidate[facet] = value
     try:
-        payload = json.loads(lcm_evidence_pack({
+        payload = json.loads(trove_evidence_pack({
             "question": "What is the invoice total?",
             "baseline_refs": [candidate],
         }, engine=engine))
@@ -194,7 +194,7 @@ def test_pack_counts_each_resolved_exact_ref_once(tmp_path):
         label="fence repair",
     )
     try:
-        payload = json.loads(lcm_evidence_pack({
+        payload = json.loads(trove_evidence_pack({
             "question": "How many repairs did I complete?",
             "question_date": "2024-03-21",
             "baseline_refs": [candidate, candidate],
@@ -223,7 +223,7 @@ def test_pack_preserves_explicit_relative_and_unknown_occurrence_time(tmp_path):
         "unknown": "2024-03-20",
     }
     try:
-        payload = json.loads(lcm_evidence_pack({
+        payload = json.loads(trove_evidence_pack({
             "question": "Put these events in chronological order.",
             "question_date": "2024-03-21",
             "baseline_refs": [
@@ -258,7 +258,7 @@ def test_pack_bounds_refs_quotes_and_response_without_mutating_source(tmp_path):
         for _ in range(10)
     ]
     try:
-        raw = lcm_evidence_pack({
+        raw = trove_evidence_pack({
             "question": "Tell me the grounded evidence.",
             "baseline_refs": refs,
             "budgets": {"max_refs": 3, "max_quote_chars": 64},
@@ -288,7 +288,7 @@ def test_pack_reports_observation_separately_from_unknown_occurrence(tmp_path):
     engine._store._conn.commit()
     engine._session_occurrence_dates = {"session-a": "2024-03-20"}
     try:
-        payload = json.loads(lcm_evidence_pack({
+        payload = json.loads(trove_evidence_pack({
             "question": "What is the preferred color?",
             "baseline_refs": [
                 _whole_ref(store_id, content, quote="color is green", value="green")
@@ -309,7 +309,7 @@ def test_pack_treats_out_of_range_host_timestamp_as_malformed(tmp_path):
     store_id = _append(engine, content, observed_at=1_715_000_000_000)
     stored = engine._store.get(store_id)
     try:
-        payload = json.loads(lcm_evidence_pack({
+        payload = json.loads(trove_evidence_pack({
             "question": "Where did I visit?",
             "baseline_refs": [
                 _whole_ref(store_id, content, quote=content, key="paris")
@@ -337,7 +337,7 @@ def test_pack_computes_explicit_three_item_order_without_open_cardinality_claim(
         engine._session_occurrence_dates[session_id] = session_date
         refs.append(_whole_ref(store_id, content, quote=content, key=label, label=label))
     try:
-        payload = json.loads(lcm_evidence_pack({
+        payload = json.loads(trove_evidence_pack({
             "question": "What is the order of the three trips from earliest to latest?",
             "question_date": "2024-03-20T09:30:00",
             "baseline_refs": list(reversed(refs)),
@@ -360,7 +360,7 @@ def test_pack_selects_relative_date_evidence_without_singular_closure(tmp_path):
     store_id = _append(engine, content)
     engine._session_occurrence_dates = {"session-a": "2023-03-15"}
     try:
-        payload = json.loads(lcm_evidence_pack({
+        payload = json.loads(trove_evidence_pack({
             "question": "What kitchen appliance did I buy 10 days ago?",
             "question_date": "2023-03-25T18:26:00",
             "baseline_refs": [
@@ -417,7 +417,7 @@ def test_pack_optional_retrieval_no_novel_is_measured_but_does_not_fake_closure(
         engine._store.close()
 
     assert len(observed) == 1
-    assert observed[0]["seen_refs"] == [f"lcm:{store_id}:0-{len(content)}"]
+    assert observed[0]["seen_refs"] == [f"trove:{store_id}:0-{len(content)}"]
     assert payload["retrieval"]["status"] == "no_novel"
     assert payload["retrieval"]["query_calls"] == 1
     assert payload["retrieval"]["usage"]["embedding_query_tokens"] == 7
@@ -434,7 +434,7 @@ def test_pack_does_not_admit_unfaceted_novel_retrieval_refs_on_failed_compute(tm
 
     def retrieve(_args):
         return {
-            "hits": [{"exact_ref": f"lcm:{novel_id}:0-{len(novel)}"}],
+            "hits": [{"exact_ref": f"trove:{novel_id}:0-{len(novel)}"}],
             "metrics": {"embedding_query_calls": 1},
         }
 
@@ -452,7 +452,7 @@ def test_pack_does_not_admit_unfaceted_novel_retrieval_refs_on_failed_compute(tm
     assert [item["store_id"] for item in payload["evidence"]] == [baseline_id]
     assert payload["retrieval"]["status"] == "novel_refs_available"
     assert payload["retrieval"]["novel_exact_refs"] == [
-        f"lcm:{novel_id}:0-{len(novel)}"
+        f"trove:{novel_id}:0-{len(novel)}"
     ]
     assert "quote" not in payload["retrieval"]
 
@@ -469,7 +469,7 @@ def test_pack_applies_stable_session_and_observation_date_diversity(tmp_path):
         )
         refs.append(_whole_ref(store_id, content, quote=content, key=f"repair event {index}"))
     try:
-        payload = json.loads(lcm_evidence_pack({
+        payload = json.loads(trove_evidence_pack({
             "question": "How many repair events were there?",
             "baseline_refs": refs,
             "budgets": {"max_per_session": 2, "max_per_date": 2},
@@ -502,7 +502,7 @@ def test_pack_selects_latest_observed_update_without_calling_it_occurrence(tmp_p
         observed_at=datetime(2024, 3, 10, tzinfo=timezone.utc).timestamp(),
     )
     try:
-        payload = json.loads(lcm_evidence_pack({
+        payload = json.loads(trove_evidence_pack({
             "question": "What time do I usually go to the gym?",
             "question_date": "2024-03-20",
             "baseline_refs": [
@@ -517,7 +517,7 @@ def test_pack_selects_latest_observed_update_without_calling_it_occurrence(tmp_p
     assert payload["selection"] == {
         "status": "selected",
         "basis": "observation_time",
-        "exact_refs": [f"lcm:{new_id}:0-{len(new)}"],
+        "exact_refs": [f"trove:{new_id}:0-{len(new)}"],
         "reason_code": "latest_unique_bounded_candidate",
     }
     latest = next(item for item in payload["evidence"] if item["store_id"] == new_id)
@@ -547,12 +547,12 @@ def test_user_value_latest_location_respects_present_and_historical_as_of(tmp_pa
         _whole_ref(denver_id, denver, quote=denver, value="Denver", key="live"),
     ]
     try:
-        present = json.loads(lcm_evidence_pack({
+        present = json.loads(trove_evidence_pack({
             "question": "Where do I currently live?",
             "question_date": "2024-04-20",
             "baseline_refs": refs,
         }, engine=engine))
-        historical = json.loads(lcm_evidence_pack({
+        historical = json.loads(trove_evidence_pack({
             "question": "Where did I currently live as of March 20?",
             "question_date": "2024-03-20",
             "baseline_refs": refs,
@@ -560,10 +560,10 @@ def test_user_value_latest_location_respects_present_and_historical_as_of(tmp_pa
     finally:
         engine._store.close()
 
-    assert present["selection"]["exact_refs"] == [f"lcm:{denver_id}:0-{len(denver)}"]
-    assert historical["selection"]["exact_refs"] == [f"lcm:{austin_id}:0-{len(austin)}"]
+    assert present["selection"]["exact_refs"] == [f"trove:{denver_id}:0-{len(denver)}"]
+    assert historical["selection"]["exact_refs"] == [f"trove:{austin_id}:0-{len(austin)}"]
     assert historical["exclusions"] == [{
-        "exact_ref": f"lcm:{denver_id}:0-{len(denver)}",
+        "exact_ref": f"trove:{denver_id}:0-{len(denver)}",
         "reason_code": "source_observed_after_question_as_of",
     }]
 
@@ -579,12 +579,12 @@ def test_user_value_vacation_count_closes_only_with_fixed_cardinality(tmp_path):
         _whole_ref(kyoto_id, kyoto, quote=kyoto, key="vacation kyoto"),
     ]
     try:
-        closed = json.loads(lcm_evidence_pack({
+        closed = json.loads(trove_evidence_pack({
             "question": "How many of the two vacations did I take this year?",
             "question_date": "2024-12-31",
             "baseline_refs": refs,
         }, engine=engine))
-        open_world = json.loads(lcm_evidence_pack({
+        open_world = json.loads(trove_evidence_pack({
             "question": "How many vacations did I take this year?",
             "question_date": "2024-12-31",
             "baseline_refs": refs,
@@ -610,11 +610,11 @@ def test_user_value_sum_and_difference_require_exact_spans_and_units(tmp_path):
         _whole_ref(second_id, second, quote=second, value=60, unit="usd", key="second invoice"),
     ]
     try:
-        total = json.loads(lcm_evidence_pack({
+        total = json.loads(trove_evidence_pack({
             "question": "What is the total of the two costs?",
             "baseline_refs": refs,
         }, engine=engine))
-        difference = json.loads(lcm_evidence_pack({
+        difference = json.loads(trove_evidence_pack({
             "question": "What is the difference between the two invoice costs?",
             "baseline_refs": refs,
         }, engine=engine))
@@ -631,7 +631,7 @@ def test_user_value_five_days_ago_uses_question_and_source_anchors(tmp_path):
     source_time = datetime(2024, 3, 15, 9, tzinfo=timezone.utc).timestamp()
     store_id = _append(engine, content, observed_at=source_time)
     try:
-        payload = json.loads(lcm_evidence_pack({
+        payload = json.loads(trove_evidence_pack({
             "question": "What happened five days ago?",
             "question_date": "2024-03-20T18:00:00",
             "baseline_refs": [
@@ -666,7 +666,7 @@ def test_legacy_source_ingested_after_as_of_cannot_leak_explicit_event(tmp_path)
     content = "The launch happened on 2024-03-01."
     store_id = _append(engine, content)
     try:
-        payload = json.loads(lcm_evidence_pack({
+        payload = json.loads(trove_evidence_pack({
             "question": "What happened before March ended?",
             "question_date": "2024-03-20",
             "baseline_refs": [_whole_ref(store_id, content, quote=content)],
@@ -689,7 +689,7 @@ def test_temporal_singular_grammar_never_claims_window_completeness(tmp_path):
         observed_at=datetime(2024, 3, 15, tzinfo=timezone.utc).timestamp(),
     )
     try:
-        payload = json.loads(lcm_evidence_pack({
+        payload = json.loads(trove_evidence_pack({
             "question": "Who did I meet five days ago?",
             "question_date": "2024-03-20",
             "baseline_refs": [
@@ -714,7 +714,7 @@ def test_user_value_conflicting_latest_evidence_falls_back(tmp_path):
     austin_id = _append(engine, austin, session_id="a", observed_at=shared_time)
     denver_id = _append(engine, denver, session_id="b", observed_at=shared_time)
     try:
-        payload = json.loads(lcm_evidence_pack({
+        payload = json.loads(trove_evidence_pack({
             "question": "What is my current preferred city?",
             "question_date": "2024-04-20",
             "baseline_refs": [

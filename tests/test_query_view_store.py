@@ -8,21 +8,21 @@ import threading
 
 import pytest
 
-from hermes_lcm.assertion_store import AssertionCandidate, AssertionStore
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.engine import LCMEngine
-from hermes_lcm.maintenance import backup_database, rotate_backup_database
-from hermes_lcm.query_view_store import (
+from hermes_trove.assertion_store import AssertionCandidate, AssertionStore
+from hermes_trove.config import TROVEConfig
+from hermes_trove.engine import TROVEEngine
+from hermes_trove.maintenance import backup_database, rotate_backup_database
+from hermes_trove.query_view_store import (
     QueryViewBuildInProgressError,
     QueryViewIdentity,
     QueryViewStore,
 )
-from hermes_lcm.store import MessageStore
+from hermes_trove.store import MessageStore
 
 
 @pytest.fixture
 def view_db(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     messages = MessageStore(db_path)
     views = QueryViewStore(db_path)
     try:
@@ -81,7 +81,7 @@ def _manifest(*dependencies, open_slots=()):
         "closed_slots": ["subject", "predicate", "evidence"],
         "open_slots": list(open_slots),
         "operands": [],
-        "retrieval_calls": [{"tool": "lcm_recall", "round": 1}],
+        "retrieval_calls": [{"tool": "trove_recall", "round": 1}],
         "evidence_refs": [dependency.citation for dependency in dependencies],
         "coverage": {"scope": "all", "complete": not open_slots},
     }
@@ -110,33 +110,33 @@ def _publish(
 
 
 def test_default_off_and_env_opt_in_do_not_call_a_provider(monkeypatch, tmp_path):
-    monkeypatch.delenv("LCM_QUERY_VIEWS_ENABLED", raising=False)
-    assert LCMConfig().query_views_enabled is False
-    assert LCMConfig.from_env().query_views_enabled is False
-    monkeypatch.setenv("LCM_QUERY_VIEWS_ENABLED", "true")
-    assert LCMConfig.from_env().query_views_enabled is True
+    monkeypatch.delenv("TROVE_QUERY_VIEWS_ENABLED", raising=False)
+    assert TROVEConfig().query_views_enabled is False
+    assert TROVEConfig.from_env().query_views_enabled is False
+    monkeypatch.setenv("TROVE_QUERY_VIEWS_ENABLED", "true")
+    assert TROVEConfig.from_env().query_views_enabled is True
 
     messages = MessageStore(tmp_path / "default-off.db")
     try:
         names = {
             row[0]
             for row in messages._conn.execute(
-                "SELECT name FROM sqlite_master WHERE name LIKE 'lcm_query_%'"
+                "SELECT name FROM sqlite_master WHERE name LIKE 'trove_query_%'"
             )
         }
         assert names == set()
     finally:
         messages.close()
 
-    engine = LCMEngine(
-        config=LCMConfig(database_path=str(tmp_path / "default-engine.db"))
+    engine = TROVEEngine(
+        config=TROVEConfig(database_path=str(tmp_path / "default-engine.db"))
     )
     try:
         assert engine._query_views is None
         names = {
             row[0]
             for row in engine._store._conn.execute(
-                "SELECT name FROM sqlite_master WHERE name LIKE 'lcm_query_%'"
+                "SELECT name FROM sqlite_master WHERE name LIKE 'trove_query_%'"
             )
         }
         assert names == set()
@@ -147,15 +147,15 @@ def test_default_off_and_env_opt_in_do_not_call_a_provider(monkeypatch, tmp_path
 def test_engine_flag_binds_same_db_rebinds_profiles_and_closes(tmp_path):
     home_a = tmp_path / "profile-a"
     home_b = tmp_path / "profile-b"
-    engine = LCMEngine(
-        config=LCMConfig(database_path="", query_views_enabled=True),
+    engine = TROVEEngine(
+        config=TROVEConfig(database_path="", query_views_enabled=True),
         hermes_home=str(home_a),
     )
     last_view_store = None
     try:
         first_view_store = engine._query_views
         assert first_view_store is not None
-        assert first_view_store.db_path == engine._store.db_path == home_a / "lcm.db"
+        assert first_view_store.db_path == engine._store.db_path == home_a / "trove.db"
         content = "I prefer tea."
         store_id = _append(engine._store, content)
         dependency = _dependency(first_view_store, store_id, content)
@@ -169,7 +169,7 @@ def test_engine_flag_binds_same_db_rebinds_profiles_and_closes(tmp_path):
         )
         assert first_view_store.connection is None
         assert engine._query_views is not None
-        assert engine._query_views.db_path == engine._store.db_path == home_b / "lcm.db"
+        assert engine._query_views.db_path == engine._store.db_path == home_b / "trove.db"
         assert engine._query_views.lookup(_identity(), record_hit=False).status == "miss"
 
         engine.on_session_start(
@@ -188,9 +188,9 @@ def test_engine_flag_binds_same_db_rebinds_profiles_and_closes(tmp_path):
 
 
 def test_engine_backup_and_rotation_preserve_query_view_versions(tmp_path):
-    db_path = tmp_path / "lcm.db"
-    engine = LCMEngine(
-        config=LCMConfig(
+    db_path = tmp_path / "trove.db"
+    engine = TROVEEngine(
+        config=TROVEConfig(
             database_path=str(db_path),
             query_views_enabled=True,
         ),
@@ -233,7 +233,7 @@ def test_legacy_database_migrates_in_place_and_seeds_corpus_state(tmp_path):
         assert snapshot.row_count == 1
         assert snapshot.max_store_id == 1
         marker = views._conn.execute(
-            "SELECT 1 FROM lcm_migration_state WHERE step_name='query_views_v1'"
+            "SELECT 1 FROM trove_migration_state WHERE step_name='query_views_v1'"
         ).fetchone()
         assert marker is not None
     finally:
@@ -614,7 +614,7 @@ def test_computation_trace_citations_must_be_exact_and_answer_is_rejected(view_d
             computation_trace={
                 "operation": "sum",
                 "result": "$30",
-                "citations": ["lcm:999:0-1"],
+                "citations": ["trove:999:0-1"],
             },
         )
     assert views.mark_failed(token, "invalid trace citations") is True
@@ -678,7 +678,7 @@ def test_corpus_event_pruning_preserves_active_negative_space_watermarks(view_db
     generations = [
         int(row[0])
         for row in views.connection.execute(
-            "SELECT generation FROM lcm_query_corpus_events ORDER BY generation"
+            "SELECT generation FROM trove_query_corpus_events ORDER BY generation"
         )
     ]
     assert generations == [2, 3, 4, 5, 6]
@@ -690,7 +690,7 @@ def test_corpus_event_pruning_preserves_active_negative_space_watermarks(view_db
     generations = [
         int(row[0])
         for row in views.connection.execute(
-            "SELECT generation FROM lcm_query_corpus_events ORDER BY generation"
+            "SELECT generation FROM trove_query_corpus_events ORDER BY generation"
         )
     ]
     assert generations == [5, 6]
@@ -701,7 +701,7 @@ def test_malformed_same_name_schema_fails_without_publishing_marker(tmp_path):
     messages = MessageStore(db_path)
     messages.close()
     conn = sqlite3.connect(db_path)
-    conn.execute("CREATE TABLE lcm_query_views(view_id TEXT PRIMARY KEY)")
+    conn.execute("CREATE TABLE trove_query_views(view_id TEXT PRIMARY KEY)")
     conn.commit()
     conn.close()
 
@@ -710,7 +710,7 @@ def test_malformed_same_name_schema_fails_without_publishing_marker(tmp_path):
     conn = sqlite3.connect(db_path)
     try:
         marker = conn.execute(
-            "SELECT 1 FROM lcm_migration_state WHERE step_name='query_views_v1'"
+            "SELECT 1 FROM trove_migration_state WHERE step_name='query_views_v1'"
         ).fetchone()
         assert marker is None
     finally:

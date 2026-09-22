@@ -24,13 +24,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from benchmarking.replay import _ensure_hermes_lcm_package
+from benchmarking.replay import _ensure_hermes_trove_package
 
 
 def _payload_for_target_tokens(target_tokens: int) -> str:
     """Return deterministic text with exactly ``target_tokens`` estimator tokens."""
-    _ensure_hermes_lcm_package()
-    from hermes_lcm.tokens import count_tokens
+    _ensure_hermes_trove_package()
+    from hermes_trove.tokens import count_tokens
 
     payload = " x" * target_tokens
     actual = count_tokens(payload)
@@ -68,25 +68,25 @@ def _run_mode(
     enabled: bool,
     stub_threshold_tokens: int,
 ) -> dict[str, Any]:
-    _ensure_hermes_lcm_package()
-    from hermes_lcm.config import LCMConfig
-    from hermes_lcm.engine import LCMEngine
-    import hermes_lcm.externalize as externalize
-    from hermes_lcm.externalize import extract_externalized_ref, load_externalized_payload
-    from hermes_lcm.message_content import normalize_content_value
-    from hermes_lcm.tokens import count_messages_tokens
+    _ensure_hermes_trove_package()
+    from hermes_trove.config import TROVEConfig
+    from hermes_trove.engine import TROVEEngine
+    import hermes_trove.externalize as externalize
+    from hermes_trove.externalize import extract_externalized_ref, load_externalized_payload
+    from hermes_trove.message_content import normalize_content_value
+    from hermes_trove.tokens import count_messages_tokens
 
     mode = "enabled" if enabled else "disabled"
     hermes_home = root / mode / "hermes"
-    config = LCMConfig(
-        database_path=str(root / mode / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(root / mode / "trove.db"),
         fresh_tail_count=4,
         large_output_externalization_enabled=True,
         large_output_externalization_threshold_chars=12_000,
         large_output_active_replay_stubbing_enabled=enabled,
         large_output_active_replay_stub_threshold_tokens=stub_threshold_tokens,
     )
-    engine = LCMEngine(config=config, hermes_home=str(hermes_home))
+    engine = TROVEEngine(config=config, hermes_home=str(hermes_home))
     engine.on_session_start(
         f"active-stub-benchmark-{mode}",
         platform="benchmark",
@@ -159,7 +159,7 @@ def _run_mode(
 
 
 def run_benchmark(*, payload_tokens: int = 30_000) -> dict[str, Any]:
-    _ensure_hermes_lcm_package()
+    _ensure_hermes_trove_package()
     messages: list[dict[str, Any]] = []
     for index in range(10):
         # The small deterministic adjustments preserve the originally observed
@@ -169,7 +169,7 @@ def run_benchmark(*, payload_tokens: int = 30_000) -> dict[str, Any]:
         payload = _payload_for_target_tokens(payload_tokens + adjustment)
         messages.extend(_tool_pair(f"benchmark-call-{index}", payload))
 
-    with tempfile.TemporaryDirectory(prefix="hermes-lcm-active-stub-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="hermes-trove-active-stub-") as temp_dir:
         root = Path(temp_dir)
         disabled = _run_mode(
             root,

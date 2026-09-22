@@ -9,17 +9,17 @@ from array import array
 
 import pytest
 
-from hermes_lcm import db_bootstrap
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.dag import SummaryDAG, SummaryNode
-from hermes_lcm.vector_store import EmbeddingIdentity, VectorStore
-import hermes_lcm.vector_store as vector_store_module
+from hermes_trove import db_bootstrap
+from hermes_trove.config import TROVEConfig
+from hermes_trove.dag import SummaryDAG, SummaryNode
+from hermes_trove.vector_store import EmbeddingIdentity, VectorStore
+import hermes_trove.vector_store as vector_store_module
 
 
 EMBEDDING_TABLES = {
-    "lcm_embedding_profile",
-    "lcm_embedding_meta",
-    "lcm_embedding_vectors",
+    "trove_embedding_profile",
+    "trove_embedding_meta",
+    "trove_embedding_vectors",
 }
 MIGRATION_STEP = "embeddings_v1"
 
@@ -97,7 +97,7 @@ def test_core_migrations_omit_embedding_tables(tmp_path):
         assert db_bootstrap.get_schema_version(conn) == 5
         assert not (EMBEDDING_TABLES & _table_names(conn))
         marker = conn.execute(
-            "SELECT step_name FROM lcm_migration_state WHERE step_name = ?",
+            "SELECT step_name FROM trove_migration_state WHERE step_name = ?",
             (MIGRATION_STEP,),
         ).fetchall()
         assert marker == []
@@ -116,7 +116,7 @@ def test_vector_store_creates_embedding_tables_lazily_and_idempotently(tmp_path)
         assert EMBEDDING_TABLES <= _table_names(store.connection)
         assert db_bootstrap.get_schema_version(store.connection) == 5
         steps = store.connection.execute(
-            "SELECT step_name FROM lcm_migration_state WHERE step_name = ?",
+            "SELECT step_name FROM trove_migration_state WHERE step_name = ?",
             (MIGRATION_STEP,),
         ).fetchall()
         assert [tuple(row) for row in steps] == [(MIGRATION_STEP,)]
@@ -125,7 +125,7 @@ def test_vector_store_creates_embedding_tables_lazily_and_idempotently(tmp_path)
             SELECT sql
             FROM sqlite_master
             WHERE type = 'index'
-              AND name = 'idx_lcm_embedding_meta_identity_embedded_at'
+              AND name = 'idx_trove_embedding_meta_identity_embedded_at'
             """
         ).fetchone()[0]
         assert "WHERE archived = 0" in index_sql
@@ -149,7 +149,7 @@ def test_vector_store_upgrades_previous_schema_version(tmp_path):
         assert EMBEDDING_TABLES <= _table_names(store.connection)
         assert db_bootstrap.get_schema_version(store.connection) == db_bootstrap.SCHEMA_VERSION
         completed = store.connection.execute(
-            "SELECT completed_at FROM lcm_migration_state WHERE step_name = ?",
+            "SELECT completed_at FROM trove_migration_state WHERE step_name = ?",
             (MIGRATION_STEP,),
         ).fetchone()
         assert completed is not None
@@ -202,7 +202,7 @@ def test_profile_identity_distinguishes_provider_without_clobber(tmp_path):
         rows = store.connection.execute(
             """
             SELECT provider, dim, active
-            FROM lcm_embedding_profile
+            FROM trove_embedding_profile
             WHERE model_name = 'model-a'
             ORDER BY provider
             """
@@ -216,7 +216,7 @@ def test_profile_identity_distinguishes_provider_without_clobber(tmp_path):
         identity_c = store.register_profile("model-a", "provider-a", 4)
         assert identity_c not in {identity_a, identity_b}
         assert store.connection.execute(
-            "SELECT COUNT(*) FROM lcm_embedding_profile WHERE model_name = 'model-a'"
+            "SELECT COUNT(*) FROM trove_embedding_profile WHERE model_name = 'model-a'"
         ).fetchone()[0] == 3
     finally:
         store.close()
@@ -244,7 +244,7 @@ def test_switch_provider_a_b_a_reactivates_without_rebackfill(stores):
     assert [row[0] for row in result] == [str(node_a)]
     # Only exactly one profile is active at a time.
     active = store.connection.execute(
-        "SELECT COUNT(*) FROM lcm_embedding_profile WHERE active = 1 AND archived_at IS NULL"
+        "SELECT COUNT(*) FROM trove_embedding_profile WHERE active = 1 AND archived_at IS NULL"
     ).fetchone()[0]
     assert active == 1
 
@@ -271,7 +271,7 @@ def test_record_and_knn_match_hand_computed_cosines(stores):
     token_counts = store.connection.execute(
         """
         SELECT embedded_id, source_token_count
-        FROM lcm_embedding_meta
+        FROM trove_embedding_meta
         ORDER BY CAST(embedded_id AS INTEGER)
         """
     ).fetchall()
@@ -289,7 +289,7 @@ def test_record_normalizes_vector_before_packing(stores):
     _record_embedding(store, node_id, "summary", "normalized", [3.0, 4.0, 0.0])
 
     blob = store.connection.execute(
-        "SELECT vec FROM lcm_embedding_vectors WHERE embedded_id = ?",
+        "SELECT vec FROM trove_embedding_vectors WHERE embedded_id = ?",
         (str(node_id),),
     ).fetchone()[0]
     unpacked = array("f")
@@ -320,7 +320,7 @@ def test_vector_wire_format_is_explicit_little_endian_float32(stores):
     _record_embedding(store, node_id, "summary", "wire", [3.0, 4.0])
 
     blob = store.connection.execute(
-        "SELECT vec FROM lcm_embedding_vectors WHERE embedded_id = ?",
+        "SELECT vec FROM trove_embedding_vectors WHERE embedded_id = ?",
         (str(node_id),),
     ).fetchone()[0]
     assert blob == struct.pack("<2f", 0.6, 0.8)
@@ -369,7 +369,7 @@ def test_bounded_scan_uses_source_recency_after_newest_first_backfill(
         _record_embedding(store, middle, "summary", "bounded", [0.0, 1.0, 0.0])
         _record_embedding(store, oldest, "summary", "bounded", [1.0, 0.0, 0.0])
         store.connection.executemany(
-            "UPDATE lcm_embedding_meta SET embedded_at = ? WHERE embedded_id = ?",
+            "UPDATE trove_embedding_meta SET embedded_at = ? WHERE embedded_id = ?",
             [
                 ("2026-07-15T01:00:00+00:00", str(newest)),
                 ("2026-07-15T02:00:00+00:00", str(middle)),
@@ -772,11 +772,11 @@ def test_suppressed_summaries_are_filtered_and_purge_removes_embeddings(stores):
 
     assert store.purge_embeddings_for_nodes([kept, kept]) == 1
     assert store.connection.execute(
-        "SELECT COUNT(*) FROM lcm_embedding_meta WHERE embedded_id = ?",
+        "SELECT COUNT(*) FROM trove_embedding_meta WHERE embedded_id = ?",
         (str(kept),),
     ).fetchone()[0] == 0
     assert store.connection.execute(
-        "SELECT COUNT(*) FROM lcm_embedding_vectors WHERE embedded_id = ?",
+        "SELECT COUNT(*) FROM trove_embedding_vectors WHERE embedded_id = ?",
         (str(kept),),
     ).fetchone()[0] == 0
 
@@ -963,11 +963,11 @@ def test_large_id_metadata_resolve_scales_past_variable_limit(stores):
             (node_id, now, now, now),
         )
     conn.executemany(
-        "INSERT INTO lcm_embedding_vectors(embedded_id, identity_hash, vec) VALUES (?, ?, ?)",
+        "INSERT INTO trove_embedding_vectors(embedded_id, identity_hash, vec) VALUES (?, ?, ?)",
         [(str(node_id), identity, vec) for node_id in range(1, 40_001)],
     )
     conn.executemany(
-        "INSERT INTO lcm_embedding_meta(embedded_id, embedded_kind, identity_hash, "
+        "INSERT INTO trove_embedding_meta(embedded_id, embedded_kind, identity_hash, "
         "embedded_at, source_token_count, archived) VALUES (?, 'summary', ?, '2026', 1, 0)",
         [(str(node_id), identity) for node_id in range(1, 40_001)],
     )
@@ -1000,13 +1000,13 @@ def test_no_profile_or_vectors_returns_none_coverage(tmp_path):
 
 
 def test_embedding_config_defaults_are_inert_and_read_environment(monkeypatch):
-    defaults = LCMConfig()
+    defaults = TROVEConfig()
     assert defaults.embeddings_enabled is False
     assert defaults.embedding_bounded_scan_rows == 2_000
 
-    monkeypatch.setenv("LCM_EMBEDDINGS_ENABLED", "true")
-    monkeypatch.setenv("LCM_EMBEDDING_BOUNDED_SCAN_ROWS", "123")
-    configured = LCMConfig.from_env()
+    monkeypatch.setenv("TROVE_EMBEDDINGS_ENABLED", "true")
+    monkeypatch.setenv("TROVE_EMBEDDING_BOUNDED_SCAN_ROWS", "123")
+    configured = TROVEConfig.from_env()
     assert configured.embeddings_enabled is True
     assert configured.embedding_bounded_scan_rows == 123
 
@@ -1130,7 +1130,7 @@ def test_bounded_path_filters_before_applying_recency_bound(tmp_path, monkeypatc
         # The wrong-conversation row is the most recent by embedded_at, so a
         # bound-first scan would pick only it and then filter to empty.
         store.connection.executemany(
-            "UPDATE lcm_embedding_meta SET embedded_at = ? WHERE embedded_id = ?",
+            "UPDATE trove_embedding_meta SET embedded_at = ? WHERE embedded_id = ?",
             [
                 ("2026-07-15T05:00:00+00:00", str(drop)),
                 ("2026-07-15T01:00:00+00:00", str(keep)),
@@ -1185,7 +1185,7 @@ def test_orphaned_embeddings_are_not_ranked_and_purge_reclaims(stores):
 
     assert store.purge_embeddings_for_nodes([orphan]) == 1
     assert store.connection.execute(
-        "SELECT COUNT(*) FROM lcm_embedding_vectors WHERE embedded_id = ?",
+        "SELECT COUNT(*) FROM trove_embedding_vectors WHERE embedded_id = ?",
         (str(orphan),),
     ).fetchone()[0] == 0
 
@@ -1207,12 +1207,12 @@ def test_large_session_delete_purges_exact_ids_in_bounded_batches(tmp_path):
         identity = store.register_profile("bulk-delete", "local", 2)
         vec = struct.pack("<2f", 1.0, 0.0)
         store.connection.executemany(
-            "INSERT INTO lcm_embedding_vectors(embedded_id, identity_hash, vec) "
+            "INSERT INTO trove_embedding_vectors(embedded_id, identity_hash, vec) "
             "VALUES (?, ?, ?)",
             ((str(node_id), identity, vec) for node_id in node_ids),
         )
         store.connection.executemany(
-            "INSERT INTO lcm_embedding_meta("
+            "INSERT INTO trove_embedding_meta("
             "embedded_id, embedded_kind, identity_hash, embedded_at, "
             "source_token_count, archived) "
             "VALUES (?, 'summary', ?, '2026-01-01', 1, 0)",
@@ -1234,10 +1234,10 @@ def test_large_session_delete_purges_exact_ids_in_bounded_batches(tmp_path):
         assert max(map(len, batches)) == 256
         assert [node_id for batch in batches for node_id in batch] == node_ids
         assert store.connection.execute(
-            "SELECT COUNT(*) FROM lcm_embedding_vectors"
+            "SELECT COUNT(*) FROM trove_embedding_vectors"
         ).fetchone()[0] == 0
         assert store.connection.execute(
-            "SELECT COUNT(*) FROM lcm_embedding_meta"
+            "SELECT COUNT(*) FROM trove_embedding_meta"
         ).fetchone()[0] == 0
     finally:
         store.close()
@@ -1256,7 +1256,7 @@ def test_delete_node_batch_stages_scope_past_sqlite_bind_cap(tmp_path):
 def test_temp_id_tables_are_unique_per_call_and_dropped(stores):
     """Overlapping scratch tables get distinct names and never clobber each other.
 
-    The old single fixed name meant a second call's ``DELETE FROM _lcm_id_scratch``
+    The old single fixed name meant a second call's ``DELETE FROM _trove_id_scratch``
     wiped the first call's candidate set. Unique-per-call names keep both sets
     intact, and each table is dropped when its context exits.
     """
@@ -1267,7 +1267,7 @@ def test_temp_id_tables_are_unique_per_call_and_dropped(stores):
             assert {r[0] for r in store.connection.execute(f"SELECT id FROM {first}")} == {"1", "2"}
             assert {r[0] for r in store.connection.execute(f"SELECT id FROM {second}")} == {"3", "4"}
     leftover = store.connection.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '_lcm_id_scratch%'"
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '_trove_id_scratch%'"
     ).fetchall()
     assert leftover == []
 
@@ -1335,11 +1335,11 @@ def test_record_embedding_publishes_under_captured_identity_not_active(stores):
     )
 
     vectors = store.connection.execute(
-        "SELECT identity_hash FROM lcm_embedding_vectors WHERE embedded_id = ?",
+        "SELECT identity_hash FROM trove_embedding_vectors WHERE embedded_id = ?",
         (str(node),),
     ).fetchall()
     meta = store.connection.execute(
-        "SELECT identity_hash FROM lcm_embedding_meta WHERE embedded_id = ?",
+        "SELECT identity_hash FROM trove_embedding_meta WHERE embedded_id = ?",
         (str(node),),
     ).fetchall()
     assert [row[0] for row in vectors] == [identity_a_hash]
@@ -1554,7 +1554,7 @@ def test_bounded_candidate_enumeration_is_capped_at_sql_layer(tmp_path, monkeypa
         enum_stmts = [
             sql
             for sql in statements
-            if "FROM lcm_embedding_meta m" in sql and "LIMIT" in sql
+            if "FROM trove_embedding_meta m" in sql and "LIMIT" in sql
         ]
         assert enum_stmts, "bounded enumeration query must carry a SQL LIMIT"
     finally:
@@ -1570,17 +1570,17 @@ def test_embedding_schema_repaired_when_marker_set_but_table_dropped(tmp_path):
 
     conn = sqlite3.connect(db_path)
     marker = conn.execute(
-        "SELECT 1 FROM lcm_migration_state WHERE step_name = ?", ("embeddings_v1",)
+        "SELECT 1 FROM trove_migration_state WHERE step_name = ?", ("embeddings_v1",)
     ).fetchone()
     assert marker is not None  # marker present ...
-    conn.execute("DROP TABLE lcm_embedding_vectors")  # ... but a table is gone.
+    conn.execute("DROP TABLE trove_embedding_vectors")  # ... but a table is gone.
     conn.commit()
     conn.close()
 
     # Re-opening must VERIFY + repair rather than trust the marker.
     repaired = VectorStore(db_path)
     try:
-        assert "lcm_embedding_vectors" in _table_names(repaired.connection)
+        assert "trove_embedding_vectors" in _table_names(repaired.connection)
         assert db_bootstrap.embedding_schema_missing(repaired.connection) == set()
     finally:
         repaired.close()
@@ -1635,12 +1635,12 @@ def test_numpy_candidate_load_is_sql_bounded(tmp_path, monkeypatch):
         for index in range(30):
             node = _add_summary(dag, created_at=float(index + 1))
             store.connection.execute(
-                "INSERT INTO lcm_embedding_vectors(embedded_id, identity_hash, vec) "
+                "INSERT INTO trove_embedding_vectors(embedded_id, identity_hash, vec) "
                 "VALUES (?, ?, ?)",
                 (str(node), identity, vec),
             )
             store.connection.execute(
-                "INSERT INTO lcm_embedding_meta(embedded_id, embedded_kind, "
+                "INSERT INTO trove_embedding_meta(embedded_id, embedded_kind, "
                 "identity_hash, embedded_at, source_token_count, archived) "
                 "VALUES (?, 'summary', ?, ?, 1, 0)",
                 (str(node), identity, f"2026-01-01T00:00:{index:02d}+00:00"),
@@ -1681,7 +1681,7 @@ def test_malformed_same_name_embedding_table_is_rejected(tmp_path):
     db_path = tmp_path / "malformed.db"
     conn = sqlite3.connect(db_path)
     conn.execute(
-        "CREATE TABLE lcm_embedding_profile("
+        "CREATE TABLE trove_embedding_profile("
         "identity_hash TEXT, provider TEXT, model_name TEXT)"
     )
     conn.commit()
@@ -1693,11 +1693,11 @@ def test_malformed_same_name_embedding_table_is_rejected(tmp_path):
     try:
         marker = check.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' "
-            "AND name='lcm_migration_state'"
+            "AND name='trove_migration_state'"
         ).fetchone()
         if marker:
             assert check.execute(
-                "SELECT 1 FROM lcm_migration_state WHERE step_name='embeddings_v1'"
+                "SELECT 1 FROM trove_migration_state WHERE step_name='embeddings_v1'"
             ).fetchone() is None
     finally:
         check.close()
@@ -1708,10 +1708,10 @@ def test_malformed_same_name_embedding_index_is_rejected(tmp_path):
     store = VectorStore(db_path)
     store.close()
     conn = sqlite3.connect(db_path)
-    conn.execute("DROP INDEX idx_lcm_embedding_meta_identity_embedded_at")
+    conn.execute("DROP INDEX idx_trove_embedding_meta_identity_embedded_at")
     conn.execute(
-        "CREATE UNIQUE INDEX idx_lcm_embedding_meta_identity_embedded_at "
-        "ON lcm_embedding_meta(identity_hash, embedded_at ASC)"
+        "CREATE UNIQUE INDEX idx_trove_embedding_meta_identity_embedded_at "
+        "ON trove_embedding_meta(identity_hash, embedded_at ASC)"
     )
     conn.commit()
     conn.close()
@@ -1724,10 +1724,10 @@ def test_malformed_embedding_index_collation_is_rejected(tmp_path):
     store = VectorStore(db_path)
     store.close()
     conn = sqlite3.connect(db_path)
-    conn.execute("DROP INDEX idx_lcm_embedding_profile_model")
+    conn.execute("DROP INDEX idx_trove_embedding_profile_model")
     conn.execute(
-        "CREATE INDEX idx_lcm_embedding_profile_model "
-        "ON lcm_embedding_profile(model_name COLLATE NOCASE, provider)"
+        "CREATE INDEX idx_trove_embedding_profile_model "
+        "ON trove_embedding_profile(model_name COLLATE NOCASE, provider)"
     )
     conn.commit()
     conn.close()
@@ -1749,7 +1749,7 @@ def test_malformed_embedding_constraint_or_default_is_rejected(
     db_path = tmp_path / f"bad_shape_{data_version_default}.db"
     conn = sqlite3.connect(db_path)
     conn.execute(
-        "CREATE TABLE lcm_embedding_profile ("
+        "CREATE TABLE trove_embedding_profile ("
         "identity_hash TEXT PRIMARY KEY, provider TEXT NOT NULL, "
         "model_name TEXT NOT NULL, revision TEXT NOT NULL DEFAULT '', "
         f"dim INTEGER {dim_clause}, "

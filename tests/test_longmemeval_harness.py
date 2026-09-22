@@ -2,7 +2,7 @@
 
 Covers the evidence-matching scorer, the metric math (recall@k / NDCG@10 /
 percentiles), CLI argument validation, and an end-to-end offline stub run that
-proves the ingest -> retrieve -> score plumbing over a real temp LCM store.
+proves the ingest -> retrieve -> score plumbing over a real temp TROVE store.
 """
 
 from __future__ import annotations
@@ -42,11 +42,11 @@ from benchmarking.longmemeval import (
     turn_recall_at_k,
 )
 
-_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "lcm_longmemeval.py"
+_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "trove_longmemeval.py"
 
 
 def _load_cli():
-    spec = importlib.util.spec_from_file_location("lcm_longmemeval_cli", _SCRIPT)
+    spec = importlib.util.spec_from_file_location("trove_longmemeval_cli", _SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -600,18 +600,18 @@ def test_db_template_reuse_matches_from_scratch_bootstrap(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# Production lcm_recall arm (the tool users actually call).
+# Production trove_recall arm (the tool users actually call).
 # --------------------------------------------------------------------------- #
 
 
-def test_lcm_recall_arm_is_registered_and_scored(tmp_path):
+def test_trove_recall_arm_is_registered_and_scored(tmp_path):
     """The production arm is a first-class arm: registered and scored end-to-end."""
-    assert "lcm_recall" in ARMS
+    assert "trove_recall" in ARMS
     report = run_harness(
         _synthetic_dataset(), provider_name="stub", model="", tmp_dir=tmp_path
     )
-    assert "lcm_recall" in report["arms"]
-    recall = report["arms"]["lcm_recall"]
+    assert "trove_recall" in report["arms"]
+    recall = report["arms"]["trove_recall"]
     assert set(recall) >= {"recall@1", "recall@5", "recall@10", "ndcg@10", "turn"}
     # Non-degenerate: the production path recovers the evidence session (its ZEBRA
     # cue is lexically distinctive, so at minimum the FTS arm inside recall fires).
@@ -642,12 +642,12 @@ def test_fresh_recall_session_is_disjoint_from_haystack_and_neutralizes_scope(tm
     # production KNN arms match against the recorded profile) so the vector arms
     # return hits, exercising the true scope-prior path rather than a degraded one.
     from benchmarking.longmemeval import StubEmbedder
-    from hermes_lcm.config import LCMConfig
-    from hermes_lcm.dag import SummaryDAG
-    from hermes_lcm.store import MessageStore
+    from hermes_trove.config import TROVEConfig
+    from hermes_trove.dag import SummaryDAG
+    from hermes_trove.store import MessageStore
 
     embedder = StubEmbedder()
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / f"{question.question_id}.db"), embeddings_enabled=True,
         embedding_provider="stub", embedding_model=embedder.model_id,
     )
@@ -673,9 +673,9 @@ def test_fresh_recall_session_is_disjoint_from_haystack_and_neutralizes_scope(tm
 
 def test_fresh_recall_session_avoids_haystack_collision():
     """If the sentinel id already exists in the haystack, a unique variant is used."""
-    from benchmarking.longmemeval import _LCM_RECALL_FRESH_SESSION
+    from benchmarking.longmemeval import _TROVE_RECALL_FRESH_SESSION
 
-    collide = f"{_LCM_RECALL_FRESH_SESSION}q-collide"
+    collide = f"{_TROVE_RECALL_FRESH_SESSION}q-collide"
     raw = _make_raw(
         "q-collide", "single-session-user",
         sessions={collide: [{"role": "user", "content": "x"}]},

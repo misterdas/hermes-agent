@@ -8,16 +8,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.evidence_compiler import compile_preanswer_evidence
-from hermes_lcm.requirements_compiler import _source_event_clause
-from hermes_lcm.store import MessageStore
-from hermes_lcm.tools import lcm_compile_evidence
-from hermes_lcm.schemas import LCM_COMPILE_EVIDENCE
+from hermes_trove.config import TROVEConfig
+from hermes_trove.evidence_compiler import compile_preanswer_evidence
+from hermes_trove.requirements_compiler import _source_event_clause
+from hermes_trove.store import MessageStore
+from hermes_trove.tools import trove_compile_evidence
+from hermes_trove.schemas import TROVE_COMPILE_EVIDENCE
 
 
 def _engine(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm.db"))
+    config = TROVEConfig(database_path=str(tmp_path / "trove.db"))
     store = MessageStore(config.database_path, ingest_protection_config=config)
     return SimpleNamespace(
         _config=config,
@@ -40,7 +40,7 @@ def _append(
         message["timestamp"] = timestamp
     store_id = engine._store.append(session_id, message)
     return {
-        "exact_ref": f"lcm:{store_id}:0-{len(content)}",
+        "exact_ref": f"trove:{store_id}:0-{len(content)}",
         "quote": content,
     }
 
@@ -118,7 +118,7 @@ def test_adjacent_role_partner_closes_named_scalar_slot(tmp_path):
 
     assert result["state"] == "answer_sufficient"
     assert len(result["novel_exact_refs"]) == 1
-    assert result["novel_exact_refs"][0].startswith("lcm:2:")
+    assert result["novel_exact_refs"][0].startswith("trove:2:")
     assert result["metrics"]["session_loads"] == 1
     assert "35 minutes" in result["context"]
 
@@ -268,8 +268,8 @@ def test_targeted_retrieval_admits_only_positive_slot_coverage(tmp_path):
     assert len(calls) == 1
     assert calls[0]["detail"] == "answer_ready"
     assert len(result["novel_exact_refs"]) == 1
-    assert result["novel_exact_refs"][0].startswith("lcm:2:")
-    assert all(not ref.startswith("lcm:3:") for ref in result["novel_exact_refs"])
+    assert result["novel_exact_refs"][0].startswith("trove:2:")
+    assert all(not ref.startswith("trove:3:") for ref in result["novel_exact_refs"])
 
 
 def test_auto_tool_mode_calls_same_product_compiler_and_legacy_mode_stays_default(tmp_path):
@@ -277,7 +277,7 @@ def test_auto_tool_mode_calls_same_product_compiler_and_legacy_mode_stays_defaul
     source = _append(engine, "You need 15 points to redeem the reward.")
     try:
         auto = json.loads(
-            lcm_compile_evidence(
+            trove_compile_evidence(
                 {
                     "mode": "auto",
                     "question": "How many points do I need to redeem the reward?",
@@ -287,7 +287,7 @@ def test_auto_tool_mode_calls_same_product_compiler_and_legacy_mode_stays_defaul
             )
         )
         legacy = json.loads(
-            lcm_compile_evidence(
+            trove_compile_evidence(
                 {
                     "question": "How many points do I need to redeem the reward?",
                     "baseline_refs": [source],
@@ -325,7 +325,7 @@ def test_bounded_trace_has_no_question_or_secret_payload(tmp_path):
 
 
 def test_public_schema_adds_auto_mode_without_changing_default():
-    parameters = LCM_COMPILE_EVIDENCE["parameters"]
+    parameters = TROVE_COMPILE_EVIDENCE["parameters"]
     assert parameters["properties"]["mode"] == {
         "type": "string",
         "enum": ["proposal", "auto"],
@@ -359,8 +359,8 @@ def test_store_scan_is_one_bounded_snapshot_and_never_relabels_time(tmp_path):
     assert scan["rows"][0]["observed_at"] is None
     assert scan["rows"][0]["ingested_at"] is not None
     assert scan["rows"][1]["observed_at"] == observed
-    assert first["exact_ref"].startswith("lcm:1:")
-    assert second["exact_ref"].startswith("lcm:2:")
+    assert first["exact_ref"].startswith("trove:1:")
+    assert second["exact_ref"].startswith("trove:2:")
 
 
 def test_temporal_event_selects_only_the_resolved_question_day(tmp_path):
@@ -811,7 +811,7 @@ def test_invalid_and_secret_exact_refs_never_enter_evidence(tmp_path):
         result = _compile(
             engine,
             "How long is my commute?",
-            [secret, {"exact_ref": "lcm:999:0-10", "quote": "not real"}],
+            [secret, {"exact_ref": "trove:999:0-10", "quote": "not real"}],
             budgets={"max_retrieval_calls": 0},
         )
     finally:
@@ -875,7 +875,7 @@ def test_saturated_baseline_reserves_frontier_for_opposite_role_closure(tmp_path
 
     assert result["state"] == "answer_sufficient"
     assert len(result["novel_exact_refs"]) == 1
-    assert result["novel_exact_refs"][0].startswith("lcm:2:")
+    assert result["novel_exact_refs"][0].startswith("trove:2:")
     assert result["metrics"]["hydrated_candidates"] <= 12
     assert result["metrics"]["session_loads"] >= 1
 
@@ -1102,7 +1102,7 @@ def test_finite_scan_ignores_generic_advice_but_rejects_unknown_source_event(tmp
     assert result["finite_coverage"] is False
     assert result["reason_code"] == "finite_unknown_time_population"
     assert result["coverage_certificate"]["material_clauses"] == 2
-    assert unknown["exact_ref"].startswith("lcm:")
+    assert unknown["exact_ref"].startswith("trove:")
 
 
 def test_increase_from_uses_source_order_and_unique_operand_spans(tmp_path):
@@ -1175,7 +1175,7 @@ def test_second_targeted_query_may_close_a_named_slot_after_no_progress(tmp_path
     assert calls[0]["query"] != calls[1]["query"]
     assert result["state"] == "computation_sufficient"
     assert result["computation"]["result_value"] == 90
-    assert all(not ref.startswith("lcm:3:") for ref in result["novel_exact_refs"])
+    assert all(not ref.startswith("trove:3:") for ref in result["novel_exact_refs"])
 
 
 def test_retrieval_usage_maps_product_embedding_metrics_without_query_payload(tmp_path):

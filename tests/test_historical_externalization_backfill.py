@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.externalize import get_large_output_storage_dir, maybe_externalize_payload
-from hermes_lcm.store import MessageStore
+from hermes_trove.config import TROVEConfig
+from hermes_trove.externalize import get_large_output_storage_dir, maybe_externalize_payload
+from hermes_trove.store import MessageStore
 
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "backfill_externalized_tool_outputs.py"
@@ -23,8 +23,8 @@ def _load_script():
 
 def _seed(tmp_path, *, content="large historical output " * 100, session_id="session-private"):
     home = tmp_path / "hermes"
-    database = home / "lcm.db"
-    config = LCMConfig(
+    database = home / "trove.db"
+    config = TROVEConfig(
         database_path=str(database),
         large_output_externalization_enabled=False,
         large_output_externalization_threshold_chars=100,
@@ -835,7 +835,7 @@ def test_rollback_refuses_digest_mismatch(tmp_path):
 
 
 def _redacting_config(database, patterns):
-    return LCMConfig(
+    return TROVEConfig(
         database_path=str(database),
         large_output_externalization_enabled=False,
         large_output_externalization_threshold_chars=100,
@@ -862,7 +862,7 @@ def test_apply_redacts_sensitive_content_before_writing_sidecar(tmp_path):
     # The current sensitive-pattern policy is applied before persisting, exactly as
     # live ingest does, so the raw secret never reaches the new retention surface.
     assert secret not in json.dumps(payload)
-    assert "LCM sensitive redaction" in payload["content"]
+    assert "TROVE sensitive redaction" in payload["content"]
     # The manifest digest and ownership proof bind the redacted content actually stored.
     persisted = json.loads(manifest.read_text(encoding="utf-8"))
     assert module._sha256(payload["content"]) == persisted["items"][0]["sha256"]

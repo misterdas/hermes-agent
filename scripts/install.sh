@@ -11,9 +11,9 @@ else
   TARGET_ROOT="$HERMES_HOME_DIR"
 fi
 
-PLUGIN_TARGET="$TARGET_ROOT/plugins/hermes-lcm"
-SKILL_SOURCE="$REPO_ROOT/skills/hermes-lcm"
-SKILL_TARGET="$TARGET_ROOT/skills/hermes-lcm"
+PLUGIN_TARGET="$TARGET_ROOT/plugins/hermes-trove"
+SKILL_SOURCE="$REPO_ROOT/skills/hermes-trove"
+SKILL_TARGET="$TARGET_ROOT/skills/hermes-trove"
 
 preflight_target() {
   local label="$1"
@@ -63,7 +63,7 @@ if [[ ! -e "$SKILL_TARGET" && ! -L "$SKILL_TARGET" ]]; then
 fi
 
 cat <<EOF
-Installed hermes-lcm at:
+Installed hermes-trove at:
   $PLUGIN_TARGET
 
 Discoverable skill:
@@ -73,14 +73,14 @@ Activation requires both:
 
 plugins:
   enabled:
-    - hermes-lcm
+    - hermes-trove
 
 context:
-  engine: lcm
+  engine: trove
 
 Verification:
   1. Restart Hermes.
   2. Run: hermes plugins
-  3. Confirm the plugin list includes hermes-lcm and the selected context engine is lcm.
-  4. Confirm the available skills include hermes-lcm.
+  3. Confirm the plugin list includes hermes-trove and the selected context engine is trove.
+  4. Confirm the available skills include hermes-trove.
 EOF

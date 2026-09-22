@@ -36,8 +36,8 @@ def test_release_candidate_identity_surfaces_are_synchronized():
     ).read_text(encoding="utf-8")
 
     assert f"version: {RELEASE_VERSION}" in manifest
-    assert f"hermes-lcm v{RELEASE_VERSION} (15 tools)" in readme
-    assert f"hermes-lcm v{RELEASE_VERSION} (15 tools)" in operator_guide
+    assert f"hermes-trove v{RELEASE_VERSION} (15 tools)" in readme
+    assert f"hermes-trove v{RELEASE_VERSION} (15 tools)" in operator_guide
     assert f"## v{RELEASE_VERSION} - " in changelog
     assert f"v{RELEASE_VERSION}, main, or commit SHA" in bug_report
 
@@ -51,7 +51,7 @@ def test_upgrade_guide_requires_sqlite_safe_backup_semantics():
 
     assert "the only supported online backup path" in operator_guide
     assert "stop Hermes and every other process that can write the database" in operator_guide
-    assert "`lcm.db-wal` and `lcm.db-shm`" in operator_guide
+    assert "`trove.db-wal` and `trove.db-shm`" in operator_guide
     assert "one quiescent snapshot" in operator_guide
 
 
@@ -85,7 +85,7 @@ def test_preanswer_guide_discloses_inherited_embedding_provider_behavior():
         .split()
     )
 
-    assert "may call `lcm_recall`" in operator_guide
+    assert "may call `trove_recall`" in operator_guide
     assert "may send the current question to that provider" in operator_guide
     assert "Disabling the selective compiler does not prevent" in operator_guide
     assert "Pre-answer evidence alone remains provider-free." not in operator_guide
@@ -94,7 +94,7 @@ def test_preanswer_guide_discloses_inherited_embedding_provider_behavior():
 def test_release_candidate_notes_cover_only_the_merged_release_scope():
     notes = RELEASE_NOTES.read_text(encoding="utf-8")
 
-    assert notes.startswith(f"# hermes-lcm v{RELEASE_VERSION}\n")
+    assert notes.startswith(f"# hermes-trove v{RELEASE_VERSION}\n")
     assert "#526" in notes
     assert "#557" in notes
     assert "#570" in notes

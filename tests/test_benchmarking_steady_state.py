@@ -29,15 +29,15 @@ class _FakeRegexEngine:
 
 
 def _enable_message_regex(monkeypatch):
-    import hermes_lcm.message_patterns as message_patterns
+    import hermes_trove.message_patterns as message_patterns
 
     monkeypatch.setattr(message_patterns, "_regex_engine", _FakeRegexEngine)
     monkeypatch.setattr(message_patterns, "_MISSING_REGEX_WARNING_EMITTED", False)
 
 
 def _load_steady_state_cli():
-    script_path = Path(__file__).resolve().parents[1] / "scripts" / "lcm_steady_state_bench.py"
-    spec = importlib.util.spec_from_file_location("lcm_steady_state_bench_cli", script_path)
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "trove_steady_state_bench.py"
+    spec = importlib.util.spec_from_file_location("trove_steady_state_bench_cli", script_path)
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -129,7 +129,7 @@ def test_steady_state_isolates_each_target_size(tmp_path, monkeypatch):
 
 
 def test_steady_state_skips_ignore_case_when_regex_filtering_is_inactive(tmp_path, monkeypatch):
-    import hermes_lcm.message_patterns as message_patterns
+    import hermes_trove.message_patterns as message_patterns
 
     monkeypatch.setattr(message_patterns, "_regex_engine", None)
     monkeypatch.setattr(message_patterns, "_MISSING_REGEX_WARNING_EMITTED", False)
@@ -152,7 +152,7 @@ def test_steady_state_skips_ignore_case_when_regex_filtering_is_inactive(tmp_pat
 
 
 def test_steady_state_cli_suppresses_inactive_ignore_case(tmp_path, monkeypatch, capsys):
-    import hermes_lcm.message_patterns as message_patterns
+    import hermes_trove.message_patterns as message_patterns
 
     monkeypatch.setattr(message_patterns, "_regex_engine", None)
     monkeypatch.setattr(message_patterns, "_MISSING_REGEX_WARNING_EMITTED", False)

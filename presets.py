@@ -10,7 +10,7 @@ from .config import ENV_FIELD_SPECS
 
 
 @dataclass(frozen=True)
-class LCMPreset:
+class TROVEPreset:
     """Inspectable preset metadata.
 
     Presets are deliberately metadata and dry-run suggestions for now. They do
@@ -47,7 +47,7 @@ _ENV_SPEC_BY_FIELD = {spec.name: spec for spec in ENV_FIELD_SPECS}
 _FIELD_ENV = {name: _ENV_SPEC_BY_FIELD[name].env_key for name in _PRESET_FIELDS}
 _FIELD_PARSERS = {name: _ENV_SPEC_BY_FIELD[name].py_type for name in _PRESET_FIELDS}
 
-_CODEX_GPT_LONG_CONTEXT = LCMPreset(
+_CODEX_GPT_LONG_CONTEXT = TROVEPreset(
     name="codex_gpt_long_context",
     family="GPT/Codex long-context",
     description="Benchmark-backed candidate for GPT/Codex-style long-context routes.",
@@ -94,7 +94,7 @@ _CODEX_GPT_LONG_CONTEXT = LCMPreset(
     ),
 )
 
-_CODEX_SPARK_CONTEXT = LCMPreset(
+_CODEX_SPARK_CONTEXT = TROVEPreset(
     name="codex_spark_context",
     family="GPT/Codex Spark 128k",
     description="Benchmark-backed candidate for GPT-5.3 Codex Spark / 128k Codex-style routes.",
@@ -143,13 +143,13 @@ _CODEX_SPARK_CONTEXT = LCMPreset(
 )
 
 
-def shipped_presets() -> list[LCMPreset]:
+def shipped_presets() -> list[TROVEPreset]:
     """Return the shipped, inspectable preset catalog."""
 
     return [_CODEX_GPT_LONG_CONTEXT, _CODEX_SPARK_CONTEXT]
 
 
-def get_preset(name: str | None = None) -> LCMPreset | None:
+def get_preset(name: str | None = None) -> TROVEPreset | None:
     """Return a preset by name, or the default shipped preset when omitted."""
 
     selected = (name or _CODEX_GPT_LONG_CONTEXT.name).strip()
@@ -172,7 +172,7 @@ def _valid_override_value(field: str, raw: str) -> bool:
 
 
 def explicit_operator_overrides(environ: Mapping[str, str] | None = None) -> dict[str, str]:
-    """Return parseable runtime preset fields explicitly set by LCM_* env vars."""
+    """Return parseable runtime preset fields explicitly set by TROVE_* env vars."""
 
     env = environ if environ is not None else os.environ
     return {
@@ -197,7 +197,7 @@ def _current_config_value(config: Any, field: str) -> Any:
     return getattr(config, field, "(unknown)")
 
 
-def preset_match_confidence(engine: Any, preset: LCMPreset | None = None) -> str:
+def preset_match_confidence(engine: Any, preset: TROVEPreset | None = None) -> str:
     """Return an honest confidence label for the dry-run recommendation."""
 
     if preset is None:
@@ -214,7 +214,7 @@ def preset_match_confidence(engine: Any, preset: LCMPreset | None = None) -> str
     return "context-only"
 
 
-def preset_confidence_reasons(engine: Any, preset: LCMPreset | None, reason: str) -> list[str]:
+def preset_confidence_reasons(engine: Any, preset: TROVEPreset | None, reason: str) -> list[str]:
     """Return concise operator-facing reasons for the confidence label."""
 
     if preset is None:
@@ -231,7 +231,7 @@ def preset_confidence_reasons(engine: Any, preset: LCMPreset | None, reason: str
             f"retrieval_canary_recall={metric_summary.get('retrieval_canary_recall', '(unknown)')}, "
             f"repeated_compaction_risk_count={metric_summary.get('candidate_repeated_compaction_risk_count', '(unknown)')}"
         ),
-        "dry-run only; explicit parseable LCM_* operator overrides are preserved",
+        "dry-run only; explicit parseable TROVE_* operator overrides are preserved",
     ]
     if preset_match_confidence(engine, preset) == "context-only":
         reasons.append("provider/model family was not verified by host metadata; operator must confirm fit before applying env changes")
@@ -239,7 +239,7 @@ def preset_confidence_reasons(engine: Any, preset: LCMPreset | None, reason: str
 
 
 def preset_env_diff(
-    preset: LCMPreset,
+    preset: TROVEPreset,
     config: Any,
     *,
     environ: Mapping[str, str] | None = None,
@@ -280,7 +280,7 @@ def preset_env_diff(
 
 
 def _preset_dry_run_delta(
-    preset: LCMPreset,
+    preset: TROVEPreset,
     config: Any,
     *,
     environ: Mapping[str, str] | None = None,
@@ -407,7 +407,7 @@ def preset_status_payload(
     return payload
 
 
-def suggest_preset_for_engine(engine: Any) -> tuple[LCMPreset | None, str]:
+def suggest_preset_for_engine(engine: Any) -> tuple[TROVEPreset | None, str]:
     """Return the safest shipped preset suggestion for the current engine state."""
 
     context_length = int(getattr(engine, "context_length", 0) or 0)
@@ -424,7 +424,7 @@ def suggest_preset_for_engine(engine: Any) -> tuple[LCMPreset | None, str]:
     return None, f"no shipped benchmarked preset matches context_length {context_length}"
 
 
-def unsupported_runtime_fields_text(preset: LCMPreset) -> str:
+def unsupported_runtime_fields_text(preset: TROVEPreset) -> str:
     if not preset.unsupported_runtime_fields:
         return "(none)"
     return ", ".join(

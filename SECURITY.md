@@ -32,7 +32,7 @@ Useful report details:
 
 - API keys, bearer tokens, OAuth tokens, passwords, private keys, cookies, or session IDs
 - private conversation transcripts or user data
-- full `lcm.db` files unless explicitly requested through a private channel
+- full `trove.db` files unless explicitly requested through a private channel
 - exploit steps that would let others reproduce harm before a fix exists
 
 ## Response expectations

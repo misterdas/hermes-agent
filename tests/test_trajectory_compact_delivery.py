@@ -5,8 +5,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from hermes_lcm.tokens import count_tokens
-from hermes_lcm.trajectory_store import (
+from hermes_trove.tokens import count_tokens
+from hermes_trove.trajectory_store import (
     CorpusIdentity,
     TrajectorySource,
     TrajectoryState,
@@ -92,7 +92,7 @@ def _build_store(tmp_path: Path, *, provider=None) -> TrajectoryStore:
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     store = TrajectoryStore(
-        tmp_path / "lcm.db",
+        tmp_path / "trove.db",
         _identity(),
         asset_root=asset_root,
         embedding_provider=provider,

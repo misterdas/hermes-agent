@@ -1,7 +1,7 @@
-"""Shared retrieval plumbing for LCM search tools.
+"""Shared retrieval plumbing for TROVE search tools.
 
 This module factors the retrieval/fusion core out of ``tools.py`` so that
-``lcm_grep`` (and the forthcoming ``lcm_recall``) call one engine instead of
+``trove_grep`` (and the forthcoming ``trove_recall``) call one engine instead of
 duplicating ranking logic. Everything here is a pure move from ``tools.py`` —
 callers keep their existing contracts, guards, and error strings; only the
 plumbing relocated.
@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .engine import LCMEngine
+    from .engine import TROVEEngine
 
 
 # -- Pooled VectorStore instances -------------------------------------------
@@ -56,7 +56,7 @@ def _reset_vector_store_pool() -> None:
 
 
 def _acquire_vector_store(
-    engine: "LCMEngine", *, vector_store_cls: Any, scan_rows: int | None
+    engine: "TROVEEngine", *, vector_store_cls: Any, scan_rows: int | None
 ) -> tuple[Any, Any, bool]:
     """Return ``(store, per_store_lock_or_None, is_transient)``.
 
@@ -92,7 +92,7 @@ def _acquire_vector_store(
 
 
 def _run_pooled_knn(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     *,
     vector_store_cls: Any,
     scan_rows: int | None,
@@ -127,7 +127,7 @@ def _run_pooled_knn(
             store.close()
 
 
-def _lcm_grep_confidence(score: float) -> str:
+def _trove_grep_confidence(score: float) -> str:
     if score >= 0.65:
         return "high"
     if score >= 0.5:
@@ -137,9 +137,9 @@ def _lcm_grep_confidence(score: float) -> str:
     return "noise"
 
 
-def _lcm_grep_deadline_error(mode: str, stage: str) -> dict[str, Any]:
+def _trove_grep_deadline_error(mode: str, stage: str) -> dict[str, Any]:
     return {
-        "error": "lcm_grep request deadline exceeded",
+        "error": "trove_grep request deadline exceeded",
         "mode": mode,
         "timeout": True,
         "timeout_stage": stage,
@@ -152,7 +152,7 @@ def _shape_message_hit(
     current_session_id: str | None,
     has_current_session: bool,
 ) -> dict[str, Any]:
-    """Shape a raw MessageStore hit into an lcm_grep result row."""
+    """Shape a raw MessageStore hit into an trove_grep result row."""
     timestamp_value = hit.get("timestamp", 0) or 0
     return {
         "type": "message",
@@ -173,7 +173,7 @@ def _shape_message_hit(
 
 
 def _shape_summary_hit(node: Any) -> dict[str, Any]:
-    """Shape a SummaryDAG node hit into an lcm_grep result row."""
+    """Shape a SummaryDAG node hit into an trove_grep result row."""
     return {
         "type": "summary",
         "depth": f"d{node.depth}",
@@ -192,7 +192,7 @@ def _shape_summary_hit(node: Any) -> dict[str, Any]:
 
 
 def _resolve_semantic_conversation_scope(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     *,
     search_session_id: str | None,
     conversation_id: str | None,
@@ -220,7 +220,7 @@ def _resolve_semantic_conversation_scope(
 
 
 def run_knn(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     *,
     query_vector: list[float],
     provider: Any,
@@ -241,10 +241,10 @@ def run_knn(
     ``vector_store_cls`` is injected so callers (and their tests) keep resolving
     the VectorStore binding through the ``tools`` module namespace. ``scan_rows``
     overrides the candidate-scan bound when set (``None`` keeps the configured
-    ``embedding_bounded_scan_rows`` — the lcm_grep contract is unchanged); a
+    ``embedding_bounded_scan_rows`` — the trove_grep contract is unchanged); a
     cross-conversation caller passes a larger bound so "all time" is real.
     ``full_scan`` turns that bound into a per-batch size and covers the whole
-    corpus (the lcm_recall contract), optionally capped by ``scan_max_rows`` /
+    corpus (the trove_recall contract), optionally capped by ``scan_max_rows`` /
     ``scan_budget_s`` — both 0 (no early stop) by default.
     """
     if time.monotonic() >= deadline:
@@ -272,7 +272,7 @@ def run_knn(
 
 
 def run_chunk_knn(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     *,
     query_vector: list[float],
     provider: Any,
@@ -321,7 +321,7 @@ def run_chunk_knn(
 
 
 def hydrate_chunk_hits(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     *,
     ranked_rows: list[Any],
     knn_limit: int,
@@ -330,10 +330,10 @@ def hydrate_chunk_hits(
 ) -> list[tuple[dict[str, Any], float]]:
     """Resolve ranked chunk ids to message-excerpt hits on a read-only connection.
 
-    A chunk id is ``store_id:chunk_index``; ``lcm_chunk_meta`` carries the span
+    A chunk id is ``store_id:chunk_index``; ``trove_chunk_meta`` carries the span
     (char_start/char_end) and the raw ``messages`` row supplies session/time and
     the verbatim excerpt. Each hit maps 1:1 to
-    ``lcm_expand(store_id=..., content_offset=char_start)`` and is keyed by
+    ``trove_expand(store_id=..., content_offset=char_start)`` and is keyed by
     ``store_id`` so RRF fuses it against an FTS raw hit for the same message.
     """
     conn: sqlite3.Connection | None = None
@@ -391,7 +391,7 @@ def hydrate_chunk_hits(
                 SELECT cm.chunk_id, cm.store_id, cm.chunk_index, cm.char_start,
                        cm.char_end, m.session_id, m.source, m.role, m.timestamp,
                        m.content
-                FROM lcm_chunk_meta cm
+                FROM trove_chunk_meta cm
                 JOIN messages m ON m.store_id = cm.store_id
                 WHERE cm.chunk_id IN ({placeholders}) AND cm.archived = 0
                 """,
@@ -430,7 +430,7 @@ def hydrate_chunk_hits(
 
 
 def hydrate_semantic_nodes(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     *,
     ranked_rows: list[Any],
     knn_limit: int,

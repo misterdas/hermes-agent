@@ -21,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from benchmarking.replay import _ensure_hermes_lcm_package
+from benchmarking.replay import _ensure_hermes_trove_package
 
 
 FACT_RE = re.compile(r"\bFACT_[0-9]{3}\b")
@@ -53,12 +53,12 @@ def _run_policy(
     fresh_tail_messages: int,
     leaf_chunk_tokens: int,
 ) -> dict[str, Any]:
-    _ensure_hermes_lcm_package()
-    from hermes_lcm.config import LCMConfig
-    from hermes_lcm.engine import LCMEngine
-    from hermes_lcm.tokens import count_messages_tokens
+    _ensure_hermes_trove_package()
+    from hermes_trove.config import TROVEConfig
+    from hermes_trove.engine import TROVEEngine
+    from hermes_trove.tokens import count_messages_tokens
 
-    config = LCMConfig(
+    config = TROVEConfig(
         fresh_tail_count=fresh_tail_messages,
         leaf_chunk_tokens=leaf_chunk_tokens,
         dynamic_leaf_chunk_enabled=True,
@@ -68,7 +68,7 @@ def _run_policy(
         summary_prefix_target_tokens=1_000_000,
         database_path=str(root / f"{name}.db"),
     )
-    engine = LCMEngine(config=config, hermes_home=str(root / f"{name}-home"))
+    engine = TROVEEngine(config=config, hermes_home=str(root / f"{name}-home"))
     engine._session_id = f"synthetic-{name}"
     tokens_before = count_messages_tokens(messages)
     engine.threshold_tokens = tokens_before
@@ -138,7 +138,7 @@ def run_benchmark(
         historical_messages=historical_messages,
         fresh_tail_messages=fresh_tail_messages,
     )
-    with tempfile.TemporaryDirectory(prefix="hermes-lcm-sweep-benchmark-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="hermes-trove-sweep-benchmark-") as temp_dir:
         root = Path(temp_dir)
         runs = [
             _run_policy(

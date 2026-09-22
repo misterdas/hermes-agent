@@ -14,16 +14,16 @@ import json
 import sys
 from types import ModuleType
 
-from hermes_lcm.config import LCMConfig
+from hermes_trove.config import TROVEConfig
 
 
 OFFICIAL_HERMES_AGENT_HEAD = "299e409f15aa5615a8a64be488580be92cda351e"
 
 
-def _lcm_engine_class():
+def _trove_engine_class():
     try:
-        module = importlib.import_module("hermes_lcm.engine")
-        engine = getattr(module, "LCMEngine", None)
+        module = importlib.import_module("hermes_trove.engine")
+        engine = getattr(module, "TROVEEngine", None)
         if engine is not None:
             return engine
         raise ModuleNotFoundError("agent", name="agent")
@@ -43,8 +43,8 @@ def _lcm_engine_class():
         context_engine_module.ContextEngine = ContextEngine
         sys.modules["agent.context_engine"] = context_engine_module
         agent_module.context_engine = context_engine_module
-        sys.modules.pop("hermes_lcm.engine", None)
-        return importlib.import_module("hermes_lcm.engine").LCMEngine
+        sys.modules.pop("hermes_trove.engine", None)
+        return importlib.import_module("hermes_trove.engine").TROVEEngine
 
 
 class _OfficialHostEquivalent:
@@ -67,8 +67,8 @@ class _OfficialHostEquivalent:
 
 
 def test_generic_memory_question_can_dispatch_bounded_pack_when_toolset_enabled(tmp_path):
-    engine_class = _lcm_engine_class()
-    engine = engine_class(config=LCMConfig(database_path=str(tmp_path / "host.db")))
+    engine_class = _trove_engine_class()
+    engine = engine_class(config=TROVEConfig(database_path=str(tmp_path / "host.db")))
     content = "I repaired the garden gate today."
     observed_at = datetime(2024, 3, 15, 9, tzinfo=timezone.utc).timestamp()
     try:
@@ -79,12 +79,12 @@ def test_generic_memory_question_can_dispatch_bounded_pack_when_toolset_enabled(
         host = _OfficialHostEquivalent(engine, enabled_toolsets=["context_engine"])
         messages = [{"role": "user", "content": "What happened five days ago?"}]
         raw = host.dispatch(
-            "lcm_evidence_pack",
+            "trove_evidence_pack",
             {
                 "question": "What happened five days ago?",
                 "question_date": "2024-03-20",
                 "baseline_refs": [{
-                    "exact_ref": f"lcm:{store_id}:0-{len(content)}",
+                    "exact_ref": f"trove:{store_id}:0-{len(content)}",
                     "quote": content,
                     "value": "repaired the garden gate",
                     "key": "garden gate",
@@ -98,7 +98,7 @@ def test_generic_memory_question_can_dispatch_bounded_pack_when_toolset_enabled(
         engine.shutdown()
 
     assert OFFICIAL_HERMES_AGENT_HEAD == "299e409f15aa5615a8a64be488580be92cda351e"
-    assert "lcm_evidence_pack" in host.visible_names
+    assert "trove_evidence_pack" in host.visible_names
     assert host.enabled_toolsets == ["context_engine"]
     assert host.dispatched_messages == messages
     assert payload["status"] == "evidence_ready"
@@ -107,8 +107,8 @@ def test_generic_memory_question_can_dispatch_bounded_pack_when_toolset_enabled(
 
 
 def test_disabled_context_engine_toolset_preserves_ordinary_answer_path(tmp_path):
-    engine_class = _lcm_engine_class()
-    engine = engine_class(config=LCMConfig(database_path=str(tmp_path / "disabled.db")))
+    engine_class = _trove_engine_class()
+    engine = engine_class(config=TROVEConfig(database_path=str(tmp_path / "disabled.db")))
     ordinary_answer = "I can only answer from the context currently available."
     try:
         host = _OfficialHostEquivalent(engine, enabled_toolsets=[])
@@ -117,7 +117,7 @@ def test_disabled_context_engine_toolset_preserves_ordinary_answer_path(tmp_path
     finally:
         engine.shutdown()
 
-    assert "lcm_evidence_pack" not in visible_before
+    assert "trove_evidence_pack" not in visible_before
     assert host.enabled_toolsets == []
     assert host.dispatched_messages is None
     assert delivered_answer == ordinary_answer

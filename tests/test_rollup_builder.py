@@ -9,21 +9,21 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-import hermes_lcm.engine as engine_module
-import hermes_lcm.rollup_builder as builder_module
-import hermes_lcm.rollup_periods as periods_module
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.dag import SummaryDAG, SummaryNode
-from hermes_lcm.engine import LCMEngine
-from hermes_lcm.rollup_builder import (
+import hermes_trove.engine as engine_module
+import hermes_trove.rollup_builder as builder_module
+import hermes_trove.rollup_periods as periods_module
+from hermes_trove.config import TROVEConfig
+from hermes_trove.dag import SummaryDAG, SummaryNode
+from hermes_trove.engine import TROVEEngine
+from hermes_trove.rollup_builder import (
     _PENDING_ROLLUPS_SQL,
     build_day,
     build_month,
     build_week,
     run_rollup_maintenance,
 )
-from hermes_lcm.rollup_store import RollupStore
-from hermes_lcm.tokens import count_tokens
+from hermes_trove.rollup_store import RollupStore
+from hermes_trove.tokens import count_tokens
 
 
 @pytest.fixture
@@ -31,7 +31,7 @@ def rollup_parts(tmp_path):
     db_path = tmp_path / "rollup-builder.db"
     dag = SummaryDAG(db_path)
     store = RollupStore(db_path)
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(db_path),
         rollup_daily_target_tokens=12,
         rollup_daily_max_tokens=20,
@@ -282,7 +282,7 @@ def test_empty_builds_have_zero_store_side_effects(rollup_parts):
 
     assert build_day(store, dag, config, "empty", date(2026, 7, 15)) is None
     assert build_week(store, dag, config, "empty", date(2026, 7, 13)) is None
-    assert store.connection.execute("SELECT COUNT(*) FROM lcm_rollups").fetchone()[0] == 0
+    assert store.connection.execute("SELECT COUNT(*) FROM trove_rollups").fetchone()[0] == 0
 
 
 def test_publication_staleness_and_bounded_bind_maintenance(tmp_path, monkeypatch):
@@ -291,12 +291,12 @@ def test_publication_staleness_and_bounded_bind_maintenance(tmp_path, monkeypatc
     # bind maintenance rebuilds up to rollup_builds_per_pass targets, leaving the rest
     # durably stale for the next pass.
     db_path = tmp_path / "engine-rollups.db"
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(db_path),
         temporal_rollups_enabled=True,
         rollup_builds_per_pass=2,
     )
-    engine = LCMEngine(config=config)
+    engine = TROVEEngine(config=config)
     scope = "temporal-session"
     today = datetime.now(timezone.utc).date()
     week_start = today - timedelta(days=today.weekday())
@@ -389,7 +389,7 @@ def test_failed_rollup_retry_honors_backoff(rollup_parts, monkeypatch):
     store.mark_failed(old_token, "old failure")
     store.mark_failed(recent_token, "recent failure")
     store.connection.execute(
-        "UPDATE lcm_rollups SET failed_at = ? WHERE rollup_id = ?",
+        "UPDATE trove_rollups SET failed_at = ? WHERE rollup_id = ?",
         ("2026-07-15T00:00:00+00:00", old_id),
     )
     store.connection.commit()
@@ -432,12 +432,12 @@ def test_maintenance_budget_stops_before_starting_next_build(rollup_parts, monke
 
 def test_session_start_does_not_wait_for_slow_rollup_provider(tmp_path, monkeypatch):
     db_path = tmp_path / "async-session-start.db"
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(db_path),
         temporal_rollups_enabled=True,
         rollup_builds_per_pass=1,
     )
-    engine = LCMEngine(config=config)
+    engine = TROVEEngine(config=config)
     scope = "slow-rollup-session"
     target_day = date(2026, 7, 15)
     provider_started = threading.Event()
@@ -480,11 +480,11 @@ def test_rollup_background_maintenance_deduplicates_rapid_scope_binds(
     tmp_path,
     monkeypatch,
 ):
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / "deduplicated-maintenance.db"),
         temporal_rollups_enabled=True,
     )
-    engine = LCMEngine(config=config)
+    engine = TROVEEngine(config=config)
     scope = "deduplicated-scope"
     first_pass_started = threading.Event()
     release_first_pass = threading.Event()
@@ -758,17 +758,17 @@ def test_rollup_background_failure_is_logged_without_breaking_bind(
     monkeypatch,
     caplog,
 ):
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / "failed-background-maintenance.db"),
         temporal_rollups_enabled=True,
     )
-    engine = LCMEngine(config=config)
+    engine = TROVEEngine(config=config)
 
     def fail_maintenance(*_args, **_kwargs):
         raise RuntimeError("forced background maintenance failure")
 
     monkeypatch.setattr(engine_module, "run_rollup_maintenance", fail_maintenance)
-    caplog.set_level("WARNING", logger="hermes_lcm.engine")
+    caplog.set_level("WARNING", logger="hermes_trove.engine")
     try:
         engine.on_session_start(
             "failed-maintenance-scope",
@@ -786,11 +786,11 @@ def test_engine_shutdown_does_not_wait_for_background_rollup_provider(
     tmp_path,
     monkeypatch,
 ):
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / "shutdown-background-maintenance.db"),
         temporal_rollups_enabled=True,
     )
-    engine = LCMEngine(config=config)
+    engine = TROVEEngine(config=config)
     maintenance_started = threading.Event()
     release_maintenance = threading.Event()
 
@@ -831,17 +831,17 @@ def test_pending_maintenance_query_uses_partial_index(rollup_parts):
         ("query-plan", 2),
     ).fetchall()
 
-    assert any("idx_lcm_rollups_stale_day" in str(row[3]) for row in plan)
+    assert any("idx_trove_rollups_stale_day" in str(row[3]) for row in plan)
 
 
 def test_session_reset_stales_rollups_referencing_deleted_nodes(tmp_path):
     db_path = tmp_path / "reset-rollups.db"
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(db_path),
         temporal_rollups_enabled=True,
         new_session_retain_depth=0,
     )
-    engine = LCMEngine(config=config)
+    engine = TROVEEngine(config=config)
     scope = "reset-session"
     try:
         engine.on_session_start(scope, conversation_id="reset-conversation")
@@ -871,7 +871,7 @@ def test_session_reset_stales_rollups_referencing_deleted_nodes(tmp_path):
 
 
 def test_flag_off_skips_rollup_maintenance(tmp_path, monkeypatch):
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / "flag-off.db"),
         temporal_rollups_enabled=False,
     )
@@ -881,7 +881,7 @@ def test_flag_off_skips_rollup_maintenance(tmp_path, monkeypatch):
         "run_rollup_maintenance",
         lambda *_args, **_kwargs: calls.append("maintenance"),
     )
-    engine = LCMEngine(config=config)
+    engine = TROVEEngine(config=config)
     try:
         engine.on_session_start("flag-off-session", conversation_id="flag-off-conversation")
         engine.ingest([{"role": "user", "content": "stored without rollup queries"}])
@@ -907,7 +907,7 @@ def test_publishing_summary_for_ready_day_marks_it_stale(rollup_parts):
 
     later_node = _add_node(dag, scope, target_day, "a newer summary covering the same day")
     latest_at = _timestamp(target_day, 22)
-    from hermes_lcm.rollup_builder import mark_stale_for_published_summary
+    from hermes_trove.rollup_builder import mark_stale_for_published_summary
 
     assert mark_stale_for_published_summary(dag, scope, latest_at, latest_at) == 3
     assert later_node  # published node exists
@@ -918,8 +918,8 @@ def test_publishing_summary_for_ready_day_marks_it_stale(rollup_parts):
 
 def test_engine_invalidates_rollups_when_a_node_is_published(tmp_path):
     db_path = tmp_path / "publish-hook.db"
-    config = LCMConfig(database_path=str(db_path), temporal_rollups_enabled=True)
-    engine = LCMEngine(config=config)
+    config = TROVEConfig(database_path=str(db_path), temporal_rollups_enabled=True)
+    engine = TROVEEngine(config=config)
     scope = "publish-hook-session"
     target_day = date(2026, 7, 15)
     try:
@@ -951,7 +951,7 @@ def test_maintenance_reclaims_crashed_building_row_and_rebuilds(rollup_parts, mo
     _add_node(dag, scope, target_day, "source for reclaimed build")
     store.upsert_building("day", target_day.isoformat(), scope)
     store.connection.execute(
-        "UPDATE lcm_rollups SET lease_expires_at = ? WHERE period_kind = 'day'",
+        "UPDATE trove_rollups SET lease_expires_at = ? WHERE period_kind = 'day'",
         ("2000-01-01T00:00:00+00:00",),
     )
     store.connection.commit()
@@ -967,14 +967,14 @@ def test_maintenance_reclaims_crashed_building_row_and_rebuilds(rollup_parts, mo
 
 
 def test_rollup_builds_per_pass_config_default_and_environment(monkeypatch):
-    assert LCMConfig().rollup_builds_per_pass == 2
-    assert LCMConfig().rollup_maintenance_budget_ms == 5_000
+    assert TROVEConfig().rollup_builds_per_pass == 2
+    assert TROVEConfig().rollup_maintenance_budget_ms == 5_000
 
-    monkeypatch.setenv("LCM_ROLLUP_BUILDS_PER_PASS", "5")
-    monkeypatch.setenv("LCM_ROLLUP_MAINTENANCE_BUDGET_MS", "750")
+    monkeypatch.setenv("TROVE_ROLLUP_BUILDS_PER_PASS", "5")
+    monkeypatch.setenv("TROVE_ROLLUP_MAINTENANCE_BUDGET_MS", "750")
 
-    assert LCMConfig.from_env().rollup_builds_per_pass == 5
-    assert LCMConfig.from_env().rollup_maintenance_budget_ms == 750
+    assert TROVEConfig.from_env().rollup_builds_per_pass == 5
+    assert TROVEConfig.from_env().rollup_maintenance_budget_ms == 750
 
 
 # --- FIXSPEC3 generation-model + staleness + dedup + scope additions -----------
@@ -1033,7 +1033,7 @@ def test_deletion_staleness_bumps_generation_and_supersedes_inflight(rollup_part
     store.drain_invalidations(event_limit=256, day_budget=256)
     token = store.upsert_building("day", day.isoformat(), scope)
     store.connection.execute(
-        "INSERT INTO lcm_rollup_sources(rollup_id, node_id) VALUES(?, ?)",
+        "INSERT INTO trove_rollup_sources(rollup_id, node_id) VALUES(?, ?)",
         (token.rollup_id, node_id),
     )
     store.connection.commit()
@@ -1095,12 +1095,12 @@ def test_raw_ingest_does_not_prebuild_then_publication_drives_stale(tmp_path, mo
     # Item 6 P1: raw ingest must not build/omit a rollup before its summary
     # exists; publication of the covering leaf is the sole staleness signal.
     db_path = tmp_path / "p1.db"
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(db_path),
         temporal_rollups_enabled=True,
         rollup_builds_per_pass=4,
     )
-    engine = LCMEngine(config=config)
+    engine = TROVEEngine(config=config)
     scope = "p1-session"
     day = datetime.now(timezone.utc).date()
     try:
@@ -1134,7 +1134,7 @@ def test_raw_ingest_does_not_prebuild_then_publication_drives_stale(tmp_path, mo
 
 
 def test_bypassed_session_skips_rollup_maintenance(tmp_path, monkeypatch):
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / "bypass.db"),
         temporal_rollups_enabled=True,
     )
@@ -1144,7 +1144,7 @@ def test_bypassed_session_skips_rollup_maintenance(tmp_path, monkeypatch):
         "run_rollup_maintenance",
         lambda *_args, **_kwargs: calls.append("maintenance"),
     )
-    engine = LCMEngine(config=config)
+    engine = TROVEEngine(config=config)
     try:
         engine.on_session_start("bypass-session", conversation_id="bypass-conv")
         assert engine.drain_rollup_maintenance(timeout=2)
@@ -1275,7 +1275,7 @@ def test_publication_stales_every_day_a_summary_spans(rollup_parts):
             summary=f"ready {kind} {start}", source_ids=[node], fingerprint=f"{kind}-{start}",
         )
 
-    from hermes_lcm.rollup_builder import mark_stale_for_published_summary
+    from hermes_trove.rollup_builder import mark_stale_for_published_summary
 
     published_id = _add_node(
         dag, scope, jul15, "later spanning summary", latest_day=jul16
@@ -1591,7 +1591,7 @@ def test_scope_frontier_serializes_connection_temp_tables_between_threads(
 
         def executemany(self, sql, parameters):
             result = real_connection.executemany(sql, parameters)
-            if "INSERT INTO temp.lcm_scope_frontier_ids" not in sql:
+            if "INSERT INTO temp.trove_scope_frontier_ids" not in sql:
                 return result
             if threading.current_thread().name == "frontier-scope-a":
                 a_staged.set()

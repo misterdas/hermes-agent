@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import sqlite3
 
-from hermes_lcm import db_bootstrap
-from hermes_lcm.dag import SummaryDAG
-from hermes_lcm.store import MessageStore
+from hermes_trove import db_bootstrap
+from hermes_trove.dag import SummaryDAG
+from hermes_trove.store import MessageStore
 
 
 def test_append_preserves_host_timestamp_separately_from_ingest_time(tmp_path):

@@ -1,4 +1,4 @@
-"""LCM configuration with defaults and env var overrides."""
+"""TROVE configuration with defaults and env var overrides."""
 import logging
 import os
 from dataclasses import dataclass, field
@@ -18,7 +18,7 @@ def _parse_pattern_list(raw: str) -> list[str]:
     return [part.strip() for part in raw.split(",") if part.strip()]
 
 
-# Default lcm_recall RRF arm weights. Conservative down-weight of the weak FTS
+# Default trove_recall RRF arm weights. Conservative down-weight of the weak FTS
 # arm (the LongMemEval harness will tune from here); summary/chunk vector arms
 # keep full say. See docs/retrieval-tools.md.
 _DEFAULT_RECALL_ARM_WEIGHTS: dict[str, float] = {
@@ -56,7 +56,7 @@ def _parse_arm_weights(raw: str, defaults: dict[str, float]) -> dict[str, float]
             continue
         if parsed < 0.0:
             logger.warning(
-                "LCM_RECALL_ARM_WEIGHTS: negative weight %r for arm %r is "
+                "TROVE_RECALL_ARM_WEIGHTS: negative weight %r for arm %r is "
                 "invalid; using default %r",
                 parsed,
                 name,
@@ -224,22 +224,22 @@ def _load_hermes_config_yaml(
     return root
 
 
-_SUPPORTED_LCM_CONFIG_YAML_KEYS = {"context_threshold"}
+_SUPPORTED_TROVE_CONFIG_YAML_KEYS = {"context_threshold"}
 
 
-def _ignored_lcm_config_yaml_keys(
+def _ignored_trove_config_yaml_keys(
     cfg: dict[str, Any] | None = None,
     *,
     hermes_home: str | Path | None = None,
 ) -> list[str]:
     cfg = cfg if cfg is not None else _load_hermes_config_yaml(hermes_home)
-    lcm_section = cfg.get("lcm") if isinstance(cfg, dict) else None
-    if not isinstance(lcm_section, dict):
+    trove_section = cfg.get("trove") if isinstance(cfg, dict) else None
+    if not isinstance(trove_section, dict):
         return []
     return sorted(
         str(key)
-        for key in lcm_section
-        if str(key) not in _SUPPORTED_LCM_CONFIG_YAML_KEYS
+        for key in trove_section
+        if str(key) not in _SUPPORTED_TROVE_CONFIG_YAML_KEYS
     )
 
 
@@ -248,16 +248,16 @@ def _hermes_compression_threshold(
     *,
     hermes_home: str | Path | None = None,
 ) -> float:
-    """Read lcm.context_threshold or Hermes compression.threshold from config.yaml.
+    """Read trove.context_threshold or Hermes compression.threshold from config.yaml.
 
-    Priority when no ``LCM_CONTEXT_THRESHOLD`` env var is set:
-      1. ``lcm.context_threshold`` (LCM-specific override in config.yaml)
+    Priority when no ``TROVE_CONTEXT_THRESHOLD`` env var is set:
+      1. ``trove.context_threshold`` (TROVE-specific override in config.yaml)
       2. ``compression.threshold`` (Hermes global setting, unless compression disabled)
 
     Hermes gateways may load ``~/.hermes/config.yaml`` without exporting every
-    setting into the process environment. The ``lcm.context_threshold`` key lets
-    operators tune LCM compaction independently of the Hermes compression setting.
-    Disabled Hermes compression should not leak its threshold into LCM.
+    setting into the process environment. The ``trove.context_threshold`` key lets
+    operators tune TROVE compaction independently of the Hermes compression setting.
+    Disabled Hermes compression should not leak its threshold into TROVE.
     """
     value, _source = _hermes_compression_threshold_with_source(
         default,
@@ -273,11 +273,11 @@ def _hermes_compression_threshold_with_source(
 ) -> tuple[float, str]:
     cfg = _load_hermes_config_yaml(hermes_home)
     try:
-        lcm_section = cfg.get("lcm") or {}
-        if isinstance(lcm_section, dict):
-            lcm_val = lcm_section.get("context_threshold")
-            if lcm_val is not None:
-                return float(lcm_val), "config_yaml:lcm.context_threshold"
+        trove_section = cfg.get("trove") or {}
+        if isinstance(trove_section, dict):
+            trove_val = trove_section.get("context_threshold")
+            if trove_val is not None:
+                return float(trove_val), "config_yaml:trove.context_threshold"
         compression = cfg.get("compression") or {}
         if not isinstance(compression, dict):
             return default, "default"
@@ -296,12 +296,12 @@ def _hermes_auxiliary_compression_timeout_ms(
     *,
     hermes_home: str | Path | None = None,
 ) -> int:
-    """Read Hermes auxiliary.compression.timeout when no LCM override is present.
+    """Read Hermes auxiliary.compression.timeout when no TROVE override is present.
 
-    Hermes uses seconds for the auxiliary compression timeout, while LCM stores
-    the summary timeout in milliseconds. Aligning the default keeps LCM summary
+    Hermes uses seconds for the auxiliary compression timeout, while TROVE stores
+    the summary timeout in milliseconds. Aligning the default keeps TROVE summary
     calls from timing out earlier than the host compression route unless
-    ``LCM_SUMMARY_TIMEOUT_MS`` is explicitly configured.
+    ``TROVE_SUMMARY_TIMEOUT_MS`` is explicitly configured.
     """
     value, _source = _hermes_auxiliary_compression_timeout_ms_with_source(
         default,
@@ -351,7 +351,7 @@ def _hermes_codex_gpt55_autoraise_with_source(
 
 @dataclass(frozen=True)
 class _EnvFieldSpec:
-    """One scalar ``LCM_*`` environment override: which config field it sets,
+    """One scalar ``TROVE_*`` environment override: which config field it sets,
     its environment variable, and the Python type used to parse it."""
 
     name: str
@@ -359,112 +359,112 @@ class _EnvFieldSpec:
     py_type: type
 
 
-# Single source of truth for the scalar LCM_* env overrides. ``from_env`` applies
+# Single source of truth for the scalar TROVE_* env overrides. ``from_env`` applies
 # the non-source-tracked entries uniformly, and ``presets`` derives its
 # preset-field lookups from the same list so the field/env/type mapping is not
 # duplicated. Order mirrors the historical ``from_env`` order for readability.
 ENV_FIELD_SPECS: tuple[_EnvFieldSpec, ...] = (
-    _EnvFieldSpec("fresh_tail_count", "LCM_FRESH_TAIL_COUNT", int),
-    _EnvFieldSpec("fresh_tail_max_tokens", "LCM_FRESH_TAIL_MAX_TOKENS", int),
-    _EnvFieldSpec("leaf_chunk_tokens", "LCM_LEAF_CHUNK_TOKENS", int),
-    _EnvFieldSpec("context_threshold", "LCM_CONTEXT_THRESHOLD", float),
-    _EnvFieldSpec("incremental_max_depth", "LCM_INCREMENTAL_MAX_DEPTH", int),
-    _EnvFieldSpec("condensation_fanin", "LCM_CONDENSATION_FANIN", int),
-    _EnvFieldSpec("dynamic_leaf_chunk_enabled", "LCM_DYNAMIC_LEAF_CHUNK_ENABLED", bool),
-    _EnvFieldSpec("dynamic_leaf_chunk_max", "LCM_DYNAMIC_LEAF_CHUNK_MAX", int),
-    _EnvFieldSpec("cache_friendly_condensation_enabled", "LCM_CACHE_FRIENDLY_CONDENSATION_ENABLED", bool),
-    _EnvFieldSpec("cache_friendly_min_debt_groups", "LCM_CACHE_FRIENDLY_MIN_DEBT_GROUPS", int),
-    _EnvFieldSpec("deferred_maintenance_enabled", "LCM_DEFERRED_MAINTENANCE_ENABLED", bool),
-    _EnvFieldSpec("deferred_maintenance_max_passes", "LCM_DEFERRED_MAINTENANCE_MAX_PASSES", int),
-    _EnvFieldSpec("critical_budget_pressure_ratio", "LCM_CRITICAL_BUDGET_PRESSURE_RATIO", float),
-    _EnvFieldSpec("threshold_full_sweep_enabled", "LCM_THRESHOLD_FULL_SWEEP_ENABLED", bool),
-    _EnvFieldSpec("summary_prefix_target_tokens", "LCM_SUMMARY_PREFIX_TARGET_TOKENS", int),
-    _EnvFieldSpec("l2_budget_ratio", "LCM_L2_BUDGET_RATIO", float),
-    _EnvFieldSpec("l3_truncate_tokens", "LCM_L3_TRUNCATE_TOKENS", int),
-    _EnvFieldSpec("max_assembly_tokens", "LCM_MAX_ASSEMBLY_TOKENS", int),
-    _EnvFieldSpec("reserve_tokens_floor", "LCM_RESERVE_TOKENS_FLOOR", int),
-    _EnvFieldSpec("custom_instructions", "LCM_CUSTOM_INSTRUCTIONS", str),
-    _EnvFieldSpec("extraction_enabled", "LCM_EXTRACTION_ENABLED", bool),
-    _EnvFieldSpec("extraction_model", "LCM_EXTRACTION_MODEL", str),
-    _EnvFieldSpec("extraction_output_path", "LCM_EXTRACTION_OUTPUT_PATH", str),
-    _EnvFieldSpec("assertions_enabled", "LCM_ASSERTIONS_ENABLED", bool),
-    _EnvFieldSpec("query_views_enabled", "LCM_QUERY_VIEWS_ENABLED", bool),
+    _EnvFieldSpec("fresh_tail_count", "TROVE_FRESH_TAIL_COUNT", int),
+    _EnvFieldSpec("fresh_tail_max_tokens", "TROVE_FRESH_TAIL_MAX_TOKENS", int),
+    _EnvFieldSpec("leaf_chunk_tokens", "TROVE_LEAF_CHUNK_TOKENS", int),
+    _EnvFieldSpec("context_threshold", "TROVE_CONTEXT_THRESHOLD", float),
+    _EnvFieldSpec("incremental_max_depth", "TROVE_INCREMENTAL_MAX_DEPTH", int),
+    _EnvFieldSpec("condensation_fanin", "TROVE_CONDENSATION_FANIN", int),
+    _EnvFieldSpec("dynamic_leaf_chunk_enabled", "TROVE_DYNAMIC_LEAF_CHUNK_ENABLED", bool),
+    _EnvFieldSpec("dynamic_leaf_chunk_max", "TROVE_DYNAMIC_LEAF_CHUNK_MAX", int),
+    _EnvFieldSpec("cache_friendly_condensation_enabled", "TROVE_CACHE_FRIENDLY_CONDENSATION_ENABLED", bool),
+    _EnvFieldSpec("cache_friendly_min_debt_groups", "TROVE_CACHE_FRIENDLY_MIN_DEBT_GROUPS", int),
+    _EnvFieldSpec("deferred_maintenance_enabled", "TROVE_DEFERRED_MAINTENANCE_ENABLED", bool),
+    _EnvFieldSpec("deferred_maintenance_max_passes", "TROVE_DEFERRED_MAINTENANCE_MAX_PASSES", int),
+    _EnvFieldSpec("critical_budget_pressure_ratio", "TROVE_CRITICAL_BUDGET_PRESSURE_RATIO", float),
+    _EnvFieldSpec("threshold_full_sweep_enabled", "TROVE_THRESHOLD_FULL_SWEEP_ENABLED", bool),
+    _EnvFieldSpec("summary_prefix_target_tokens", "TROVE_SUMMARY_PREFIX_TARGET_TOKENS", int),
+    _EnvFieldSpec("l2_budget_ratio", "TROVE_L2_BUDGET_RATIO", float),
+    _EnvFieldSpec("l3_truncate_tokens", "TROVE_L3_TRUNCATE_TOKENS", int),
+    _EnvFieldSpec("max_assembly_tokens", "TROVE_MAX_ASSEMBLY_TOKENS", int),
+    _EnvFieldSpec("reserve_tokens_floor", "TROVE_RESERVE_TOKENS_FLOOR", int),
+    _EnvFieldSpec("custom_instructions", "TROVE_CUSTOM_INSTRUCTIONS", str),
+    _EnvFieldSpec("extraction_enabled", "TROVE_EXTRACTION_ENABLED", bool),
+    _EnvFieldSpec("extraction_model", "TROVE_EXTRACTION_MODEL", str),
+    _EnvFieldSpec("extraction_output_path", "TROVE_EXTRACTION_OUTPUT_PATH", str),
+    _EnvFieldSpec("assertions_enabled", "TROVE_ASSERTIONS_ENABLED", bool),
+    _EnvFieldSpec("query_views_enabled", "TROVE_QUERY_VIEWS_ENABLED", bool),
     _EnvFieldSpec(
-        "adaptive_retrieval_enabled", "LCM_ADAPTIVE_RETRIEVAL_ENABLED", bool
+        "adaptive_retrieval_enabled", "TROVE_ADAPTIVE_RETRIEVAL_ENABLED", bool
     ),
     _EnvFieldSpec(
-        "assertion_extraction_enabled", "LCM_ASSERTION_EXTRACTION_ENABLED", bool
+        "assertion_extraction_enabled", "TROVE_ASSERTION_EXTRACTION_ENABLED", bool
     ),
-    _EnvFieldSpec("assertion_extraction_model", "LCM_ASSERTION_EXTRACTION_MODEL", str),
+    _EnvFieldSpec("assertion_extraction_model", "TROVE_ASSERTION_EXTRACTION_MODEL", str),
     _EnvFieldSpec(
         "assertion_extraction_max_sources_per_pass",
-        "LCM_ASSERTION_EXTRACTION_MAX_SOURCES_PER_PASS",
+        "TROVE_ASSERTION_EXTRACTION_MAX_SOURCES_PER_PASS",
         int,
     ),
     _EnvFieldSpec(
         "assertion_extraction_timeout_seconds",
-        "LCM_ASSERTION_EXTRACTION_TIMEOUT_SECONDS",
+        "TROVE_ASSERTION_EXTRACTION_TIMEOUT_SECONDS",
         float,
     ),
-    _EnvFieldSpec("sensitive_patterns_enabled", "LCM_SENSITIVE_PATTERNS_ENABLED", bool),
-    _EnvFieldSpec("large_output_externalization_enabled", "LCM_LARGE_OUTPUT_EXTERNALIZATION_ENABLED", bool),
-    _EnvFieldSpec("large_output_externalization_threshold_chars", "LCM_LARGE_OUTPUT_EXTERNALIZATION_THRESHOLD_CHARS", int),
-    _EnvFieldSpec("large_output_externalization_path", "LCM_LARGE_OUTPUT_EXTERNALIZATION_PATH", str),
-    _EnvFieldSpec("large_output_active_replay_stubbing_enabled", "LCM_LARGE_OUTPUT_ACTIVE_REPLAY_STUBBING_ENABLED", bool),
-    _EnvFieldSpec("large_output_active_replay_stub_threshold_tokens", "LCM_LARGE_OUTPUT_ACTIVE_REPLAY_STUB_THRESHOLD_TOKENS", int),
-    _EnvFieldSpec("large_output_transcript_gc_enabled", "LCM_LARGE_OUTPUT_TRANSCRIPT_GC_ENABLED", bool),
-    _EnvFieldSpec("summary_model", "LCM_SUMMARY_MODEL", str),
-    _EnvFieldSpec("summary_circuit_breaker_failure_threshold", "LCM_SUMMARY_CIRCUIT_BREAKER_FAILURE_THRESHOLD", int),
-    _EnvFieldSpec("summary_circuit_breaker_cooldown_seconds", "LCM_SUMMARY_CIRCUIT_BREAKER_COOLDOWN_SECONDS", int),
-    _EnvFieldSpec("summary_spend_max_calls", "LCM_SUMMARY_SPEND_MAX_CALLS", int),
-    _EnvFieldSpec("summary_spend_window_seconds", "LCM_SUMMARY_SPEND_WINDOW_SECONDS", float),
-    _EnvFieldSpec("summary_spend_backoff_seconds", "LCM_SUMMARY_SPEND_BACKOFF_SECONDS", float),
-    _EnvFieldSpec("expansion_model", "LCM_EXPANSION_MODEL", str),
-    _EnvFieldSpec("expansion_context_tokens", "LCM_EXPANSION_CONTEXT_TOKENS", int),
-    _EnvFieldSpec("summary_timeout_ms", "LCM_SUMMARY_TIMEOUT_MS", int),
-    _EnvFieldSpec("expansion_timeout_ms", "LCM_EXPANSION_TIMEOUT_MS", int),
-    _EnvFieldSpec("database_path", "LCM_DATABASE_PATH", str),
-    _EnvFieldSpec("embeddings_enabled", "LCM_EMBEDDINGS_ENABLED", bool),
-    _EnvFieldSpec("rerank_enabled", "LCM_RERANK_ENABLED", bool),
-    _EnvFieldSpec("recall_scan_rows", "LCM_RECALL_SCAN_ROWS", int),
-    _EnvFieldSpec("recall_scan_max_rows", "LCM_RECALL_SCAN_MAX_ROWS", int),
-    _EnvFieldSpec("recall_scan_budget_s", "LCM_RECALL_SCAN_BUDGET_S", float),
-    _EnvFieldSpec("recall_reference_strict", "LCM_RECALL_REFERENCE_STRICT", bool),
-    _EnvFieldSpec("proactive_recall_enabled", "LCM_PROACTIVE_RECALL_ENABLED", bool),
-    _EnvFieldSpec("proactive_recall_min_score", "LCM_PROACTIVE_RECALL_MIN_SCORE", float),
-    _EnvFieldSpec("proactive_recall_budget_tokens", "LCM_PROACTIVE_RECALL_BUDGET_TOKENS", int),
-    _EnvFieldSpec("proactive_recall_provider", "LCM_PROACTIVE_RECALL_PROVIDER", str),
-    _EnvFieldSpec("preanswer_evidence_enabled", "LCM_PREANSWER_EVIDENCE_ENABLED", bool),
-    _EnvFieldSpec("preanswer_evidence_mode", "LCM_PREANSWER_EVIDENCE_MODE", str),
-    _EnvFieldSpec("selective_compiler_enabled", "LCM_SELECTIVE_COMPILER_ENABLED", bool),
-    _EnvFieldSpec("selective_compiler_model", "LCM_SELECTIVE_COMPILER_MODEL", str),
-    _EnvFieldSpec("embedding_bounded_scan_rows", "LCM_EMBEDDING_BOUNDED_SCAN_ROWS", int),
-    _EnvFieldSpec("embedding_storage_dtype", "LCM_EMBEDDING_STORAGE_DTYPE", str),
-    _EnvFieldSpec("embedding_store_dim", "LCM_EMBEDDING_STORE_DIM", int),
-    _EnvFieldSpec("embedding_binary_prescreen", "LCM_EMBEDDING_BINARY_PRESCREEN", bool),
-    _EnvFieldSpec("knn_prescreen_multiplier", "LCM_KNN_PRESCREEN_MULTIPLIER", int),
-    _EnvFieldSpec("embedding_provider", "LCM_EMBEDDING_PROVIDER", str),
-    _EnvFieldSpec("embedding_model", "LCM_EMBEDDING_MODEL", str),
-    _EnvFieldSpec("embedding_content_policy", "LCM_EMBED_CONTENT_POLICY", str),
-    _EnvFieldSpec("ollama_base_url", "LCM_OLLAMA_BASE_URL", str),
-    _EnvFieldSpec("embedding_query_timeout_s", "LCM_EMBEDDING_QUERY_TIMEOUT_S", float),
-    _EnvFieldSpec("recall_query_timeout_s", "LCM_RECALL_QUERY_TIMEOUT_S", float),
-    _EnvFieldSpec("embedding_backfill_timeout_s", "LCM_EMBEDDING_BACKFILL_TIMEOUT_S", float),
-    _EnvFieldSpec("embedding_max_batch_items", "LCM_EMBEDDING_MAX_BATCH_ITEMS", int),
-    _EnvFieldSpec("embedding_query_spend_max_calls", "LCM_EMBEDDING_QUERY_SPEND_MAX_CALLS", int),
-    _EnvFieldSpec("embedding_query_spend_window_seconds", "LCM_EMBEDDING_QUERY_SPEND_WINDOW_SECONDS", float),
-    _EnvFieldSpec("embedding_query_spend_backoff_seconds", "LCM_EMBEDDING_QUERY_SPEND_BACKOFF_SECONDS", float),
-    _EnvFieldSpec("new_session_retain_depth", "LCM_NEW_SESSION_RETAIN_DEPTH", int),
-    _EnvFieldSpec("doctor_clean_apply_enabled", "LCM_DOCTOR_CLEAN_APPLY_ENABLED", bool),
-    _EnvFieldSpec("slash_commands_enabled", "LCM_ENABLE_SLASH_COMMAND", bool),
-    _EnvFieldSpec("empty_lifecycle_gc_enabled", "LCM_EMPTY_LIFECYCLE_GC_ENABLED", bool),
-    _EnvFieldSpec("empty_lifecycle_gc_threshold", "LCM_EMPTY_LIFECYCLE_GC_THRESHOLD", int),
-    _EnvFieldSpec("temporal_rollups_enabled", "LCM_TEMPORAL_ROLLUPS_ENABLED", bool),
-    _EnvFieldSpec("rollup_daily_target_tokens", "LCM_ROLLUP_DAILY_TARGET_TOKENS", int),
-    _EnvFieldSpec("rollup_daily_max_tokens", "LCM_ROLLUP_DAILY_MAX_TOKENS", int),
-    _EnvFieldSpec("rollup_aggregate_max_tokens", "LCM_ROLLUP_AGGREGATE_MAX_TOKENS", int),
-    _EnvFieldSpec("rollup_builds_per_pass", "LCM_ROLLUP_BUILDS_PER_PASS", int),
-    _EnvFieldSpec("rollup_maintenance_budget_ms", "LCM_ROLLUP_MAINTENANCE_BUDGET_MS", int),
+    _EnvFieldSpec("sensitive_patterns_enabled", "TROVE_SENSITIVE_PATTERNS_ENABLED", bool),
+    _EnvFieldSpec("large_output_externalization_enabled", "TROVE_LARGE_OUTPUT_EXTERNALIZATION_ENABLED", bool),
+    _EnvFieldSpec("large_output_externalization_threshold_chars", "TROVE_LARGE_OUTPUT_EXTERNALIZATION_THRESHOLD_CHARS", int),
+    _EnvFieldSpec("large_output_externalization_path", "TROVE_LARGE_OUTPUT_EXTERNALIZATION_PATH", str),
+    _EnvFieldSpec("large_output_active_replay_stubbing_enabled", "TROVE_LARGE_OUTPUT_ACTIVE_REPLAY_STUBBING_ENABLED", bool),
+    _EnvFieldSpec("large_output_active_replay_stub_threshold_tokens", "TROVE_LARGE_OUTPUT_ACTIVE_REPLAY_STUB_THRESHOLD_TOKENS", int),
+    _EnvFieldSpec("large_output_transcript_gc_enabled", "TROVE_LARGE_OUTPUT_TRANSCRIPT_GC_ENABLED", bool),
+    _EnvFieldSpec("summary_model", "TROVE_SUMMARY_MODEL", str),
+    _EnvFieldSpec("summary_circuit_breaker_failure_threshold", "TROVE_SUMMARY_CIRCUIT_BREAKER_FAILURE_THRESHOLD", int),
+    _EnvFieldSpec("summary_circuit_breaker_cooldown_seconds", "TROVE_SUMMARY_CIRCUIT_BREAKER_COOLDOWN_SECONDS", int),
+    _EnvFieldSpec("summary_spend_max_calls", "TROVE_SUMMARY_SPEND_MAX_CALLS", int),
+    _EnvFieldSpec("summary_spend_window_seconds", "TROVE_SUMMARY_SPEND_WINDOW_SECONDS", float),
+    _EnvFieldSpec("summary_spend_backoff_seconds", "TROVE_SUMMARY_SPEND_BACKOFF_SECONDS", float),
+    _EnvFieldSpec("expansion_model", "TROVE_EXPANSION_MODEL", str),
+    _EnvFieldSpec("expansion_context_tokens", "TROVE_EXPANSION_CONTEXT_TOKENS", int),
+    _EnvFieldSpec("summary_timeout_ms", "TROVE_SUMMARY_TIMEOUT_MS", int),
+    _EnvFieldSpec("expansion_timeout_ms", "TROVE_EXPANSION_TIMEOUT_MS", int),
+    _EnvFieldSpec("database_path", "TROVE_DATABASE_PATH", str),
+    _EnvFieldSpec("embeddings_enabled", "TROVE_EMBEDDINGS_ENABLED", bool),
+    _EnvFieldSpec("rerank_enabled", "TROVE_RERANK_ENABLED", bool),
+    _EnvFieldSpec("recall_scan_rows", "TROVE_RECALL_SCAN_ROWS", int),
+    _EnvFieldSpec("recall_scan_max_rows", "TROVE_RECALL_SCAN_MAX_ROWS", int),
+    _EnvFieldSpec("recall_scan_budget_s", "TROVE_RECALL_SCAN_BUDGET_S", float),
+    _EnvFieldSpec("recall_reference_strict", "TROVE_RECALL_REFERENCE_STRICT", bool),
+    _EnvFieldSpec("proactive_recall_enabled", "TROVE_PROACTIVE_RECALL_ENABLED", bool),
+    _EnvFieldSpec("proactive_recall_min_score", "TROVE_PROACTIVE_RECALL_MIN_SCORE", float),
+    _EnvFieldSpec("proactive_recall_budget_tokens", "TROVE_PROACTIVE_RECALL_BUDGET_TOKENS", int),
+    _EnvFieldSpec("proactive_recall_provider", "TROVE_PROACTIVE_RECALL_PROVIDER", str),
+    _EnvFieldSpec("preanswer_evidence_enabled", "TROVE_PREANSWER_EVIDENCE_ENABLED", bool),
+    _EnvFieldSpec("preanswer_evidence_mode", "TROVE_PREANSWER_EVIDENCE_MODE", str),
+    _EnvFieldSpec("selective_compiler_enabled", "TROVE_SELECTIVE_COMPILER_ENABLED", bool),
+    _EnvFieldSpec("selective_compiler_model", "TROVE_SELECTIVE_COMPILER_MODEL", str),
+    _EnvFieldSpec("embedding_bounded_scan_rows", "TROVE_EMBEDDING_BOUNDED_SCAN_ROWS", int),
+    _EnvFieldSpec("embedding_storage_dtype", "TROVE_EMBEDDING_STORAGE_DTYPE", str),
+    _EnvFieldSpec("embedding_store_dim", "TROVE_EMBEDDING_STORE_DIM", int),
+    _EnvFieldSpec("embedding_binary_prescreen", "TROVE_EMBEDDING_BINARY_PRESCREEN", bool),
+    _EnvFieldSpec("knn_prescreen_multiplier", "TROVE_KNN_PRESCREEN_MULTIPLIER", int),
+    _EnvFieldSpec("embedding_provider", "TROVE_EMBEDDING_PROVIDER", str),
+    _EnvFieldSpec("embedding_model", "TROVE_EMBEDDING_MODEL", str),
+    _EnvFieldSpec("embedding_content_policy", "TROVE_EMBED_CONTENT_POLICY", str),
+    _EnvFieldSpec("ollama_base_url", "TROVE_OLLAMA_BASE_URL", str),
+    _EnvFieldSpec("embedding_query_timeout_s", "TROVE_EMBEDDING_QUERY_TIMEOUT_S", float),
+    _EnvFieldSpec("recall_query_timeout_s", "TROVE_RECALL_QUERY_TIMEOUT_S", float),
+    _EnvFieldSpec("embedding_backfill_timeout_s", "TROVE_EMBEDDING_BACKFILL_TIMEOUT_S", float),
+    _EnvFieldSpec("embedding_max_batch_items", "TROVE_EMBEDDING_MAX_BATCH_ITEMS", int),
+    _EnvFieldSpec("embedding_query_spend_max_calls", "TROVE_EMBEDDING_QUERY_SPEND_MAX_CALLS", int),
+    _EnvFieldSpec("embedding_query_spend_window_seconds", "TROVE_EMBEDDING_QUERY_SPEND_WINDOW_SECONDS", float),
+    _EnvFieldSpec("embedding_query_spend_backoff_seconds", "TROVE_EMBEDDING_QUERY_SPEND_BACKOFF_SECONDS", float),
+    _EnvFieldSpec("new_session_retain_depth", "TROVE_NEW_SESSION_RETAIN_DEPTH", int),
+    _EnvFieldSpec("doctor_clean_apply_enabled", "TROVE_DOCTOR_CLEAN_APPLY_ENABLED", bool),
+    _EnvFieldSpec("slash_commands_enabled", "TROVE_ENABLE_SLASH_COMMAND", bool),
+    _EnvFieldSpec("empty_lifecycle_gc_enabled", "TROVE_EMPTY_LIFECYCLE_GC_ENABLED", bool),
+    _EnvFieldSpec("empty_lifecycle_gc_threshold", "TROVE_EMPTY_LIFECYCLE_GC_THRESHOLD", int),
+    _EnvFieldSpec("temporal_rollups_enabled", "TROVE_TEMPORAL_ROLLUPS_ENABLED", bool),
+    _EnvFieldSpec("rollup_daily_target_tokens", "TROVE_ROLLUP_DAILY_TARGET_TOKENS", int),
+    _EnvFieldSpec("rollup_daily_max_tokens", "TROVE_ROLLUP_DAILY_MAX_TOKENS", int),
+    _EnvFieldSpec("rollup_aggregate_max_tokens", "TROVE_ROLLUP_AGGREGATE_MAX_TOKENS", int),
+    _EnvFieldSpec("rollup_builds_per_pass", "TROVE_ROLLUP_BUILDS_PER_PASS", int),
+    _EnvFieldSpec("rollup_maintenance_budget_ms", "TROVE_ROLLUP_MAINTENANCE_BUDGET_MS", int),
 )
 
 _PARSER_BY_TYPE = {
@@ -498,8 +498,8 @@ _PRESET_ENV_FIELDS = frozenset({
 
 
 @dataclass
-class LCMConfig:
-    """All tunables for the LCM engine."""
+class TROVEConfig:
+    """All tunables for the TROVE engine."""
 
     # -- Fresh tail: recent messages never compacted ---
     fresh_tail_count: int = 32
@@ -512,7 +512,7 @@ class LCMConfig:
     # Fraction of context window that triggers compaction (0.0–1.0)
     context_threshold: float = 0.35
     # Mirror Hermes Agent's Codex gpt-5.5 route-specific threshold auto-raise
-    # when LCM is inheriting the host compression threshold. Explicit LCM
+    # when TROVE is inheriting the host compression threshold. Explicit TROVE
     # threshold overrides remain authoritative.
     codex_gpt55_autoraise_enabled: bool = True
     # Max condensation depth (-1 = unlimited, 0 = leaf only)
@@ -557,11 +557,11 @@ class LCMConfig:
     reserve_tokens_floor: int = 0
 
     # -- Session and message filtering ---
-    # Sessions to exclude from LCM storage entirely.
+    # Sessions to exclude from TROVE storage entirely.
     ignore_session_patterns: list[str] = field(default_factory=list)
-    # Sessions that may read carried-over LCM state but never write new data.
+    # Sessions that may read carried-over TROVE state but never write new data.
     stateless_session_patterns: list[str] = field(default_factory=list)
-    # Per-message regex patterns; matching messages are skipped before LCM storage.
+    # Per-message regex patterns; matching messages are skipped before TROVE storage.
     ignore_message_patterns: list[str] = field(default_factory=list)
     # Diagnostics: where each pattern list came from.
     ignore_session_patterns_source: str = "default"
@@ -577,11 +577,11 @@ class LCMConfig:
     extraction_enabled: bool = False
     # Model for extraction (empty = fall back to summary_model)
     extraction_model: str = ""
-    # Directory for daily extraction files (empty = auto: ~/.hermes/lcm-extractions/)
+    # Directory for daily extraction files (empty = auto: ~/.hermes/trove-extractions/)
     extraction_output_path: str = ""
 
     # -- V4 assertion sidecar --
-    # Materializes the rebuildable assertion tables in the same profile lcm.db.
+    # Materializes the rebuildable assertion tables in the same profile trove.db.
     # This does not enable extraction or backfill; it only binds schema/read APIs.
     assertions_enabled: bool = False
     # Materializes demand-shaped query evidence views in the same profile DB.
@@ -603,7 +603,7 @@ class LCMConfig:
 
     # -- Sensitive-pattern handling ---
     # Disabled by default. When enabled, named patterns redact matching secrets
-    # before LCM storage, FTS indexing, summarization, or externalization.
+    # before TROVE storage, FTS indexing, summarization, or externalization.
     sensitive_patterns_enabled: bool = False
     # Named pattern catalog entries to apply when sensitive handling is enabled.
     sensitive_patterns: list[str] = field(
@@ -649,7 +649,7 @@ class LCMConfig:
     # Backoff, in seconds, after the spend window is exhausted.
     summary_spend_backoff_seconds: float = 1800.0
     expansion_model: str = ""     # empty = fall back to summary_model / Hermes auxiliary model
-    # Serialized summary/raw/child-source/externalized context budget fed to lcm_expand_query's auxiliary LLM before it returns a bounded answer.
+    # Serialized summary/raw/child-source/externalized context budget fed to trove_expand_query's auxiliary LLM before it returns a bounded answer.
     expansion_context_tokens: int = 32_000
 
     # -- Timeouts ---
@@ -657,11 +657,11 @@ class LCMConfig:
     expansion_timeout_ms: int = 120_000
 
     # -- Storage ---
-    database_path: str = ""       # empty = HERMES_HOME/lcm.db; LCM_DATABASE_PATH may override
+    database_path: str = ""       # empty = HERMES_HOME/trove.db; TROVE_DATABASE_PATH may override
 
     # -- Embeddings (default-off until a provider/model are configured) ---
     embeddings_enabled: bool = False
-    # lcm_recall cross-encoder rerank stage (voyage rerank-2.5-lite over the top
+    # trove_recall cross-encoder rerank stage (voyage rerank-2.5-lite over the top
     # fused candidates). Default-off: recall ships value on RRF order alone, and
     # rerank is one extra billable API call the operator opts into.
     rerank_enabled: bool = False
@@ -689,7 +689,7 @@ class LCMConfig:
     # rescore) KNN: M = knn_prescreen_multiplier x k survivors are rescored.
     # Larger widens the approximate prescreen toward exact recall at more cost.
     knn_prescreen_multiplier: int = 4
-    # lcm_recall candidate-scan BATCH SIZE. lcm_recall promises "all
+    # trove_recall candidate-scan BATCH SIZE. trove_recall promises "all
     # conversations, all time", so it must NOT inherit the small
     # recency-truncating grep bound above (that structurally hides the oldest
     # memories). It used to be a hard bound, which made the promise false at
@@ -699,20 +699,20 @@ class LCMConfig:
     # batch (a running top-k spans the batches), so it trades peak memory, not
     # coverage.
     recall_scan_rows: int = 25_000
-    # Hard candidate cap for the lcm_recall scan; 0 = unlimited (the default:
+    # Hard candidate cap for the trove_recall scan; 0 = unlimited (the default:
     # cover everything). Set it only for a pathological corpus -- a capped scan
     # reports coverage='bounded' and discloses the scanned/total ratio, exactly
     # as the old recency window did.
     recall_scan_max_rows: int = 0
-    # Optional hard latency budget for the lcm_recall scan, in seconds; 0 = no
+    # Optional hard latency budget for the trove_recall scan, in seconds; 0 = no
     # early stop (the default). When set, a scan that overruns it stops between
     # batches and degrades to coverage='bounded' rather than silently paying an
     # unbounded cost. This is the ONLY thing that truncates a default scan.
     recall_scan_budget_s: float = 0.0
-    # Per-arm RRF fusion weights for lcm_recall's 3-arm hybrid (fts/summary/chunk).
+    # Per-arm RRF fusion weights for trove_recall's 3-arm hybrid (fts/summary/chunk).
     # Down-weighting the weak FTS arm keeps naive equal-weight fusion from dragging
     # fused recall below its best (vector) arm — measured −21 R@5 on LongMemEval.
-    # Override via LCM_RECALL_ARM_WEIGHTS ("fts=0.5,summary=1.0,chunk=1.0").
+    # Override via TROVE_RECALL_ARM_WEIGHTS ("fts=0.5,summary=1.0,chunk=1.0").
     recall_arm_weights: dict[str, float] = field(
         default_factory=lambda: dict(_DEFAULT_RECALL_ARM_WEIGHTS)
     )
@@ -728,11 +728,11 @@ class LCMConfig:
     recall_reference_strict: bool = True
     # -- Proactive memory injection (SPEC F, default-OFF) ---
     # At active-context assembly, embed the newest user message and run the
-    # lcm_recall pipeline to surface cross-session memories the model would
-    # otherwise have to lcm_recall by hand. Default-off => byte-identical
+    # trove_recall pipeline to surface cross-session memories the model would
+    # otherwise have to trove_recall by hand. Default-off => byte-identical
     # assembly; when disabled the whole path is skipped before any work.
     proactive_recall_enabled: bool = False
-    # Relevance floor on the lcm_recall composite score. Two regimes:
+    # Relevance floor on the trove_recall composite score. Two regimes:
     #  - rerank OFF (default): the score is RRF-scale (~0.014-0.05); a single
     #    top-ranked arm hit is ~0.016, so this floor mainly drops ancient or
     #    low-ranked hits. The default keeps fresh top-of-arm hits.
@@ -767,15 +767,15 @@ class LCMConfig:
     embedding_content_policy: str = "conversational"
     ollama_base_url: str = "http://localhost:11434"
     embedding_query_timeout_s: float = 3.0
-    # Dedicated deadline for lcm_recall. It fans out three sequential arms (FTS +
+    # Dedicated deadline for trove_recall. It fans out three sequential arms (FTS +
     # summary KNN + chunk KNN) plus fusion, hydration, and an optional rerank, so
-    # it needs more headroom than lcm_grep's single-arm query deadline above
+    # it needs more headroom than trove_grep's single-arm query deadline above
     # (which stays 3.0s). sprint-opt-2.
     recall_query_timeout_s: float = 8.0
     # Per-provider-operation deadline for bulk document embedding. This is
     # deliberately separate from the latency-sensitive query deadline; the
     # whole backfill invocation is additionally governed by
-    # LCM_EMBEDDING_BACKFILL_BUDGET_S (0 = unlimited, checked between batches).
+    # TROVE_EMBEDDING_BACKFILL_BUDGET_S (0 = unlimited, checked between batches).
     embedding_backfill_timeout_s: float = 120.0
     # Voyage caps a single embeddings request at 1000 input items; document
     # batches split at this many items in addition to the token budget.
@@ -796,10 +796,10 @@ class LCMConfig:
     # -- Session carry-over ---
     # Depth retained after /new (-1 = all, 0 = nothing, 2 = keep d2+)
     new_session_retain_depth: int = 2
-    # Safety gate: destructive `/lcm doctor clean apply` workflow is disabled by default.
+    # Safety gate: destructive `/trove doctor clean apply` workflow is disabled by default.
     doctor_clean_apply_enabled: bool = False
-    # Enable the optional `/lcm` slash command surface (requires
-    # `LCM_ENABLE_SLASH_COMMAND=1` in the environment).
+    # Enable the optional `/trove` slash command surface (requires
+    # `TROVE_ENABLE_SLASH_COMMAND=1` in the environment).
     slash_commands_enabled: bool = False
 
     # -- Lifecycle GC ---
@@ -830,10 +830,10 @@ class LCMConfig:
 
     # -- Diagnostics ---
     # Field-level provenance for values loaded through from_env(). Manual
-    # LCMConfig(...) instances leave this empty and status treats them as manual/default.
+    # TROVEConfig(...) instances leave this empty and status treats them as manual/default.
     config_sources: dict[str, str] = field(default_factory=dict)
     config_source_warnings: list[str] = field(default_factory=list)
-    ignored_config_yaml_lcm_keys: list[str] = field(default_factory=list)
+    ignored_config_yaml_trove_keys: list[str] = field(default_factory=list)
     config_hermes_home: str = ""
 
     @classmethod
@@ -841,7 +841,7 @@ class LCMConfig:
         cls,
         *,
         hermes_home: str | Path | None = None,
-    ) -> "LCMConfig":
+    ) -> "TROVEConfig":
         """Build config from environment variables and one Hermes profile.
 
         ``hermes_home`` is intentionally an argument instead of a temporary
@@ -858,23 +858,23 @@ class LCMConfig:
             if warning:
                 config_source_warnings.append(warning)
 
-        c.ignored_config_yaml_lcm_keys = _ignored_lcm_config_yaml_keys(
+        c.ignored_config_yaml_trove_keys = _ignored_trove_config_yaml_keys(
             hermes_home=hermes_home
         )
 
         # Source-tracked fields (provenance recording and/or a computed default)
         # stay explicit; the uniform loop below skips them.
         c.fresh_tail_count, source, warning = _parse_int_env_with_source(
-            "LCM_FRESH_TAIL_COUNT", c.fresh_tail_count
+            "TROVE_FRESH_TAIL_COUNT", c.fresh_tail_count
         )
         _record("fresh_tail_count", source, warning)
         c.fresh_tail_max_tokens, source, warning = _parse_int_env_with_source(
-            "LCM_FRESH_TAIL_MAX_TOKENS", c.fresh_tail_max_tokens
+            "TROVE_FRESH_TAIL_MAX_TOKENS", c.fresh_tail_max_tokens
         )
         c.fresh_tail_max_tokens = max(0, c.fresh_tail_max_tokens)
         _record("fresh_tail_max_tokens", source, warning)
         c.leaf_chunk_tokens, source, warning = _parse_int_env_with_source(
-            "LCM_LEAF_CHUNK_TOKENS", c.leaf_chunk_tokens
+            "TROVE_LEAF_CHUNK_TOKENS", c.leaf_chunk_tokens
         )
         _record("leaf_chunk_tokens", source, warning)
         context_default, context_source = _hermes_compression_threshold_with_source(
@@ -882,7 +882,7 @@ class LCMConfig:
             hermes_home=hermes_home,
         )
         c.context_threshold, source, warning = _parse_float_env_with_source(
-            "LCM_CONTEXT_THRESHOLD",
+            "TROVE_CONTEXT_THRESHOLD",
             context_default,
             default_source=context_source,
         )
@@ -893,17 +893,17 @@ class LCMConfig:
         )
         _record("codex_gpt55_autoraise_enabled", source)
         c.summary_spend_max_calls, source, warning = _parse_int_env_with_source(
-            "LCM_SUMMARY_SPEND_MAX_CALLS",
+            "TROVE_SUMMARY_SPEND_MAX_CALLS",
             c.summary_spend_max_calls,
         )
         _record("summary_spend_max_calls", source, warning)
         c.summary_spend_window_seconds, source, warning = _parse_float_env_with_source(
-            "LCM_SUMMARY_SPEND_WINDOW_SECONDS",
+            "TROVE_SUMMARY_SPEND_WINDOW_SECONDS",
             c.summary_spend_window_seconds,
         )
         _record("summary_spend_window_seconds", source, warning)
         c.summary_spend_backoff_seconds, source, warning = _parse_float_env_with_source(
-            "LCM_SUMMARY_SPEND_BACKOFF_SECONDS",
+            "TROVE_SUMMARY_SPEND_BACKOFF_SECONDS",
             c.summary_spend_backoff_seconds,
         )
         _record("summary_spend_backoff_seconds", source, warning)
@@ -912,13 +912,13 @@ class LCMConfig:
             hermes_home=hermes_home,
         )
         c.summary_timeout_ms, source, warning = _parse_int_env_with_source(
-            "LCM_SUMMARY_TIMEOUT_MS",
+            "TROVE_SUMMARY_TIMEOUT_MS",
             summary_timeout_default,
             default_source=summary_timeout_source,
         )
         _record("summary_timeout_ms", source, warning)
 
-        # Every other scalar LCM_* override is applied uniformly from the spec.
+        # Every other scalar TROVE_* override is applied uniformly from the spec.
         for spec in ENV_FIELD_SPECS:
             if spec.name in _SOURCE_TRACKED_ENV_FIELDS:
                 continue
@@ -926,38 +926,38 @@ class LCMConfig:
             setattr(c, spec.name, parser(spec.env_key, getattr(c, spec.name)))
 
         # Pattern-list overrides carry a source sidecar and stay explicit.
-        raw_sensitive_patterns = os.environ.get("LCM_SENSITIVE_PATTERNS")
+        raw_sensitive_patterns = os.environ.get("TROVE_SENSITIVE_PATTERNS")
         if raw_sensitive_patterns is not None:
             c.sensitive_patterns = _parse_pattern_list(raw_sensitive_patterns)
             c.sensitive_patterns_source = "env"
-        raw_summary_fallback_models = os.environ.get("LCM_SUMMARY_FALLBACK_MODELS")
+        raw_summary_fallback_models = os.environ.get("TROVE_SUMMARY_FALLBACK_MODELS")
         if raw_summary_fallback_models is not None:
             c.summary_fallback_models = _parse_pattern_list(raw_summary_fallback_models)
 
-        raw_max_age = os.environ.get("LCM_EMPTY_LIFECYCLE_GC_MAX_AGE_HOURS")
+        raw_max_age = os.environ.get("TROVE_EMPTY_LIFECYCLE_GC_MAX_AGE_HOURS")
         if raw_max_age is not None:
             try:
                 c.empty_lifecycle_gc_max_age_hours = float(raw_max_age)
             except (TypeError, ValueError):
                 pass
 
-        raw_arm_weights = os.environ.get("LCM_RECALL_ARM_WEIGHTS")
+        raw_arm_weights = os.environ.get("TROVE_RECALL_ARM_WEIGHTS")
         if raw_arm_weights is not None:
             c.recall_arm_weights = _parse_arm_weights(
                 raw_arm_weights, _DEFAULT_RECALL_ARM_WEIGHTS
             )
 
-        raw_ignore = os.environ.get("LCM_IGNORE_SESSION_PATTERNS")
+        raw_ignore = os.environ.get("TROVE_IGNORE_SESSION_PATTERNS")
         if raw_ignore is not None:
             c.ignore_session_patterns = _parse_pattern_list(raw_ignore)
             c.ignore_session_patterns_source = "env"
 
-        raw_stateless = os.environ.get("LCM_STATELESS_SESSION_PATTERNS")
+        raw_stateless = os.environ.get("TROVE_STATELESS_SESSION_PATTERNS")
         if raw_stateless is not None:
             c.stateless_session_patterns = _parse_pattern_list(raw_stateless)
             c.stateless_session_patterns_source = "env"
 
-        raw_ignore_messages = os.environ.get("LCM_IGNORE_MESSAGE_PATTERNS")
+        raw_ignore_messages = os.environ.get("TROVE_IGNORE_MESSAGE_PATTERNS")
         if raw_ignore_messages is not None:
             c.ignore_message_patterns = _parse_pattern_list(raw_ignore_messages)
             c.ignore_message_patterns_source = "env"

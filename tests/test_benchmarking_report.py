@@ -135,7 +135,7 @@ def test_build_community_export_is_scrubbed_and_includes_policy_settings():
         _metrics(policy_name="baseline_272k", repeated_compaction_risk=True, fresh_tail_pressure_ratio=0.80),
         _metrics(policy_name="codex_gpt_long_context"),
     ]
-    rows[0].database_path = "/tmp/private/lcm.db"
+    rows[0].database_path = "/tmp/private/trove.db"
     rows[0].hermes_home = "/home/w0lf/.hermes/profiles/turing"
     summary = summarize_metrics(rows)
     policies = builtin_policies()

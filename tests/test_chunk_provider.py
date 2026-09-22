@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-import hermes_lcm.embedding_provider as provider_mod
-from hermes_lcm.embedding_provider import (
+import hermes_trove.embedding_provider as provider_mod
+from hermes_trove.embedding_provider import (
     HttpResponse,
     VoyageError,
     VoyageProvider,

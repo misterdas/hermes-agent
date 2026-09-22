@@ -6,12 +6,12 @@ import json
 
 import pytest
 
-from hermes_lcm.assertion_extraction import parse_assertion_extraction
-from hermes_lcm.assertion_state import query_assertion_state
-from hermes_lcm.assertion_store import AssertionCandidate, AssertionStore
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.engine import LCMEngine
-from hermes_lcm.store import MessageStore
+from hermes_trove.assertion_extraction import parse_assertion_extraction
+from hermes_trove.assertion_state import query_assertion_state
+from hermes_trove.assertion_store import AssertionCandidate, AssertionStore
+from hermes_trove.config import TROVEConfig
+from hermes_trove.engine import TROVEEngine
+from hermes_trove.store import MessageStore
 
 
 def _source(messages, assertions, content, observed_at, *, role="user"):
@@ -97,7 +97,7 @@ def _publish(store, snapshot, wires, relations=()):
 
 @pytest.fixture
 def state_db(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     messages = MessageStore(db_path)
     assertions = AssertionStore(db_path)
     try:
@@ -423,20 +423,20 @@ def test_addressee_resolution_fails_closed_outside_direct_user_assistant_roles(s
         )
 
 
-def test_lcm_query_state_is_production_bounded_and_exact_source_cited(tmp_path):
-    disabled = LCMEngine(config=LCMConfig(
+def test_trove_query_state_is_production_bounded_and_exact_source_cited(tmp_path):
+    disabled = TROVEEngine(config=TROVEConfig(
         database_path=str(tmp_path / "disabled.db"),
     ))
-    enabled = LCMEngine(config=LCMConfig(
+    enabled = TROVEEngine(config=TROVEConfig(
         database_path=str(tmp_path / "enabled.db"),
         assertions_enabled=True,
     ))
     try:
-        assert "lcm_query_state" in {
+        assert "trove_query_state" in {
             schema["name"] for schema in disabled.get_tool_schemas()
         }
         disabled_result = json.loads(disabled.handle_tool_call(
-            "lcm_query_state", {"subject_key": "user:self"}
+            "trove_query_state", {"subject_key": "user:self"}
         ))
         assert disabled_result["status"] == "disabled"
 
@@ -454,7 +454,7 @@ def test_lcm_query_state_is_production_bounded_and_exact_source_cited(tmp_path):
             kind="preference",
             scope="morning",
         )])
-        response_text = enabled.handle_tool_call("lcm_query_state", {
+        response_text = enabled.handle_tool_call("trove_query_state", {
             "subject_key": "user:self",
             "predicate_key": "drink.preference",
             "kinds": ["preference"],
@@ -472,7 +472,7 @@ def test_lcm_query_state_is_production_bounded_and_exact_source_cited(tmp_path):
         assert len(ref["content_sha256"]) == 64
 
         bad_time = json.loads(enabled.handle_tool_call(
-            "lcm_query_state",
+            "trove_query_state",
             {"subject_key": "user:self", "as_of": "2024-01-01"},
         ))
         assert "timezone" in bad_time["error"]
@@ -481,9 +481,9 @@ def test_lcm_query_state_is_production_bounded_and_exact_source_cited(tmp_path):
         disabled.shutdown()
 
 
-def test_lcm_query_state_response_cap_omits_whole_rows_never_partial_quotes(tmp_path):
-    engine = LCMEngine(config=LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+def test_trove_query_state_response_cap_omits_whole_rows_never_partial_quotes(tmp_path):
+    engine = TROVEEngine(config=TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         assertions_enabled=True,
     ))
     engine._session_id = "session-a"
@@ -505,7 +505,7 @@ def test_lcm_query_state_response_cap_omits_whole_rows_never_partial_quotes(tmp_
             )])
 
         response_text = engine.handle_tool_call(
-            "lcm_query_state",
+            "trove_query_state",
             {"subject_key": "user:self", "predicate_key": "large.fact"},
         )
         response = json.loads(response_text)

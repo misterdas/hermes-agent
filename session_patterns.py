@@ -1,4 +1,4 @@
-"""Session-pattern helpers for LCM session filtering.
+"""Session-pattern helpers for TROVE session filtering.
 
 `*` matches within a single colon-delimited segment.
 `**` can span across colons.

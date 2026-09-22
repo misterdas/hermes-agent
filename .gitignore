@@ -47,7 +47,7 @@ agent/
 
 # Benchmark outputs
 benchmarks/runs/
-*.lcm-benchmark-result.json
+*.trove-benchmark-result.json
 
 # Logs
 *.log

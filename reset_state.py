@@ -1,6 +1,6 @@
 """Session-scoped runtime-state resets.
 
-Extracted verbatim from :mod:`hermes_lcm.engine` as ``ResetStateMixin``
+Extracted verbatim from :mod:`hermes_trove.engine` as ``ResetStateMixin``
 (WS5 seam). The methods clear the session-scoped counters, compaction
 progress, and per-turn placeholder-boundary bookkeeping when a session is
 reset or rolled over. State stays on the engine (accessed via ``self``);

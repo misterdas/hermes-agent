@@ -32,7 +32,7 @@ from .db_bootstrap import (
     run_versioned_migrations,
 )
 
-_DELETE_SESSION_SCOPE_TABLE = "temp_lcm_delete_session_scope"
+_DELETE_SESSION_SCOPE_TABLE = "temp_trove_delete_session_scope"
 _DELETE_SESSION_SCOPE_INSERT_CHUNK = 512
 from .search_query import (
     AGE_DECAY_RATE,

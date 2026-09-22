@@ -8,9 +8,9 @@ def test_path_containment_within_allowed_base(monkeypatch):
     """Test that hermes_home within allowed base is accepted."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Set allowed base to tmpdir using monkeypatch
-        monkeypatch.setenv("LCM_HERMES_BASE_DIR", tmpdir)
+        monkeypatch.setenv("TROVE_HERMES_BASE_DIR", tmpdir)
 
-        from hermes_lcm.command import _state_db_path_for_engine
+        from hermes_trove.command import _state_db_path_for_engine
 
         # Create a mock engine with hermes_home inside allowed base
         hermes_home = str(Path(tmpdir) / "hermes")
@@ -29,9 +29,9 @@ def test_path_containment_outside_allowed_base(monkeypatch):
     """Test that hermes_home outside allowed base raises error."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Set allowed base to tmpdir
-        monkeypatch.setenv("LCM_HERMES_BASE_DIR", tmpdir)
+        monkeypatch.setenv("TROVE_HERMES_BASE_DIR", tmpdir)
 
-        from hermes_lcm.command import _state_db_path_for_engine
+        from hermes_trove.command import _state_db_path_for_engine
 
         # Create a mock engine with hermes_home outside allowed base
         class MockEngine:
@@ -44,18 +44,18 @@ def test_path_containment_outside_allowed_base(monkeypatch):
 
 
 def test_engine_state_db_path_outside_allowed_base(monkeypatch):
-    """Test LCMEngine._state_db_path with engine method."""
+    """Test TROVEEngine._state_db_path with engine method."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        monkeypatch.setenv("LCM_HERMES_BASE_DIR", tmpdir)
+        monkeypatch.setenv("TROVE_HERMES_BASE_DIR", tmpdir)
 
-        from hermes_lcm.engine import LCMEngine
+        from hermes_trove.engine import TROVEEngine
 
         # Create a mock store with db_path
         class MockStore:
-            db_path = str(Path(tmpdir) / "lcm.db")
+            db_path = str(Path(tmpdir) / "trove.db")
 
         # Create engine with hermes_home outside allowed base
-        engine = LCMEngine.__new__(LCMEngine)
+        engine = TROVEEngine.__new__(TROVEEngine)
         engine._hermes_home = "/etc"
         engine._store = MockStore()
 
@@ -65,13 +65,13 @@ def test_engine_state_db_path_outside_allowed_base(monkeypatch):
 
 
 def test_state_db_path_fallback_outside_allowed_base_rejected(monkeypatch, tmp_path):
-    monkeypatch.setenv("LCM_HERMES_BASE_DIR", str(tmp_path / "allowed"))
+    monkeypatch.setenv("TROVE_HERMES_BASE_DIR", str(tmp_path / "allowed"))
 
-    from hermes_lcm.command import _state_db_path_for_engine as command_state_db_path
-    from hermes_lcm.tools import _state_db_path_for_engine as tools_state_db_path
+    from hermes_trove.command import _state_db_path_for_engine as command_state_db_path
+    from hermes_trove.tools import _state_db_path_for_engine as tools_state_db_path
 
     class MockStore:
-        db_path = str(tmp_path / "outside" / "lcm.db")
+        db_path = str(tmp_path / "outside" / "trove.db")
 
     class MockEngine:
         _hermes_home = ""
@@ -83,14 +83,14 @@ def test_state_db_path_fallback_outside_allowed_base_rejected(monkeypatch, tmp_p
 
 
 def test_engine_state_db_path_fallback_outside_allowed_base_rejected(monkeypatch, tmp_path):
-    monkeypatch.setenv("LCM_HERMES_BASE_DIR", str(tmp_path / "allowed"))
+    monkeypatch.setenv("TROVE_HERMES_BASE_DIR", str(tmp_path / "allowed"))
 
-    from hermes_lcm.engine import LCMEngine
+    from hermes_trove.engine import TROVEEngine
 
     class MockStore:
-        db_path = str(tmp_path / "outside" / "lcm.db")
+        db_path = str(tmp_path / "outside" / "trove.db")
 
-    engine = LCMEngine.__new__(LCMEngine)
+    engine = TROVEEngine.__new__(TROVEEngine)
     engine._hermes_home = ""
     engine._store = MockStore()
 
@@ -104,9 +104,9 @@ def _resolved(p) -> Path:
 
 def test_externalization_path_outside_hermes_home_warns_but_does_not_break(monkeypatch, tmp_path, caplog):
     import logging
-    from hermes_lcm.externalize import get_large_output_storage_dir, _WARNED_EXTERNALIZATION_PATHS
+    from hermes_trove.externalize import get_large_output_storage_dir, _WARNED_EXTERNALIZATION_PATHS
 
-    monkeypatch.delenv("LCM_HERMES_BASE_DIR", raising=False)
+    monkeypatch.delenv("TROVE_HERMES_BASE_DIR", raising=False)
     _WARNED_EXTERNALIZATION_PATHS.clear()
     outside = tmp_path / "other-volume" / "payloads"
 
@@ -124,9 +124,9 @@ def test_externalization_path_outside_hermes_home_warns_but_does_not_break(monke
 
 def test_externalization_path_within_hermes_home_does_not_warn(monkeypatch, tmp_path, caplog):
     import logging
-    from hermes_lcm.externalize import get_large_output_storage_dir, _WARNED_EXTERNALIZATION_PATHS
+    from hermes_trove.externalize import get_large_output_storage_dir, _WARNED_EXTERNALIZATION_PATHS
 
-    monkeypatch.delenv("LCM_HERMES_BASE_DIR", raising=False)
+    monkeypatch.delenv("TROVE_HERMES_BASE_DIR", raising=False)
     _WARNED_EXTERNALIZATION_PATHS.clear()
     hermes_home = tmp_path / "hermes"
     inside = hermes_home / "custom-outputs"
@@ -142,9 +142,9 @@ def test_externalization_path_within_hermes_home_does_not_warn(monkeypatch, tmp_
 
 
 def test_externalization_path_strict_containment_when_base_set(monkeypatch, tmp_path):
-    from hermes_lcm.externalize import get_large_output_storage_dir
+    from hermes_trove.externalize import get_large_output_storage_dir
 
-    monkeypatch.setenv("LCM_HERMES_BASE_DIR", str(tmp_path / "allowed"))
+    monkeypatch.setenv("TROVE_HERMES_BASE_DIR", str(tmp_path / "allowed"))
 
     class Config:
         large_output_externalization_path = str(tmp_path / "elsewhere" / "payloads")

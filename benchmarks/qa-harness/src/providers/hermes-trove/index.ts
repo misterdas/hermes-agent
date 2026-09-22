@@ -12,9 +12,9 @@ import type {
 } from "../../types/provider"
 import type { UnifiedSession } from "../../types/unified"
 import { logger } from "../../utils/logger"
-import { HERMES_LCM_PROMPTS } from "./prompts"
+import { HERMES_TROVE_PROMPTS } from "./prompts"
 
-const DEFAULT_REPO = "/Volumes/LEXAR/hermes-work/hermes-lcm"
+const DEFAULT_REPO = "/Volumes/LEXAR/hermes-work/hermes-trove"
 const INITIALIZE_TIMEOUT_MS = 300_000 // model download/load on first warmup can be slow
 const REQUEST_TIMEOUT_MS = 120_000
 
@@ -25,22 +25,22 @@ interface BridgeResponse {
 }
 
 /**
- * hermes-lcm memory provider.
+ * hermes-trove memory provider.
  *
- * hermes-lcm is a Python/SQLite lossless-context-management plugin, so the
- * provider drives a long-lived Python bridge (`bridge/hermes_lcm_bridge.py`)
+ * hermes-trove is a Python/SQLite lossless-context-management plugin, so the
+ * provider drives a long-lived Python bridge (`bridge/hermes_trove_bridge.py`)
  * over newline-delimited JSON on stdin/stdout — the same "persistent backend
  * handle" shape as the Zep provider's SDK client. Ingest accumulates each
- * harness session into a per-container LCM store; search calls the PRODUCTION
- * `tools.lcm_recall` and returns its hits as `{content, metadata}`.
+ * harness session into a per-container TROVE store; search calls the PRODUCTION
+ * `tools.trove_recall` and returns its hits as `{content, metadata}`.
  *
  * Requests are serialized (single pipe, single in-flight request) and the
  * provider is crash-loud: if the bridge exits, the pending call rejects and
  * every subsequent call throws rather than silently degrading.
  */
-export class HermesLcmProvider implements Provider {
-  name = "hermes-lcm"
-  prompts = HERMES_LCM_PROMPTS
+export class HermesTroveProvider implements Provider {
+  name = "hermes-trove"
+  prompts = HERMES_TROVE_PROMPTS
   // Single Python process + SQLite + one pipe => run every phase sequentially.
   concurrency = { default: 1 }
 
@@ -55,24 +55,24 @@ export class HermesLcmProvider implements Provider {
   private deadError: Error | null = null
 
   async initialize(_config: ProviderConfig): Promise<void> {
-    const repo = process.env.HERMES_LCM_REPO || DEFAULT_REPO
+    const repo = process.env.HERMES_TROVE_REPO || DEFAULT_REPO
     const python =
-      process.env.HERMES_LCM_PYTHON || join(repo, ".venv-fastembed", "bin", "python")
-    const script = join(import.meta.dir, "bridge", "hermes_lcm_bridge.py")
+      process.env.HERMES_TROVE_PYTHON || join(repo, ".venv-fastembed", "bin", "python")
+    const script = join(import.meta.dir, "bridge", "hermes_trove_bridge.py")
 
     if (!existsSync(python)) {
       throw new Error(
-        `hermes-lcm python not found at ${python}. Set HERMES_LCM_PYTHON or create the fastembed venv (see provider README).`
+        `hermes-trove python not found at ${python}. Set HERMES_TROVE_PYTHON or create the fastembed venv (see provider README).`
       )
     }
     if (!existsSync(script)) {
-      throw new Error(`hermes-lcm bridge script not found at ${script}`)
+      throw new Error(`hermes-trove bridge script not found at ${script}`)
     }
 
-    const workdir = process.env.HERMES_MB_WORKDIR || join(tmpdir(), "hermes-lcm-mb")
+    const workdir = process.env.HERMES_MB_WORKDIR || join(tmpdir(), "hermes-trove-mb")
     const env: Record<string, string> = {
       ...process.env,
-      HERMES_LCM_REPO: repo,
+      HERMES_TROVE_REPO: repo,
       HERMES_MB_WORKDIR: workdir,
       HERMES_MB_PROVIDER: process.env.HERMES_MB_PROVIDER || "fastembed",
       PYTHONUNBUFFERED: "1",
@@ -85,19 +85,19 @@ export class HermesLcmProvider implements Provider {
     this.proc.stdout.on("data", (chunk: string) => this.onStdout(chunk))
     this.proc.stderr.on("data", (chunk: string) => {
       for (const line of chunk.split("\n")) {
-        if (line.trim()) logger.debug(`[hermes-lcm] ${line}`)
+        if (line.trim()) logger.debug(`[hermes-trove] ${line}`)
       }
     })
     this.proc.on("exit", (code, signal) => {
-      this.markDead(new Error(`hermes-lcm bridge exited (code=${code}, signal=${signal})`))
+      this.markDead(new Error(`hermes-trove bridge exited (code=${code}, signal=${signal})`))
     })
     this.proc.on("error", (err) => {
-      this.markDead(new Error(`hermes-lcm bridge process error: ${err.message}`))
+      this.markDead(new Error(`hermes-trove bridge process error: ${err.message}`))
     })
 
     const resp = await this.request({ cmd: "initialize" }, INITIALIZE_TIMEOUT_MS)
     logger.info(
-      `Initialized hermes-lcm provider (provider=${resp.provider}, model=${resp.model}, dim=${resp.dim})`
+      `Initialized hermes-trove provider (provider=${resp.provider}, model=${resp.model}, dim=${resp.dim})`
     )
   }
 
@@ -138,7 +138,7 @@ export class HermesLcmProvider implements Provider {
       limit: options.limit ?? 25,
     })
     if (resp.degraded) {
-      logger.debug(`[hermes-lcm] search degraded: ${resp.degraded_reason}`)
+      logger.debug(`[hermes-trove] search degraded: ${resp.degraded_reason}`)
     }
     return (resp.results as unknown[]) || []
   }
@@ -148,7 +148,7 @@ export class HermesLcmProvider implements Provider {
     try {
       await this.request({ cmd: "clear", containerTag })
     } catch (e) {
-      logger.warn(`Failed to clear hermes-lcm container ${containerTag}: ${e}`)
+      logger.warn(`Failed to clear hermes-trove container ${containerTag}: ${e}`)
     }
   }
 
@@ -164,14 +164,14 @@ export class HermesLcmProvider implements Provider {
       const pending = this.pending
       this.pending = null
       if (!pending) {
-        logger.warn(`[hermes-lcm] unexpected bridge output: ${line}`)
+        logger.warn(`[hermes-trove] unexpected bridge output: ${line}`)
         continue
       }
       clearTimeout(pending.timer)
       try {
         pending.resolve(JSON.parse(line) as BridgeResponse)
       } catch (e) {
-        pending.reject(new Error(`hermes-lcm bridge sent invalid JSON: ${line} (${e})`))
+        pending.reject(new Error(`hermes-trove bridge sent invalid JSON: ${line} (${e})`))
       }
     }
   }
@@ -189,17 +189,17 @@ export class HermesLcmProvider implements Provider {
   private request(payload: Record<string, unknown>, timeoutMs = REQUEST_TIMEOUT_MS): Promise<BridgeResponse> {
     const run = async (): Promise<BridgeResponse> => {
       if (this.deadError) throw this.deadError
-      if (!this.proc) throw new Error("hermes-lcm bridge not started")
+      if (!this.proc) throw new Error("hermes-trove bridge not started")
       const resp = await new Promise<BridgeResponse>((resolve, reject) => {
         const timer = setTimeout(
-          () => this.markDead(new Error(`hermes-lcm bridge timed out after ${timeoutMs}ms on ${payload.cmd}`)),
+          () => this.markDead(new Error(`hermes-trove bridge timed out after ${timeoutMs}ms on ${payload.cmd}`)),
           timeoutMs
         )
         this.pending = { resolve, reject, timer }
         this.proc!.stdin.write(JSON.stringify(payload) + "\n")
       })
       if (!resp.ok) {
-        throw new Error(`hermes-lcm ${payload.cmd} failed: ${resp.error}`)
+        throw new Error(`hermes-trove ${payload.cmd} failed: ${resp.error}`)
       }
       return resp
     }
@@ -213,4 +213,4 @@ export class HermesLcmProvider implements Provider {
   }
 }
 
-export default HermesLcmProvider
+export default HermesTroveProvider

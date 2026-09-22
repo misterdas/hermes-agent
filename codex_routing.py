@@ -12,7 +12,7 @@ from __future__ import annotations
 # ChatGPT Codex OAuth exposes provider-enforced context windows that can be
 # materially lower than the same model slug on direct OpenAI/OpenRouter routes.
 # Hermes Agent resolves these from chatgpt.com/backend-api/codex/models, with
-# this table as its fallback. LCM sees only the host-advertised context_length;
+# this table as its fallback. TROVE sees only the host-advertised context_length;
 # when that value was explicitly overridden above the real Codex OAuth window,
 # we still have to budget against the effective provider window or compaction
 # fires too late and provider requests can overflow.
@@ -49,7 +49,7 @@ def _is_host_verified_codex_context_variant(model: str | None) -> bool:
 
     Newer Hermes hosts expose ``is_codex_context_variant`` as the single source
     of truth for ``-900k`` eligibility.  Older hosts do not, so fail closed and
-    retain LCM's conservative Codex OAuth cap rather than trusting the suffix
+    retain TROVE's conservative Codex OAuth cap rather than trusting the suffix
     alone.
     """
     try:
@@ -64,13 +64,13 @@ def _is_host_verified_codex_context_variant(model: str | None) -> bool:
 
 
 def _codex_oauth_context_cap(model: str | None, provider: str | None) -> int | None:
-    """Return LCM's best-known Codex OAuth effective context cap.
+    """Return TROVE's best-known Codex OAuth effective context cap.
 
     This intentionally mirrors Hermes Agent's hardcoded fallback policy, not the
     direct OpenAI model catalog. A host-provided context_length may be a user
     override or stale cache entry; Codex OAuth still enforces these lower route
     windows. Explicit long-context variants validated by Hermes use their named
-    900K ceiling so LCM preserves the host-resolved window without accepting a
+    900K ceiling so TROVE preserves the host-resolved window without accepting a
     stale value above the provider limit.
     """
     if not _is_openai_codex_route(provider):

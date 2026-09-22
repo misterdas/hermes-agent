@@ -13,7 +13,7 @@ body:
     attributes:
       label: Problem
       description: What operator, maintainer, or user problem should this solve?
-      placeholder: LCM currently exposes seven tools in every session, which can exceed tool-count-sensitive backend limits.
+      placeholder: TROVE currently exposes seven tools in every session, which can exceed tool-count-sensitive backend limits.
     validations:
       required: true
 
@@ -22,7 +22,7 @@ body:
     attributes:
       label: User or operator impact
       description: Who is affected and how bad is it?
-      placeholder: Claude proxy sessions fail when total tool count crosses the backend limit, even though the LCM engine itself can keep running.
+      placeholder: Claude proxy sessions fail when total tool count crosses the backend limit, even though the TROVE engine itself can keep running.
     validations:
       required: true
 
@@ -31,7 +31,7 @@ body:
     attributes:
       label: Proposed direction
       description: Describe the preferred implementation or behavior change.
-      placeholder: Add an lcm.tool_mode config with individual, dispatcher, minimal, and none modes.
+      placeholder: Add an trove.tool_mode config with individual, dispatcher, minimal, and none modes.
     validations:
       required: true
 

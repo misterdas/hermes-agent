@@ -1,17 +1,17 @@
-"""Tool schemas for LCM — what the LLM sees."""
+"""Tool schemas for TROVE — what the LLM sees."""
 
-LCM_GREP = {
-    "name": "lcm_grep",
+TROVE_GREP = {
+    "name": "trove_grep",
     "description": (
-        "Search the plugin-local LCM database for past conversation content using full-text, semantic, or hybrid retrieval. "
+        "Search the plugin-local TROVE database for past conversation content using full-text, semantic, or hybrid retrieval. "
         "Default scope is the active session and returns both raw messages and summary nodes across all depths. "
         "Broader scopes ('all' or 'session') must be requested explicitly and exist for bounded archive recovery "
-        "over rows already present in lcm.db, including externally backfilled rows that may carry source strings "
-        "such as openclaw-lcm:* . In broader scopes only raw-message hits are returned; cross-session summary "
-        "node expansion is intentionally deferred. Use lcm_expand(store_id=...) on a cross-session message hit "
+        "over rows already present in trove.db, including externally backfilled rows that may carry source strings "
+        "such as openclaw-trove:* . In broader scopes only raw-message hits are returned; cross-session summary "
+        "node expansion is intentionally deferred. Use trove_expand(store_id=...) on a cross-session message hit "
         "to drill into its full content. Set content_scope='externalized' or 'both' to opt into bounded, active-session "
-        "search over recoverable payload sidecars. For Hermes-tracked session history outside the LCM database, use session_search. "
-        "For open-ended cross-conversation recall by meaning ('have we ever discussed…'), prefer lcm_recall."
+        "search over recoverable payload sidecars. For Hermes-tracked session history outside the TROVE database, use session_search. "
+        "For open-ended cross-conversation recall by meaning ('have we ever discussed…'), prefer trove_recall."
     ),
     "parameters": {
         "type": "object",
@@ -74,12 +74,12 @@ LCM_GREP = {
                 "type": "string",
                 "enum": ["current", "all", "session"],
                 "description": (
-                    "Scope of the search across the plugin-local LCM database. "
+                    "Scope of the search across the plugin-local TROVE database. "
                     "'current' (default) restricts to the active session and preserves historical behavior. "
-                    "'all' searches every session in the local LCM database. "
+                    "'all' searches every session in the local TROVE database. "
                     "'session' restricts to the session_id supplied via the session_id parameter. "
                     "Cross-session search returns snippets and message store_ids; cross-session summary node expansion is deferred. "
-                    "For Hermes-tracked session history outside the LCM database, use session_search."
+                    "For Hermes-tracked session history outside the TROVE database, use session_search."
                 ),
                 "default": "current",
             },
@@ -108,20 +108,20 @@ LCM_GREP = {
             "role": {
                 "type": "string",
                 "enum": ["system", "user", "assistant", "tool", "unknown"],
-                "description": "Optional raw-message role filter. When supplied, lcm_grep returns raw message hits only.",
+                "description": "Optional raw-message role filter. When supplied, trove_grep returns raw message hits only.",
             },
             "time_from": {
                 "anyOf": [{"type": "number"}, {"type": "string"}],
                 "description": (
                     "Optional inclusive minimum raw-message timestamp. Accepts Unix seconds or timezone-aware ISO 8601; "
-                    "naive ISO timestamps are rejected. When supplied, lcm_grep returns raw message hits only."
+                    "naive ISO timestamps are rejected. When supplied, trove_grep returns raw message hits only."
                 ),
             },
             "time_to": {
                 "anyOf": [{"type": "number"}, {"type": "string"}],
                 "description": (
                     "Optional inclusive maximum raw-message timestamp. Accepts Unix seconds or timezone-aware ISO 8601; "
-                    "naive ISO timestamps are rejected. When supplied, lcm_grep returns raw message hits only."
+                    "naive ISO timestamps are rejected. When supplied, trove_grep returns raw message hits only."
                 ),
             },
         },
@@ -129,18 +129,18 @@ LCM_GREP = {
     },
 }
 
-LCM_RECALL = {
-    "name": "lcm_recall",
+TROVE_RECALL = {
+    "name": "trove_recall",
     "description": (
         "Search the agent's entire memory across ALL conversations and all time by meaning. "
         "Returns the most relevant memories — summaries and verbatim excerpts — ranked by relevance, "
         "recency, and relatedness to the current conversation, each with an expand_hint handle to the "
-        "original content: verbatim/current-session hits get lcm_expand(...), while cross-session summary "
-        "hits get lcm_load_session(...) (lcm_expand's node_id mode is current-session only, so it cannot "
+        "original content: verbatim/current-session hits get trove_expand(...), while cross-session summary "
+        "hits get trove_load_session(...) (trove_expand's node_id mode is current-session only, so it cannot "
         "expand a cross-session summary). Not for retrieving exact/verbatim text within a known time range — "
-        "use lcm_grep(mode='full_text') for that. Not for full transcripts — after locating the right "
-        "conversation, use lcm_load_session(session_id). Recency and current-conversation preference are soft "
-        "ranking boosts, not filters; for hard time bounds use lcm_grep time_from/time_to. "
+        "use trove_grep(mode='full_text') for that. Not for full transcripts — after locating the right "
+        "conversation, use trove_load_session(session_id). Recency and current-conversation preference are soft "
+        "ranking boosts, not filters; for hard time bounds use trove_grep time_from/time_to. "
         "Set detail='answer_ready' to apply bounded per-session diversity and hydrate exact "
         "refs into answer-ready evidence windows without running another search."
     ),
@@ -214,8 +214,8 @@ LCM_RECALL = {
     },
 }
 
-LCM_QUERY_STATE = {
-    "name": "lcm_query_state",
+TROVE_QUERY_STATE = {
+    "name": "trove_query_state",
     "description": (
         "Query the opt-in V4 assertion sidecar for bounded, typed, source-cited state. "
         "Use this when a question needs attributable current or historical facts, preferences, "
@@ -281,11 +281,11 @@ LCM_QUERY_STATE = {
     },
 }
 
-LCM_COMPUTE = {
-    "name": "lcm_compute",
+TROVE_COMPUTE = {
+    "name": "trove_compute",
     "description": (
         "Execute a supported date, count, compatible-unit sum, directed/absolute "
-        "difference, ordering, or latest-state operation over exact cited LCM evidence. "
+        "difference, ordering, or latest-state operation over exact cited TROVE evidence. "
         "The operation is inferred from the question; this tool never calls a model. "
         "Supply only exact message spans (or assertion IDs) whose values, units, labels, "
         "keys, and dates are explicit in the cited evidence. Unsupported, incomplete, "
@@ -402,14 +402,14 @@ LCM_COMPUTE = {
     },
 }
 
-LCM_EVIDENCE_PACK = {
-    "name": "lcm_evidence_pack",
+TROVE_EVIDENCE_PACK = {
+    "name": "trove_evidence_pack",
     "description": (
-        "Build a bounded, same-database evidence packet from baseline exact LCM refs. "
+        "Build a bounded, same-database evidence packet from baseline exact TROVE refs. "
         "It returns no prose answer: the tool normalizes the question-date anchor, "
         "hydrates exact source spans, validates proposed facets, keeps occurrence time "
         "distinct from observation time, deduplicates refs, and emits a canonical "
-        "lcm_compute trace only when product-verified grounding and cardinality close. "
+        "trove_compute trace only when product-verified grounding and cardinality close. "
         "A quote may narrow a declared ref only when it occurs exactly once inside it; "
         "open cardinality never closes from a caller assertion alone."
     ),
@@ -502,10 +502,10 @@ LCM_EVIDENCE_PACK = {
     },
 }
 
-LCM_COMPILE_EVIDENCE = {
-    "name": "lcm_compile_evidence",
+TROVE_COMPILE_EVIDENCE = {
+    "name": "trove_compile_evidence",
     "description": (
-        "Compile a bounded, source-grounded evidence brief from baseline exact LCM "
+        "Compile a bounded, source-grounded evidence brief from baseline exact TROVE "
         "refs. Proposal mode validates one provider-neutral semantic proposal; "
         "auto mode deterministically compiles answer requirements and may retrieve "
         "only for named missing slots. Product code validates "
@@ -632,7 +632,7 @@ LCM_COMPILE_EVIDENCE = {
                 "default": False,
                 "description": (
                     "Default-off. Persist only validated high-value operational evidence "
-                    "as an exact-dependency query view in the same lcm.db."
+                    "as an exact-dependency query view in the same trove.db."
                 ),
             },
             "budgets": {
@@ -697,17 +697,17 @@ LCM_COMPILE_EVIDENCE = {
     },
 }
 
-LCM_RETRIEVE = {
-    "name": "lcm_retrieve",
+TROVE_RETRIEVE = {
+    "name": "trove_retrieve",
     "description": (
         "Coordinate a bounded evidence-retrieval episode inside the current "
         "answerer's existing tool turn. Start with a typed intent and named "
         "evidence requirements, make at most three targeted calls to existing "
-        "LCM retrieval tools, then finish with exact selected refs and an optional "
-        "provider-neutral lcm_compute trace. The controller contains no model "
+        "TROVE retrieval tools, then finish with exact selected refs and an optional "
+        "provider-neutral trove_compute trace. The controller contains no model "
         "client; dispatched retrieval tools retain their own provider behavior "
         "and provenance. It never accepts benchmark metadata or persists final prose. It is "
-        "available only when LCM_ADAPTIVE_RETRIEVAL_ENABLED is true."
+        "available only when TROVE_ADAPTIVE_RETRIEVAL_ENABLED is true."
     ),
     "parameters": {
         "type": "object",
@@ -792,11 +792,11 @@ LCM_RETRIEVE = {
             "tool": {
                 "type": "string",
                 "enum": [
-                    "lcm_recall",
-                    "lcm_recent",
-                    "lcm_query_state",
-                    "lcm_load_session",
-                    "lcm_expand",
+                    "trove_recall",
+                    "trove_recent",
+                    "trove_query_state",
+                    "trove_load_session",
+                    "trove_expand",
                 ],
             },
             "tool_args": {"type": "object"},
@@ -882,8 +882,8 @@ LCM_RETRIEVE = {
     },
 }
 
-LCM_RECENT = {
-    "name": "lcm_recent",
+TROVE_RECENT = {
+    "name": "trove_recent",
     "description": (
         "Retrieve recent conversation summaries by a natural UTC time period. "
         "Ready temporal rollups are served when available; otherwise the tool "
@@ -918,13 +918,13 @@ LCM_RECENT = {
     },
 }
 
-LCM_LOAD_SESSION = {
-    "name": "lcm_load_session",
+TROVE_LOAD_SESSION = {
+    "name": "trove_load_session",
     "description": (
-        "Load an ordered raw-message transcript page for one explicit session_id from the plugin-local LCM database. "
+        "Load an ordered raw-message transcript page for one explicit session_id from the plugin-local TROVE database. "
         "This is enumeration, not search: it does not require a query, returns raw message content rather than snippets, "
-        "and orders rows chronologically by store_id. Use this after session_search or lcm_grep has identified a session_id "
-        "that already exists in lcm.db. Output is bounded by limit, per-row content is bounded by max_content_chars, "
+        "and orders rows chronologically by store_id. Use this after session_search or trove_grep has identified a session_id "
+        "that already exists in trove.db. Output is bounded by limit, per-row content is bounded by max_content_chars, "
         "and row pagination uses after_store_id/next_cursor. "
         "It returns raw rows only; cross-session summary/DAG expansion remains out of scope."
     ),
@@ -933,7 +933,7 @@ LCM_LOAD_SESSION = {
         "properties": {
             "session_id": {
                 "type": "string",
-                "description": "Explicit LCM session id to load. Required; no implicit current/all fallback is applied.",
+                "description": "Explicit TROVE session id to load. Required; no implicit current/all fallback is applied.",
             },
             "limit": {
                 "type": "integer",
@@ -947,7 +947,7 @@ LCM_LOAD_SESSION = {
                 "type": "integer",
                 "description": (
                     "Maximum content characters to include per message (default 4000, hard upper bound 20000). "
-                    "Longer rows include content_truncated=true and can be recovered fully with lcm_expand(store_id=...)."
+                    "Longer rows include content_truncated=true and can be recovered fully with trove_expand(store_id=...)."
                 ),
                 "default": 4000,
             },
@@ -985,14 +985,14 @@ LCM_LOAD_SESSION = {
     },
 }
 
-LCM_DESCRIBE = {
-    "name": "lcm_describe",
+TROVE_DESCRIBE = {
+    "name": "trove_describe",
     "description": (
         "Inspect a current-session summary node's subtree metadata WITHOUT loading full "
         "content, or inspect an externalized payload ref without opening the "
         "full payload. Returns token counts, child manifest, expand hints, "
         "or externalized payload metadata/preview. Use this to plan retrieval "
-        "strategy before spending tokens on lcm_expand inside the active conversation. "
+        "strategy before spending tokens on trove_expand inside the active conversation. "
         "For cross-session recall, use session_search first. If called with no "
         "node_id or externalized_ref, returns the top-level DAG overview for "
         "the current session."
@@ -1013,17 +1013,17 @@ LCM_DESCRIBE = {
     },
 }
 
-LCM_EXPAND = {
-    "name": "lcm_expand",
+TROVE_EXPAND = {
+    "name": "trove_expand",
     "description": (
         "Recover the original detail behind a summary node, externalized payload, or raw message. "
         "Mode selection (exactly one): node_id (current session only) returns the source messages "
         "or lower-depth summaries that were compacted into a summary node; externalized_ref "
         "(current session only) returns a stored externalized payload's content; store_id returns "
         "a single raw message by store_id and works across sessions, suitable for drilling into "
-        "cross-session lcm_grep results. Output is bounded by max_tokens; raw recovery is pageable "
+        "cross-session trove_grep results. Output is bounded by max_tokens; raw recovery is pageable "
         "via content_offset (and source_offset/source_limit for node_id mode). For Hermes-tracked "
-        "session history outside the LCM database, prefer session_search."
+        "session history outside the TROVE database, prefer session_search."
     ),
     "parameters": {
         "type": "object",
@@ -1043,7 +1043,7 @@ LCM_EXPAND = {
                 "type": "integer",
                 "description": (
                     "Raw message store_id to fetch. Works across sessions, so a store_id surfaced by "
-                    "a cross-session lcm_grep result can be expanded directly. Returns the message's "
+                    "a cross-session trove_grep result can be expanded directly. Returns the message's "
                     "content paged by content_offset. If the row references an externalized payload, "
                     "the ref is surfaced via 'externalized_ref'; payload metadata and content are "
                     "session-scoped, so a cross-session row also includes 'externalized_note' "
@@ -1082,14 +1082,14 @@ LCM_EXPAND = {
     },
 }
 
-LCM_STATUS = {
-    "name": "lcm_status",
+TROVE_STATUS = {
+    "name": "trove_status",
     "description": (
-        "Get a quick health overview of the LCM engine for the current session. "
+        "Get a quick health overview of the TROVE engine for the current session. "
         "Shows compression count, store size, DAG depth distribution, context usage, "
         "active configuration, session/message filter state, and rotate snapshot "
         "state (last_rotate_at, rotate_backup_path, rotate_backup_size when a "
-        "/lcm rotate apply has been run). Use this to understand how much history "
+        "/trove rotate apply has been run). Use this to understand how much history "
         "has been compacted, how the engine is performing, whether the current "
         "session is matched by ignore or stateless session patterns, which message "
         "noise-suppression patterns are loaded, and when the rolling rotate "
@@ -1102,14 +1102,14 @@ LCM_STATUS = {
     },
 }
 
-LCM_INSPECT = {
-    "name": "lcm_inspect",
+TROVE_INSPECT = {
+    "name": "trove_inspect",
     "description": (
-        "Inspect read-only LCM metadata for the current session: session/conversation "
+        "Inspect read-only TROVE metadata for the current session: session/conversation "
         "lineage, message frontier and fresh tail, DAG compaction frontier, latest "
         "compaction skip/no-op reason, externalized payload refs and readability, "
         "and matched ignore/stateless patterns. This is an operator inventory tool; "
-        "use lcm_grep/lcm_load_session/lcm_expand when you need actual content."
+        "use trove_grep/trove_load_session/trove_expand when you need actual content."
     ),
     "parameters": {
         "type": "object",
@@ -1124,10 +1124,10 @@ LCM_INSPECT = {
     },
 }
 
-LCM_DOCTOR = {
-    "name": "lcm_doctor",
+TROVE_DOCTOR = {
+    "name": "trove_doctor",
     "description": (
-        "Run diagnostics on the LCM database and configuration. Checks database "
+        "Run diagnostics on the TROVE database and configuration. Checks database "
         "integrity, detects orphaned DAG nodes, validates configuration, and "
         "reports potential issues. Use this to troubleshoot problems or verify "
         "a healthy setup."
@@ -1139,10 +1139,10 @@ LCM_DOCTOR = {
     },
 }
 
-LCM_EXPAND_QUERY = {
-    "name": "lcm_expand_query",
+TROVE_EXPAND_QUERY = {
+    "name": "trove_expand_query",
     "description": (
-        "Answer a natural-language question using expanded LCM context from the current session. Provide a prompt, and either "
+        "Answer a natural-language question using expanded TROVE context from the current session. Provide a prompt, and either "
         "query matching summaries/raw messages to expand or explicit node_ids to inspect. Uses the expansion path "
         "instead of the summarization path so retrieval/synthesis can use a different model or timeout. "
         "When expanding parent summary nodes, it recursively descends the DAG under the context budget to include leaf evidence where possible. "
@@ -1153,7 +1153,7 @@ LCM_EXPAND_QUERY = {
         "properties": {
             "prompt": {
                 "type": "string",
-                "description": "The question or task to answer from expanded LCM context",
+                "description": "The question or task to answer from expanded TROVE context",
             },
             "query": {
                 "type": "string",
@@ -1176,7 +1176,7 @@ LCM_EXPAND_QUERY = {
             },
             "context_max_tokens": {
                 "type": "integer",
-                "description": "Expanded serialized summary/raw/child-source/externalized fresh context budget for the auxiliary LLM before it returns the bounded answer (default max(answer max_tokens, 32000 or LCM_EXPANSION_CONTEXT_TOKENS))",
+                "description": "Expanded serialized summary/raw/child-source/externalized fresh context budget for the auxiliary LLM before it returns the bounded answer (default max(answer max_tokens, 32000 or TROVE_EXPANSION_CONTEXT_TOKENS))",
                 "default": 32000,
             },
         },

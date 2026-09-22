@@ -1,7 +1,7 @@
-"""Offline LongMemEval retrieval-quality harness for hermes-lcm.
+"""Offline LongMemEval retrieval-quality harness for hermes-trove.
 
 This module ingests each LongMemEval question's conversation history into a
-fresh temporary LCM store (reusing ``store``/``dag``/``vector_store`` APIs
+fresh temporary TROVE store (reusing ``store``/``dag``/``vector_store`` APIs
 directly, with no live Hermes host), builds one deterministic summary per
 session, optionally backfills summary embeddings, then scores each retrieval
 arm against the dataset's labeled evidence sessions.
@@ -14,7 +14,7 @@ Dataset: LongMemEval_S (Wu et al., ICLR 2025), canonical Hugging Face dataset
 (see :data:`DATASET_REPO_ID` / :data:`DATASET_REVISION`). The dataset is
 downloaded once by an explicit operator command and never during a run.
 
-Export hygiene mirrors ``scripts/lcm_benchmark.py``: output is aggregate-only.
+Export hygiene mirrors ``scripts/trove_benchmark.py``: output is aggregate-only.
 It contains no transcript content, session ids, or local paths.
 """
 
@@ -56,7 +56,7 @@ DATASET_FILENAME = "longmemeval_s"
 
 PROVIDERS = ("stub", "fastembed", "voyage", "ollama")
 # ``chunk_vectors`` scores the raw-chunk KNN corpus; ``hybrid_rrf3`` fuses it as a
-# third arm alongside FTS + summary vectors. ``lcm_recall`` scores the ACTUAL
+# third arm alongside FTS + summary vectors. ``trove_recall`` scores the ACTUAL
 # production tool (weighted RRF + scope/recency prior + chunk-vs-FTS dedup), not a
 # harness reimplementation. All are appended so the earlier arms keep byte-identical
 # outputs and report ordering.
@@ -67,7 +67,7 @@ ARMS = (
     "hybrid_rerank",
     "chunk_vectors",
     "hybrid_rrf3",
-    "lcm_recall",
+    "trove_recall",
 )
 
 # LongMemEval `question_type` -> reported category label. Abstention questions
@@ -87,22 +87,22 @@ _STUB_MODEL = "stub-hash-64"
 _STUB_DIM = 64
 
 
-def _ensure_hermes_lcm_package() -> None:
-    """Make this source checkout importable as ``hermes_lcm`` (no plugin registration)."""
+def _ensure_hermes_trove_package() -> None:
+    """Make this source checkout importable as ``hermes_trove`` (no plugin registration)."""
     ensure_agent_context_engine_importable()
-    if "hermes_lcm" in sys.modules:
+    if "hermes_trove" in sys.modules:
         return
     spec = importlib.util.spec_from_file_location(
-        "hermes_lcm",
+        "hermes_trove",
         _REPO_ROOT / "__init__.py",
         submodule_search_locations=[str(_REPO_ROOT)],
     )
     if spec is None:
-        raise RuntimeError("could not create hermes_lcm package spec")
+        raise RuntimeError("could not create hermes_trove package spec")
     module = importlib.util.module_from_spec(spec)
     module.__path__ = [str(_REPO_ROOT)]
-    module.__package__ = "hermes_lcm"
-    sys.modules["hermes_lcm"] = module
+    module.__package__ = "hermes_trove"
+    sys.modules["hermes_trove"] = module
 
 
 # --------------------------------------------------------------------------- #
@@ -142,12 +142,12 @@ class StubEmbedder:
 def _fastembed_cache_dir() -> str | None:
     """Cache dir for FastEmbed models, honoring an env override.
 
-    The provider default is ``~/.cache/fastembed``; ``LCM_LONGMEMEVAL_FASTEMBED_CACHE``
+    The provider default is ``~/.cache/fastembed``; ``TROVE_LONGMEMEVAL_FASTEMBED_CACHE``
     (or ``FASTEMBED_CACHE_PATH``) redirects it, e.g. to a roomy volume.
     """
     import os
 
-    override = os.environ.get("LCM_LONGMEMEVAL_FASTEMBED_CACHE") or os.environ.get(
+    override = os.environ.get("TROVE_LONGMEMEVAL_FASTEMBED_CACHE") or os.environ.get(
         "FASTEMBED_CACHE_PATH"
     )
     return override or None
@@ -162,11 +162,11 @@ def resolve_harness_provider(provider: str, model: str, *, timeout: float = 300.
     """
     if provider == "stub":
         return StubEmbedder()
-    _ensure_hermes_lcm_package()
+    _ensure_hermes_trove_package()
     if not model:
         raise ValueError(f"--model is required for --provider {provider}")
     if provider in {"fastembed", "fast-embed"}:
-        from hermes_lcm.embedding_provider import EmbeddingSpendGuard, FastembedProvider
+        from hermes_trove.embedding_provider import EmbeddingSpendGuard, FastembedProvider
 
         # max_calls=0 disables the per-minute call-rate guard, matching the
         # bulk-backfill contract (resolve_provider(for_backfill=True)); the
@@ -179,10 +179,10 @@ def resolve_harness_provider(provider: str, model: str, *, timeout: float = 300.
         )
         embedder.warmup()
         return embedder
-    from hermes_lcm.config import LCMConfig
-    from hermes_lcm.embedding_provider import resolve_provider
+    from hermes_trove.config import TROVEConfig
+    from hermes_trove.embedding_provider import resolve_provider
 
-    config = LCMConfig(
+    config = TROVEConfig(
         embedding_provider=provider,
         embedding_model=model,
         embedding_backfill_timeout_s=timeout,
@@ -443,8 +443,8 @@ def build_fts_query(question: str) -> str:
     operator character survives to trip a syntax error and force the LIKE
     fallback; empty and stopword tokens are dropped.
     """
-    _ensure_hermes_lcm_package()
-    from hermes_lcm.search_query import extract_search_terms
+    _ensure_hermes_trove_package()
+    from hermes_trove.search_query import extract_search_terms
 
     barewords: list[str] = []
     for term in extract_search_terms(question):
@@ -561,16 +561,16 @@ def summary_turn_keys(session_ranked: Sequence[str]) -> list[TurnKey]:
 
 
 # --------------------------------------------------------------------------- #
-# Production ``lcm_recall`` arm — the tool users actually call.
+# Production ``trove_recall`` arm — the tool users actually call.
 # --------------------------------------------------------------------------- #
 
-# A synthetic current-session id for the probe engine. lcm_recall applies a scope
+# A synthetic current-session id for the probe engine. trove_recall applies a scope
 # prior that BOOSTS hits belonging to the current conversation; benchmarking the
 # production path honestly means the probe conversation must sit OUTSIDE the
 # dataset's sessions so no evidence session is silently lifted by conversation
 # membership. (The recency prior still applies to every hit — that is the honest
 # production behavior, noted in benchmarks/README.md.)
-_LCM_RECALL_FRESH_SESSION = "__lcm_recall_fresh_probe__"
+_TROVE_RECALL_FRESH_SESSION = "__trove_recall_fresh_probe__"
 
 
 def fresh_recall_session_id(question: "Question") -> str:
@@ -580,11 +580,11 @@ def fresh_recall_session_id(question: "Question") -> str:
     from the haystack so the scope prior never boosts a dataset session.
     """
     existing = set(question.haystack_session_ids)
-    candidate = f"{_LCM_RECALL_FRESH_SESSION}{question.question_id}"
+    candidate = f"{_TROVE_RECALL_FRESH_SESSION}{question.question_id}"
     suffix = 0
     while candidate in existing:
         suffix += 1
-        candidate = f"{_LCM_RECALL_FRESH_SESSION}{question.question_id}-{suffix}"
+        candidate = f"{_TROVE_RECALL_FRESH_SESSION}{question.question_id}-{suffix}"
     return candidate
 
 
@@ -633,19 +633,19 @@ def production_recall_hits(
     embeddings_enabled: bool,
     limit: int,
 ) -> list[dict[str, Any]]:
-    """Invoke the REAL ``tools.lcm_recall`` against this question's temp store.
+    """Invoke the REAL ``tools.trove_recall`` against this question's temp store.
 
     This is the tool users call: weighted RRF over the FTS + summary + chunk arms
-    (``retrieval_core.rrf_fuse`` with ``LCM_RECALL_ARM_WEIGHTS``), the scope/recency
+    (``retrieval_core.rrf_fuse`` with ``TROVE_RECALL_ARM_WEIGHTS``), the scope/recency
     prior, and chunk-vs-FTS dedup by ``store_id`` — none of which the per-arm harness
     measurements exercise. The engine is the proven smoke-test stand-in (a
     ``SimpleNamespace`` exposing the already-open store/dag/config with a fresh
     current-session id). The warmed harness embedder is injected through
-    ``lcm_recall``'s provider cache so no second model load or network call occurs;
-    ``lcm_recall`` clamps ``limit`` to its own production ceiling.
+    ``trove_recall``'s provider cache so no second model load or network call occurs;
+    ``trove_recall`` clamps ``limit`` to its own production ceiling.
     """
-    _ensure_hermes_lcm_package()
-    import hermes_lcm.tools as lcm_tools
+    _ensure_hermes_trove_package()
+    import hermes_trove.tools as trove_tools
 
     engine = SimpleNamespace(
         _config=config,
@@ -659,9 +659,9 @@ def production_recall_hits(
             str(provider_name).strip().lower(),
             str(provider_embedder.model_id).strip(),
         )
-        engine._lcm_embedding_provider_cache = (cache_key, provider_embedder)
+        engine._trove_embedding_provider_cache = (cache_key, provider_embedder)
     payload = json.loads(
-        lcm_tools.lcm_recall({"query": question.question, "limit": limit}, engine=engine)
+        trove_tools.trove_recall({"query": question.question, "limit": limit}, engine=engine)
     )
     return list(payload.get("hits", []))
 
@@ -783,16 +783,16 @@ def _new_arm_samples() -> dict[str, ArmSamples]:
 
 
 def _bootstrap_db_template(template_path: Path, config) -> None:
-    """Create one fully-migrated empty LCM DB to clone per question.
+    """Create one fully-migrated empty TROVE DB to clone per question.
 
     Opening ``MessageStore``/``SummaryDAG``/``VectorStore`` runs the schema
     bootstrap + FTS/migration DDL once; each subsequent question copies this file
     (idempotent re-open, no migrations) instead of paying that cost 500x.
     """
-    _ensure_hermes_lcm_package()
-    from hermes_lcm.dag import SummaryDAG
-    from hermes_lcm.store import MessageStore
-    from hermes_lcm.vector_store import VectorStore
+    _ensure_hermes_trove_package()
+    from hermes_trove.dag import SummaryDAG
+    from hermes_trove.store import MessageStore
+    from hermes_trove.vector_store import VectorStore
 
     store = MessageStore(str(template_path), ingest_protection_config=config)
     dag = SummaryDAG(str(template_path))
@@ -820,17 +820,17 @@ def evaluate_question(
     ``session_granularity`` flag. ``ingest_ms`` (per-question ingest wall time) and,
     for ``hybrid_rerank``, ``rerank_mode`` ride alongside for aggregation.
     """
-    _ensure_hermes_lcm_package()
-    from hermes_lcm.chunking import iter_message_chunks
-    from hermes_lcm.config import LCMConfig
-    from hermes_lcm.dag import SummaryDAG, SummaryNode
-    from hermes_lcm.store import MessageStore
-    from hermes_lcm.vector_store import EmbeddingIdentity, VectorStore
+    _ensure_hermes_trove_package()
+    from hermes_trove.chunking import iter_message_chunks
+    from hermes_trove.config import TROVEConfig
+    from hermes_trove.dag import SummaryDAG, SummaryNode
+    from hermes_trove.store import MessageStore
+    from hermes_trove.vector_store import EmbeddingIdentity, VectorStore
 
     db_path = tmp_dir / f"{_safe(question.question_id)}.db"
     model = provider_embedder.model_id
     dim = int(provider_embedder.dim)
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(db_path),
         embeddings_enabled=embeddings_enabled,
         embedding_provider=provider_name,
@@ -994,7 +994,7 @@ def evaluate_question(
         # C6: session-granularity markers projected from the fused 3-arm ranking.
         rrf3_turns = summary_turn_keys(hybrid_rrf3_ranked)
 
-        # The production tool: fetch drives lcm_recall's own limit (clamped to its
+        # The production tool: fetch drives trove_recall's own limit (clamped to its
         # 25-hit ceiling). Its hits carry session_id directly (session ranking) and
         # store_id/node_id for turn projection. Its turn keys mix precise verbatim
         # keys with (session, None) summary markers, so it carries the asterisk.
@@ -1016,7 +1016,7 @@ def evaluate_question(
             "hybrid_rerank": (rerank_ranked, rerank_ms, rerank_turns, True),
             "chunk_vectors": (chunk_ranked, chunk_ms, chunk_turns, False),
             "hybrid_rrf3": (hybrid_rrf3_ranked, rrf3_ms, rrf3_turns, True),
-            "lcm_recall": (recall_ranked, recall_ms, recall_turns, True),
+            "trove_recall": (recall_ranked, recall_ms, recall_turns, True),
         }
         scored: dict[str, Any] = {"ingest_ms": ingest_ms}
         for arm, (ranked, elapsed_ms, turn_keys, session_granularity) in ranked_by_arm.items():
@@ -1117,13 +1117,13 @@ def run_harness(
 
     db_template: Path | None = None
     if reuse_db_template:
-        _ensure_hermes_lcm_package()
-        from hermes_lcm.config import LCMConfig
+        _ensure_hermes_trove_package()
+        from hermes_trove.config import TROVEConfig
 
         db_template = Path(tmp_dir) / "_template.db"
         _bootstrap_db_template(
             db_template,
-            LCMConfig(
+            TROVEConfig(
                 database_path=str(db_template),
                 embeddings_enabled=embeddings_enabled,
                 embedding_provider=provider_name,

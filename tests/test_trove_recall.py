@@ -1,4 +1,4 @@
-"""Tests for lcm_recall — the cross-conversation forever-memory recall tool.
+"""Tests for trove_recall — the cross-conversation forever-memory recall tool.
 
 Seeds summaries + chunks + raw messages across three synthetic sessions and
 asserts the fused pipeline recalls cross-session WITHOUT a session filter, that
@@ -16,11 +16,11 @@ from typing import Any
 
 import pytest
 
-import hermes_lcm.tools as lcm_tools
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.dag import SummaryDAG, SummaryNode
-from hermes_lcm.store import MessageStore
-from hermes_lcm.vector_store import EmbeddingIdentity, VectorStore
+import hermes_trove.tools as trove_tools
+from hermes_trove.config import TROVEConfig
+from hermes_trove.dag import SummaryDAG, SummaryNode
+from hermes_trove.store import MessageStore
+from hermes_trove.vector_store import EmbeddingIdentity, VectorStore
 
 CURRENT = "session-cur"
 
@@ -42,7 +42,7 @@ class MockProvider:
 
 @pytest.fixture
 def recall_engine(tmp_path):
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / "recall.db"),
         embeddings_enabled=True,
         embedding_provider="mock",
@@ -129,8 +129,8 @@ def _seed_chunk_vectors(engine, rows):
 
 
 def _recall(engine, monkeypatch, provider=None, **args):
-    monkeypatch.setattr(lcm_tools, "resolve_provider", lambda _config: provider or MockProvider())
-    payload = json.loads(lcm_tools.lcm_recall({"query": "kanban dashboard sprint", **args}, engine=engine))
+    monkeypatch.setattr(trove_tools, "resolve_provider", lambda _config: provider or MockProvider())
+    payload = json.loads(trove_tools.trove_recall({"query": "kanban dashboard sprint", **args}, engine=engine))
     return payload
 
 
@@ -144,7 +144,7 @@ def _summary_hit(engine, node_id):
         "timestamp": node.latest_at or node.created_at or 0,
         "snippet": node.summary[:300],
         "from_current_session": node.session_id == engine.current_session_id,
-        "expand_hint": f"lcm_load_session(session_id='{node.session_id}')",
+        "expand_hint": f"trove_load_session(session_id='{node.session_id}')",
     }
 
 
@@ -163,8 +163,8 @@ def _non_strict(engine):
 
 def _patch_summary_arm(monkeypatch, hits):
     monkeypatch.setattr(
-        lcm_tools,
-        "_lcm_recall_summary_arm",
+        trove_tools,
+        "_trove_recall_summary_arm",
         lambda *_args, **_kwargs: (list(hits), "full", len(hits), len(hits), []),
     )
 
@@ -189,12 +189,12 @@ def test_voyage_chunk_recall_uses_context_model(recall_engine, monkeypatch):
         captured["query_vector"] = query_vector
         return [], "none", None, None
 
-    monkeypatch.setattr(lcm_tools, "resolve_provider", resolve)
-    monkeypatch.setattr(lcm_tools, "_lcm_recall_fts_arm", lambda *_a, **_k: ([], None))
-    monkeypatch.setattr(lcm_tools, "_lcm_recall_chunk_arm", chunk_arm)
+    monkeypatch.setattr(trove_tools, "resolve_provider", resolve)
+    monkeypatch.setattr(trove_tools, "_trove_recall_fts_arm", lambda *_a, **_k: ([], None))
+    monkeypatch.setattr(trove_tools, "_trove_recall_chunk_arm", chunk_arm)
 
     json.loads(
-        lcm_tools.lcm_recall(
+        trove_tools.trove_recall(
             {"query": "context query", "include": "verbatim"},
             engine=recall_engine,
         )
@@ -304,12 +304,12 @@ def test_chunk_hit_dedupes_against_fts_by_store_id(recall_engine, monkeypatch):
 def test_summary_and_chunk_for_same_session_coexist_no_swamp(recall_engine, monkeypatch):
     """C6 pathology assessment: the harness turn-level collapse (a summary marker
     swamping precise chunk keys under a fixed top-k coverage budget) does NOT exist
-    in lcm_recall's rrf_fuse.
+    in trove_recall's rrf_fuse.
 
     A summary hit keys as ("node", node_id) and a chunk/message hit as
     ("message", store_id), so a summary and the chunks of its own session are
     DISTINCT fused entries that coexist in the heterogeneous result — one never
-    suppresses the other, and lcm_recall has no per-turn coverage budget to dilute.
+    suppresses the other, and trove_recall has no per-turn coverage budget to dilute.
     Both granularities surface for the same session, both scoring perfectly.
     """
     node = _add_summary(recall_engine, "kanban dashboard sprint overview", session_id="session-a", created_at=5.0)
@@ -450,7 +450,7 @@ def test_limit_is_capped_and_reported(recall_engine, monkeypatch):
 
 
 def test_missing_query_is_rejected(recall_engine):
-    payload = json.loads(lcm_tools.lcm_recall({"query": "   "}, engine=recall_engine))
+    payload = json.loads(trove_tools.trove_recall({"query": "   "}, engine=recall_engine))
     assert "error" in payload
 
 
@@ -465,16 +465,16 @@ def test_answer_ready_is_opt_in_and_default_response_is_byte_compatible(
         created_at=10.0,
     )
     _seed_summary_vectors(recall_engine, [(node, [1.0, 0.0])])
-    monkeypatch.setattr(lcm_tools, "resolve_provider", lambda _config: MockProvider())
-    monkeypatch.setattr(lcm_tools.time, "time", lambda: 10.0)
+    monkeypatch.setattr(trove_tools, "resolve_provider", lambda _config: MockProvider())
+    monkeypatch.setattr(trove_tools.time, "time", lambda: 10.0)
 
     base_args = {
         "query": "kanban dashboard sprint",
         "include": "summaries",
         "limit": 1,
     }
-    implicit_raw = lcm_tools.lcm_recall(base_args, engine=recall_engine)
-    explicit_raw = lcm_tools.lcm_recall(
+    implicit_raw = trove_tools.trove_recall(base_args, engine=recall_engine)
+    explicit_raw = trove_tools.trove_recall(
         {**base_args, "detail": "snippets"},
         engine=recall_engine,
     )
@@ -496,9 +496,9 @@ def test_answer_ready_delta_is_opt_in_and_returns_only_novel_exact_refs(
     second = recall_engine._store.append(
         "session-b", {"role": "user", "content": "kanban dashboard sprint beta"}
     )
-    monkeypatch.setattr(lcm_tools, "resolve_provider", lambda _config: MockProvider())
-    monkeypatch.setattr(lcm_tools, "_lcm_recall_summary_arm", lambda *_a, **_k: ([], "none", 0, 0, []))
-    monkeypatch.setattr(lcm_tools, "_lcm_recall_chunk_arm", lambda *_a, **_k: ([], "none", 0, 0))
+    monkeypatch.setattr(trove_tools, "resolve_provider", lambda _config: MockProvider())
+    monkeypatch.setattr(trove_tools, "_trove_recall_summary_arm", lambda *_a, **_k: ([], "none", 0, 0, []))
+    monkeypatch.setattr(trove_tools, "_trove_recall_chunk_arm", lambda *_a, **_k: ([], "none", 0, 0))
 
     primary = _recall(
         recall_engine,
@@ -550,18 +550,18 @@ def test_answer_ready_delta_refs_match_hits_after_response_cap_eviction(
         for index, content in enumerate(contents)
     ]
     all_refs = {
-        f"lcm:{store_id}:0-{len(content)}"
+        f"trove:{store_id}:0-{len(content)}"
         for store_id, content in zip(store_ids, contents)
     }
-    monkeypatch.setattr(lcm_tools, "_LCM_RECALL_RESPONSE_CHAR_CAP", 6_000)
+    monkeypatch.setattr(trove_tools, "_TROVE_RECALL_RESPONSE_CHAR_CAP", 6_000)
     monkeypatch.setattr(
-        lcm_tools,
-        "_lcm_recall_summary_arm",
+        trove_tools,
+        "_trove_recall_summary_arm",
         lambda *_a, **_k: ([], "none", 0, 0, []),
     )
     monkeypatch.setattr(
-        lcm_tools,
-        "_lcm_recall_chunk_arm",
+        trove_tools,
+        "_trove_recall_chunk_arm",
         lambda *_a, **_k: ([], "none", 0, 0),
     )
 
@@ -594,10 +594,10 @@ def test_answer_ready_response_cap_evicts_summary_leads_without_delta_refs(
         }
         for index in range(3)
     ]
-    monkeypatch.setattr(lcm_tools, "_LCM_RECALL_RESPONSE_CHAR_CAP", response_cap)
+    monkeypatch.setattr(trove_tools, "_TROVE_RECALL_RESPONSE_CHAR_CAP", response_cap)
     monkeypatch.setattr(
-        lcm_tools,
-        "_lcm_recall_summary_arm",
+        trove_tools,
+        "_trove_recall_summary_arm",
         lambda *_a, **_k: (
             [],
             "full",
@@ -607,8 +607,8 @@ def test_answer_ready_response_cap_evicts_summary_leads_without_delta_refs(
         ),
     )
     monkeypatch.setattr(
-        lcm_tools,
-        "_lcm_recall_chunk_arm",
+        trove_tools,
+        "_trove_recall_chunk_arm",
         lambda *_a, **_k: ([], "none", 0, 0),
     )
 
@@ -636,16 +636,16 @@ def test_answer_ready_baseline_bytes_ignore_disabled_occurrence_extension(
     recall_engine._store.append(
         "session-a", {"role": "user", "content": "kanban dashboard sprint alpha"}
     )
-    monkeypatch.setattr(lcm_tools, "resolve_provider", lambda _config: MockProvider())
-    monkeypatch.setattr(lcm_tools.time, "time", lambda: 10.0)
+    monkeypatch.setattr(trove_tools, "resolve_provider", lambda _config: MockProvider())
+    monkeypatch.setattr(trove_tools.time, "time", lambda: 10.0)
     args = {
         "query": "kanban dashboard sprint",
         "include": "verbatim",
         "detail": "answer_ready",
         "limit": 1,
     }
-    baseline = lcm_tools.lcm_recall(args, engine=recall_engine)
-    explicitly_disabled = lcm_tools.lcm_recall(
+    baseline = trove_tools.trove_recall(args, engine=recall_engine)
+    explicitly_disabled = trove_tools.trove_recall(
         {**args, "include_occurrence_time": False}, engine=recall_engine
     )
     assert baseline == explicitly_disabled
@@ -734,7 +734,7 @@ def test_occurrence_time_legacy_row_uses_ingest_fallback_without_relative_event(
 
 def test_invalid_recall_detail_is_rejected(recall_engine):
     payload = json.loads(
-        lcm_tools.lcm_recall(
+        trove_tools.trove_recall(
             {"query": "kanban", "detail": "full-transcript"},
             engine=recall_engine,
         )
@@ -743,9 +743,9 @@ def test_invalid_recall_detail_is_rejected(recall_engine):
 
 
 def test_recall_schema_exposes_answer_ready_as_opt_in():
-    from hermes_lcm.schemas import LCM_RECALL
+    from hermes_trove.schemas import TROVE_RECALL
 
-    detail = LCM_RECALL["parameters"]["properties"]["detail"]
+    detail = TROVE_RECALL["parameters"]["properties"]["detail"]
     assert detail["enum"] == ["snippets", "answer_ready"]
     assert detail["default"] == "snippets"
 
@@ -821,7 +821,7 @@ def test_answer_ready_keeps_missing_session_refs_independently_eligible():
         for index in range(7)
     ]
 
-    selected, dropped = lcm_tools._lcm_recall_diverse_entries(
+    selected, dropped = trove_tools._trove_recall_diverse_entries(
         entries,
         limit=7,
         per_session_limit=5,
@@ -922,9 +922,9 @@ def test_answer_ready_expands_only_first_eight_and_reports_policy(
         monkeypatch,
         [_summary_hit(recall_engine, node_id) for node_id in node_ids],
     )
-    monkeypatch.setattr(lcm_tools, "resolve_provider", lambda _config: MockProvider())
+    monkeypatch.setattr(trove_tools, "resolve_provider", lambda _config: MockProvider())
 
-    raw = lcm_tools.lcm_recall(
+    raw = trove_tools.trove_recall(
         {
             "query": "kanban dashboard sprint",
             "include": "summaries",
@@ -962,9 +962,9 @@ def test_answer_ready_enforces_complete_response_cap_and_marks_query_truncation(
         created_at=10.0,
     )
     _patch_summary_arm(monkeypatch, [_summary_hit(recall_engine, node)])
-    monkeypatch.setattr(lcm_tools, "resolve_provider", lambda _config: MockProvider())
+    monkeypatch.setattr(trove_tools, "resolve_provider", lambda _config: MockProvider())
 
-    raw = lcm_tools.lcm_recall(
+    raw = trove_tools.trove_recall(
         {
             "query": "q" * 70_000,
             "include": "summaries",
@@ -1029,7 +1029,7 @@ def test_recall_scans_full_corpus_not_grep_recency_window(recall_engine, monkeyp
     recall_engine._config.embedding_bounded_scan_rows = 2_000
     observed: list[int] = []
 
-    from hermes_lcm.vector_store import KNNResult
+    from hermes_trove.vector_store import KNNResult
 
     class BoundCapturingStore:
         def __init__(self, *_args, bounded_scan_rows=None, **_kwargs):
@@ -1044,10 +1044,10 @@ def test_recall_scans_full_corpus_not_grep_recency_window(recall_engine, monkeyp
         def close(self):
             pass
 
-    monkeypatch.setattr(lcm_tools, "VectorStore", BoundCapturingStore)
-    monkeypatch.setattr(lcm_tools, "resolve_provider", lambda _config: MockProvider())
+    monkeypatch.setattr(trove_tools, "VectorStore", BoundCapturingStore)
+    monkeypatch.setattr(trove_tools, "resolve_provider", lambda _config: MockProvider())
 
-    json.loads(lcm_tools.lcm_recall({"query": "anything", "include": "all"}, engine=recall_engine))
+    json.loads(trove_tools.trove_recall({"query": "anything", "include": "all"}, engine=recall_engine))
 
     # Both vector arms request the large recall bound, never the small grep one.
     assert observed and all(bound == 25_000 for bound in observed)
@@ -1057,8 +1057,8 @@ def test_chunk_hydrate_is_batched_not_n_plus_1(recall_engine, monkeypatch):
     """F4-chunk-hydrate-n-plus-1: hydrate_chunk_hits issues ONE batched JOIN over
     all ranked chunk ids, not a SELECT per hit, and preserves rank order."""
     import sqlite3 as _sqlite
-    import hermes_lcm.retrieval_core as rc
-    from hermes_lcm.retrieval_core import hydrate_chunk_hits
+    import hermes_trove.retrieval_core as rc
+    from hermes_trove.retrieval_core import hydrate_chunk_hits
 
     contents = {}
     for i in range(5):
@@ -1073,7 +1073,7 @@ def test_chunk_hydrate_is_batched_not_n_plus_1(recall_engine, monkeypatch):
 
     class CountingConnection(_sqlite.Connection):
         def execute(self, sql, *args, **kw):
-            if "lcm_chunk_meta" in sql:
+            if "trove_chunk_meta" in sql:
                 select_count["n"] += 1
             return super().execute(sql, *args, **kw)
 
@@ -1092,12 +1092,12 @@ def test_chunk_hydrate_is_batched_not_n_plus_1(recall_engine, monkeypatch):
 
 
 def test_recall_query_timeout_has_its_own_budget(monkeypatch, tmp_path):
-    """sprint-opt-2: lcm_recall uses recall_query_timeout_s (default 8.0), env
-    LCM_RECALL_QUERY_TIMEOUT_S, distinct from lcm_grep's 3.0s query deadline."""
-    assert LCMConfig(database_path=str(tmp_path / "d.db")).recall_query_timeout_s == 8.0
-    monkeypatch.setenv("LCM_RECALL_QUERY_TIMEOUT_S", "12.5")
-    monkeypatch.setenv("LCM_EMBEDDING_QUERY_TIMEOUT_S", "3.0")
-    cfg = LCMConfig.from_env()
+    """sprint-opt-2: trove_recall uses recall_query_timeout_s (default 8.0), env
+    TROVE_RECALL_QUERY_TIMEOUT_S, distinct from trove_grep's 3.0s query deadline."""
+    assert TROVEConfig(database_path=str(tmp_path / "d.db")).recall_query_timeout_s == 8.0
+    monkeypatch.setenv("TROVE_RECALL_QUERY_TIMEOUT_S", "12.5")
+    monkeypatch.setenv("TROVE_EMBEDDING_QUERY_TIMEOUT_S", "3.0")
+    cfg = TROVEConfig.from_env()
     assert cfg.recall_query_timeout_s == 12.5
     assert cfg.embedding_query_timeout_s == 3.0  # grep's deadline untouched
 
@@ -1109,7 +1109,7 @@ def test_summary_source_expansion_refuses_an_expired_deadline(recall_engine):
     )
 
     with pytest.raises(TimeoutError, match="summary source expansion"):
-        lcm_tools._lcm_recall_summary_source_hits(
+        trove_tools._trove_recall_summary_source_hits(
             recall_engine,
             [(node, 1.0)],
             current=CURRENT,
@@ -1123,13 +1123,13 @@ def test_recall_arm_weights_default_and_env_lenient(monkeypatch, tmp_path):
     """B2: recall_arm_weights default to fts=0.5,summary=1,chunk=1 and the env
     override parses leniently -- unknown arms, malformed pairs, and non-numeric
     weights are dropped while unspecified arms keep their default."""
-    assert LCMConfig(database_path=str(tmp_path / "d.db")).recall_arm_weights == {
+    assert TROVEConfig(database_path=str(tmp_path / "d.db")).recall_arm_weights == {
         "fts": 0.5,
         "summary": 1.0,
         "chunk": 1.0,
     }
-    monkeypatch.setenv("LCM_RECALL_ARM_WEIGHTS", "fts=0.7, chunk=0.9 ,bogus=1,summary=x,,junk")
-    cfg = LCMConfig.from_env()
+    monkeypatch.setenv("TROVE_RECALL_ARM_WEIGHTS", "fts=0.7, chunk=0.9 ,bogus=1,summary=x,,junk")
+    cfg = TROVEConfig.from_env()
     assert cfg.recall_arm_weights == {"fts": 0.7, "summary": 1.0, "chunk": 0.9}
 
 
@@ -1147,7 +1147,7 @@ def test_recall_echoes_arm_weights_in_provenance(recall_engine, monkeypatch):
 
 
 def test_recall_uses_recall_timeout_budget(recall_engine, monkeypatch):
-    """lcm_recall builds its deadline from recall_query_timeout_s, not the grep one."""
+    """trove_recall builds its deadline from recall_query_timeout_s, not the grep one."""
     recall_engine._config.recall_query_timeout_s = 8.0
     recall_engine._config.embedding_query_timeout_s = 0.001  # would insta-timeout if used
     recall_engine._store.append(CURRENT, {"role": "user", "content": "kanban dashboard sprint budget"})
@@ -1194,13 +1194,13 @@ def test_recall_fts_arm_runs_with_a_bounded_subdeadline(recall_engine, monkeypat
             None,
         )
 
-    monkeypatch.setattr(lcm_tools, "_lcm_recall_fts_arm", _record_fts)
+    monkeypatch.setattr(trove_tools, "_trove_recall_fts_arm", _record_fts)
 
-    # Anchor a "before-call" monotonic timestamp right before lcm_recall runs
+    # Anchor a "before-call" monotonic timestamp right before trove_recall runs
     # so we can compare the FTS arm's captured deadline against the deadline
     # the unfixed main would pass (request_started + recall_query_timeout_s).
     # On unfixed main: captured_deadline == request_started + 2.0, which after
-    # lcm_recall's setup-time delta is strictly greater than before_call + 2.0.
+    # trove_recall's setup-time delta is strictly greater than before_call + 2.0.
     # On the fix:        captured_deadline <= request_started + fts_share * 2.0
     #                    where fts_share < 1.0, so it is strictly less than
     #                    before_call + 2.0.
@@ -1243,7 +1243,7 @@ def test_recall_fts_arm_failure_does_not_starve_vector_arms(recall_engine, monke
             time.sleep(0.005)
         return [], {"error": "timeout", "timeout": True}
 
-    monkeypatch.setattr(lcm_tools, "_lcm_recall_fts_arm", _stalled_fts)
+    monkeypatch.setattr(trove_tools, "_trove_recall_fts_arm", _stalled_fts)
 
     payload = _recall(recall_engine, monkeypatch, include="all", limit=5)
 
@@ -1302,11 +1302,11 @@ def test_recall_operator_mode_semantics_preserved_after_scheduling_fix(recall_en
         captured["query"] = query
         return [], None
 
-    monkeypatch.setattr(lcm_tools, "_lcm_recall_fts_arm", _record_fts)
+    monkeypatch.setattr(trove_tools, "_trove_recall_fts_arm", _record_fts)
 
-    monkeypatch.setattr(lcm_tools, "resolve_provider", lambda _config: MockProvider())
+    monkeypatch.setattr(trove_tools, "resolve_provider", lambda _config: MockProvider())
     payload = json.loads(
-        lcm_tools.lcm_recall(
+        trove_tools.trove_recall(
             {"query": "alpha OR beta", "limit": 5, "allow_operators": True},
             engine=recall_engine,
         )
@@ -1321,7 +1321,7 @@ def test_recall_operator_mode_semantics_preserved_after_scheduling_fix(recall_en
 @pytest.mark.parametrize(
     ("timeout_s", "expected_fts_subbudget_s"),
     [
-        # floor case (recall_query_timeout_s=0 is floored to 0.001 by lcm_recall)
+        # floor case (recall_query_timeout_s=0 is floored to 0.001 by trove_recall)
         (0.001, 0.0005),
         # tiny but usable
         (0.01, 0.005),
@@ -1352,13 +1352,13 @@ def test_recall_fts_arm_subbudget_scales_linearly_with_total_timeout(
     def _record_fts(engine, query, *, candidate_limit, deadline):
         # Record (a) the deadline the caller passed, and (b) time.monotonic()
         # at the moment we received it. The latter is a proxy for
-        # `request_started` because lcm_recall's first line is
+        # `request_started` because trove_recall's first line is
         # `request_started = time.monotonic()` and the FTS arm runs early.
         captured["deadline"] = deadline
         captured["received_at"] = time.monotonic()
         return [], None
 
-    monkeypatch.setattr(lcm_tools, "_lcm_recall_fts_arm", _record_fts)
+    monkeypatch.setattr(trove_tools, "_trove_recall_fts_arm", _record_fts)
 
     _recall(recall_engine, monkeypatch, include="all", limit=5)
 
@@ -1479,7 +1479,7 @@ def test_pooled_vector_store_survives_across_recall_calls(recall_engine, monkeyp
     """F2-matrix-cache-never-persists: back-to-back recalls reuse ONE pooled
     VectorStore whose matrix cache survives, instead of building+closing a fresh
     store (and clearing the cache) every call."""
-    import hermes_lcm.retrieval_core as rc
+    import hermes_trove.retrieval_core as rc
 
     rc._reset_vector_store_pool()
     try:
@@ -1506,7 +1506,7 @@ def test_matrix_cache_is_bounded_lru_not_cleared_on_miss():
     import numpy as np
 
     import tempfile
-    from hermes_lcm.config import LCMConfig as _Cfg
+    from hermes_trove.config import TROVEConfig as _Cfg
 
     with tempfile.TemporaryDirectory() as d:
         vs = VectorStore(f"{d}/m.db", config=_Cfg(database_path=f"{d}/m.db", embeddings_enabled=True))
@@ -1526,12 +1526,12 @@ def test_matrix_cache_is_bounded_lru_not_cleared_on_miss():
 
 
 def test_json_doctor_surfaces_background_integrity_flag(recall_engine):
-    """F1-json-doctor-background-flag-untested: the JSON lcm_doctor MCP tool (not
+    """F1-json-doctor-background-flag-untested: the JSON trove_doctor MCP tool (not
     just the text path) surfaces a pre-recorded background FTS-corruption flag."""
-    from hermes_lcm.db_bootstrap import _record_integrity_failed
-    from hermes_lcm.store import build_message_fts_spec
+    from hermes_trove.db_bootstrap import _record_integrity_failed
+    from hermes_trove.store import build_message_fts_spec
 
-    # lcm_doctor reaches beyond the recall fixture's attribute set; supply the
+    # trove_doctor reaches beyond the recall fixture's attribute set; supply the
     # few unguarded ones it touches (context-pressure short-circuits at 0).
     recall_engine.context_length = 0
     recall_engine.last_prompt_tokens = 0
@@ -1542,7 +1542,7 @@ def test_json_doctor_surfaces_background_integrity_flag(recall_engine):
     _record_integrity_failed(conn, spec, detail="messages_fts malformed (background scan)")
     conn.commit()
 
-    payload = json.loads(lcm_tools.lcm_doctor({}, engine=recall_engine))
+    payload = json.loads(trove_tools.trove_doctor({}, engine=recall_engine))
     checks = {c["check"]: c for c in payload["checks"]}
 
     flag_check = checks.get("messages_fts_integrity_background_flag")
@@ -1554,7 +1554,7 @@ def test_json_doctor_surfaces_background_integrity_flag(recall_engine):
 def test_rrf_fuse_collapses_repeated_identity_within_arm():
     """RRF-1: a message chunked into several pieces must contribute ONE term per
     arm at its best rank, not one per chunk occurrence."""
-    from hermes_lcm.retrieval_core import rrf_fuse
+    from hermes_trove.retrieval_core import rrf_fuse
 
     # Arm 0 (chunk): message A appears 3x (ranks 2,3,4); message B once (rank 1).
     chunk_arm = [
@@ -1575,8 +1575,8 @@ def test_rrf_fuse_collapses_repeated_identity_within_arm():
 
 def test_rrf_fuse_default_weights_are_byte_identical_to_unweighted():
     """B2: passing explicit 1.0 weights must reproduce unweighted RRF bit-for-bit
-    so lcm_grep's hybrid (which keeps 1.0 weights) is unchanged."""
-    from hermes_lcm.retrieval_core import rrf_fuse
+    so trove_grep's hybrid (which keeps 1.0 weights) is unchanged."""
+    from hermes_trove.retrieval_core import rrf_fuse
 
     fts_arm = [{"store_id": "A"}, {"store_id": "B"}]
     vec_arm = [{"store_id": "B"}, {"store_id": "C"}]
@@ -1600,9 +1600,9 @@ def test_rrf_weights_rank_vector_best_first_on_weak_fts_corpus():
     (0.5, 1, 1) arm weights restore the vector-best identity to the top --
     mirroring the −21 R@5 LongMemEval regression. k is shrunk so short arms
     spread rank terms far enough to exercise the flip cleanly."""
-    from hermes_lcm.retrieval_core import rrf_fuse
+    from hermes_trove.retrieval_core import rrf_fuse
 
-    # Arm order is fts(0), summary(1), chunk(2) -- as lcm_recall builds it.
+    # Arm order is fts(0), summary(1), chunk(2) -- as trove_recall builds it.
     # Noise N: FTS rank 1 (weak arm loves it) but only rank 5 in each vector arm.
     # Vector-best V: rank 1 in both vector arms, absent from FTS.
     fts_arm = [{"store_id": "N"}, {"store_id": "x1"}, {"store_id": "x2"}, {"store_id": "x3"}, {"store_id": "x4"}]
@@ -1622,9 +1622,9 @@ def test_parse_arm_weights_rejects_negative_keeps_default(monkeypatch, caplog):
     rank-monotonicity) -- the arm keeps its default and a warning is logged."""
     import logging as _logging
 
-    monkeypatch.setenv("LCM_RECALL_ARM_WEIGHTS", "fts=-0.5,summary=1.0,chunk=0")
-    with caplog.at_level(_logging.WARNING, logger="hermes_lcm.config"):
-        cfg = LCMConfig.from_env()
+    monkeypatch.setenv("TROVE_RECALL_ARM_WEIGHTS", "fts=-0.5,summary=1.0,chunk=0")
+    with caplog.at_level(_logging.WARNING, logger="hermes_trove.config"):
+        cfg = TROVEConfig.from_env()
     # fts falls back to its 0.5 default (negative dropped); chunk=0 is legal.
     assert cfg.recall_arm_weights == {"fts": 0.5, "summary": 1.0, "chunk": 0.0}
     assert any("negative weight" in rec.getMessage() for rec in caplog.records)
@@ -1633,7 +1633,7 @@ def test_parse_arm_weights_rejects_negative_keeps_default(monkeypatch, caplog):
 def test_rrf_fuse_clamps_negative_weight_no_inversion():
     """FIX-1: a negative arm weight in rrf_fuse is clamped to 0.0 (the arm drops
     out) rather than making a rank-1 hit score negative and inverting order."""
-    from hermes_lcm.retrieval_core import rrf_fuse
+    from hermes_trove.retrieval_core import rrf_fuse
 
     arm0 = [{"store_id": "A"}, {"store_id": "B"}]
     arm1 = [{"store_id": "C"}]
@@ -1803,7 +1803,7 @@ def test_reference_strict_backfills_past_every_uncitable_candidate_shape():
         _message_entry(6, chunk_span=span),
     ]
 
-    selected, dropped, unreferenced = lcm_tools._lcm_recall_citable_entries(
+    selected, dropped, unreferenced = trove_tools._trove_recall_citable_entries(
         ordered,
         limit=5,
         per_session_limit=5,
@@ -1823,7 +1823,7 @@ def test_reference_strict_admits_an_unspanned_message_inside_the_hydration_budge
     becomes uncitable once it falls past that budget."""
     ordered = [_message_entry(index, citable=False) for index in range(1, 5)]
 
-    selected, _dropped, unreferenced = lcm_tools._lcm_recall_citable_entries(
+    selected, _dropped, unreferenced = trove_tools._trove_recall_citable_entries(
         ordered,
         limit=4,
         per_session_limit=5,
@@ -1841,7 +1841,7 @@ def test_reference_strict_skips_uncitable_before_it_consumes_session_quota():
     ordered = [_summary_entry(900 + index, session_id="session-a") for index in range(3)]
     ordered += [_message_entry(index, session_id="session-a") for index in range(1, 6)]
 
-    selected, dropped, unreferenced = lcm_tools._lcm_recall_citable_entries(
+    selected, dropped, unreferenced = trove_tools._trove_recall_citable_entries(
         ordered,
         limit=5,
         per_session_limit=5,
@@ -1861,7 +1861,7 @@ def _only_vector_arms(monkeypatch):
     clear above the summary hits — which would leave the uncitable candidates
     below the cut and never exercise the backfill.
     """
-    monkeypatch.setattr(lcm_tools, "_lcm_recall_fts_arm", lambda *_a, **_k: ([], None))
+    monkeypatch.setattr(trove_tools, "_trove_recall_fts_arm", lambda *_a, **_k: ([], None))
 
 
 def _seed_citable_messages(engine, count, *, sessions=("session-a", "session-b")):
@@ -2038,8 +2038,8 @@ def test_reference_strict_disabled_never_enters_the_new_delivery_path(
     def _forbidden(*_args, **_kwargs):
         raise AssertionError("reference-strict code ran on the disabled path")
 
-    monkeypatch.setattr(lcm_tools, "_LcmRecallStrictSelector", _forbidden)
-    monkeypatch.setattr(lcm_tools, "_lcm_recall_verified_span", _forbidden)
+    monkeypatch.setattr(trove_tools, "_TroveRecallStrictSelector", _forbidden)
+    monkeypatch.setattr(trove_tools, "_trove_recall_verified_span", _forbidden)
 
     payload = _recall(
         recall_engine,
@@ -2179,7 +2179,7 @@ def test_summary_leads_preserve_current_context_and_obey_response_limit(
     assert len(leads) == 1
     assert leads[0]["node_id"] == node_ids[0]
     assert leads[0]["from_current_session"] is True
-    assert leads[0]["expand_hint"] == f"lcm_expand(node_id={node_ids[0]})"
+    assert leads[0]["expand_hint"] == f"trove_expand(node_id={node_ids[0]})"
 
 
 def test_admitted_hit_publishes_the_true_chunk_offset_not_zero(
@@ -2369,7 +2369,7 @@ def test_delta_mode_draws_replacements_from_the_ranked_tail(
     )
     assert len(first["hits"]) == 25
     seen = [
-        f"lcm:{hit['store_id']}:{hit['content_offset']}-"
+        f"trove:{hit['store_id']}:{hit['content_offset']}-"
         f"{hit['content_offset'] + hit['content_returned_chars']}"
         for hit in first["hits"][:20]
     ]
@@ -2404,7 +2404,7 @@ def test_failed_candidate_does_not_spend_session_quota():
     ]
     ordered.append(_message_entry(99, session_id="session-a"))
 
-    selected, dropped, unreferenced = lcm_tools._lcm_recall_citable_entries(
+    selected, dropped, unreferenced = trove_tools._trove_recall_citable_entries(
         ordered,
         limit=5,
         per_session_limit=per_session,
@@ -2480,7 +2480,7 @@ def test_selection_reads_rows_in_batches_not_one_per_candidate():
     ordered.append(_message_entry(99, session_id="session-99"))
     engine = _stub_engine([*range(1, 80), 99])
 
-    selected, _dropped, unreferenced = lcm_tools._lcm_recall_citable_entries(
+    selected, _dropped, unreferenced = trove_tools._trove_recall_citable_entries(
         ordered,
         limit=1,
         per_session_limit=5,
@@ -2550,7 +2550,7 @@ def test_seen_delta_results_do_not_spend_session_quota(recall_engine, monkeypatc
     )
     assert len(first["hits"]) == 5
     seen = [
-        f"lcm:{hit['store_id']}:{hit['content_offset']}-"
+        f"trove:{hit['store_id']}:{hit['content_offset']}-"
         f"{hit['content_offset'] + hit['content_returned_chars']}"
         for hit in first["hits"]
     ]
@@ -2584,7 +2584,7 @@ def test_a_missing_row_does_not_cascade_reads_or_retain_the_corpus():
     ]
     engine = _stub_engine(range(2, 101))  # row 1 is gone
 
-    selector = lcm_tools._LcmRecallStrictSelector(
+    selector = trove_tools._TroveRecallStrictSelector(
         ordered,
         engine=engine,
         per_session_limit=5,
@@ -2613,7 +2613,7 @@ def test_rejected_candidate_rows_are_not_retained():
     ordered.append(_message_entry(100, session_id="session-100"))
     engine = _stub_engine(range(1, 101))
 
-    selector = lcm_tools._LcmRecallStrictSelector(
+    selector = trove_tools._TroveRecallStrictSelector(
         ordered,
         engine=engine,
         per_session_limit=5,
@@ -2657,7 +2657,7 @@ def test_refund_reaches_the_ranking_when_limit_exceeds_the_session_cap(
     # One session, cap 5 -- the response can never exceed the cap.
     assert len(first["hits"]) == 5
     seen = [
-        f"lcm:{hit['store_id']}:{hit['content_offset']}-"
+        f"trove:{hit['store_id']}:{hit['content_offset']}-"
         f"{hit['content_offset'] + hit['content_returned_chars']}"
         for hit in first["hits"]
     ]
@@ -2687,7 +2687,7 @@ def test_double_release_is_a_counted_no_op_not_a_second_refund():
         _message_entry(index, session_id="session-a") for index in range(1, 6)
     ]
     engine = _stub_engine(range(1, 6))
-    selector = lcm_tools._LcmRecallStrictSelector(
+    selector = trove_tools._TroveRecallStrictSelector(
         ordered, engine=engine, per_session_limit=2, expanded_limit=0
     )
 
@@ -2717,7 +2717,7 @@ def test_released_entry_stops_pinning_its_row():
         for index in range(1, 101)
     ]
     engine = _stub_engine(range(1, 101))
-    selector = lcm_tools._LcmRecallStrictSelector(
+    selector = trove_tools._TroveRecallStrictSelector(
         ordered, engine=engine, per_session_limit=5, expanded_limit=0, wave_size=32
     )
 
@@ -2783,7 +2783,7 @@ def test_ledger_invariants_hold_under_a_randomized_transition_sequence():
         for index in range(1, 121)
     ]
     engine = _stub_engine(range(1, 121))
-    selector = lcm_tools._LcmRecallStrictSelector(
+    selector = trove_tools._TroveRecallStrictSelector(
         ordered,
         engine=engine,
         per_session_limit=per_session_limit,
@@ -2937,7 +2937,7 @@ def test_take_tops_up_to_a_target_rather_than_adding_a_count():
         _message_entry(index, session_id=f"session-{index}")
         for index in range(1, 21)
     ]
-    selector = lcm_tools._LcmRecallStrictSelector(
+    selector = trove_tools._TroveRecallStrictSelector(
         ordered,
         engine=_stub_engine(range(1, 21)),
         per_session_limit=5,
@@ -2987,7 +2987,7 @@ def test_long_seen_run_does_not_discard_novel_rows_behind_the_cap(
         )
         assert page["hits"], f"went empty after {len(seen)} seen refs"
         seen.extend(
-            f"lcm:{hit['store_id']}:{hit['content_offset']}-"
+            f"trove:{hit['store_id']}:{hit['content_offset']}-"
             f"{hit['content_offset'] + hit['content_returned_chars']}"
             for hit in page["hits"]
         )
@@ -3029,7 +3029,7 @@ def test_post_budget_rejection_does_not_bar_a_later_in_budget_admission():
         _message_entry(2, session_id="session-b", snippet="not in the row"),
     ]
     engine = _stub_engine([1, 2])
-    selector = lcm_tools._LcmRecallStrictSelector(
+    selector = trove_tools._TroveRecallStrictSelector(
         ordered, engine=engine, per_session_limit=5, expanded_limit=1
     )
 
@@ -3061,7 +3061,7 @@ def test_row_deleted_while_blocked_is_reverified_before_admission():
         _message_entry(3, session_id="session-b"),
     ]
     engine = _stub_engine([1, 2, 3])
-    selector = lcm_tools._LcmRecallStrictSelector(
+    selector = trove_tools._TroveRecallStrictSelector(
         ordered, engine=engine, per_session_limit=1, expanded_limit=8
     )
 
@@ -3105,7 +3105,7 @@ def test_reversible_rejection_stays_reachable_after_a_partial_refund():
         _message_entry(5, session_id="session-d"),
     ]
     engine = _stub_engine([1, 2, 3, 4, 5])
-    selector = lcm_tools._LcmRecallStrictSelector(
+    selector = trove_tools._TroveRecallStrictSelector(
         ordered, engine=engine, per_session_limit=1, expanded_limit=1
     )
 

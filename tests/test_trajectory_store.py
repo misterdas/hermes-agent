@@ -10,8 +10,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from hermes_lcm.store import MessageStore
-from hermes_lcm.trajectory_store import (
+from hermes_trove.store import MessageStore
+from hermes_trove.trajectory_store import (
     TRAJECTORY_SCHEMA_VERSION,
     CorpusIdentity,
     CorpusIdentityError,
@@ -110,7 +110,7 @@ def _source(
 
 @pytest.fixture
 def trajectory_db(tmp_path: Path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     messages = MessageStore(db_path)
@@ -123,12 +123,12 @@ def trajectory_db(tmp_path: Path):
 
 
 def test_schema_is_optional_same_database_and_uses_named_marker(tmp_path: Path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     messages = MessageStore(db_path)
     before = {
         row[0]
         for row in messages._conn.execute(
-            "SELECT name FROM sqlite_master WHERE name LIKE 'lcm_trajectory%'"
+            "SELECT name FROM sqlite_master WHERE name LIKE 'trove_trajectory%'"
         )
     }
     assert before == set()
@@ -141,20 +141,20 @@ def test_schema_is_optional_same_database_and_uses_named_marker(tmp_path: Path):
         names = {
             row[0]
             for row in store.connection.execute(
-                "SELECT name FROM sqlite_master WHERE name LIKE 'lcm_trajectory%'"
+                "SELECT name FROM sqlite_master WHERE name LIKE 'trove_trajectory%'"
             )
         }
         assert {
-            "lcm_trajectory_corpora",
-            "lcm_trajectory_sources",
-            "lcm_trajectory_states",
-            "lcm_trajectory_assets",
-            "lcm_trajectory_ingest_receipts",
-            "lcm_trajectory_transitions",
-            "lcm_trajectory_states_fts",
+            "trove_trajectory_corpora",
+            "trove_trajectory_sources",
+            "trove_trajectory_states",
+            "trove_trajectory_assets",
+            "trove_trajectory_ingest_receipts",
+            "trove_trajectory_transitions",
+            "trove_trajectory_states_fts",
         }.issubset(names)
         assert store.connection.execute(
-            "SELECT COUNT(*) FROM lcm_migration_state WHERE step_name = ?",
+            "SELECT COUNT(*) FROM trove_migration_state WHERE step_name = ?",
             ("trajectory_store_v1",),
         ).fetchone()[0] == 1
     finally:
@@ -163,7 +163,7 @@ def test_schema_is_optional_same_database_and_uses_named_marker(tmp_path: Path):
 
 
 def test_corpus_identity_is_strict_and_read_only_open_does_not_mutate(tmp_path: Path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     store = TrajectoryStore(db_path, _identity(), asset_root=asset_root)
@@ -194,7 +194,7 @@ def test_corpus_identity_is_strict_and_read_only_open_does_not_mutate(tmp_path: 
 
 
 def test_read_only_open_rejects_malformed_current_trajectory_schema(tmp_path: Path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     store = TrajectoryStore(db_path, _identity(), asset_root=asset_root)
@@ -202,14 +202,14 @@ def test_read_only_open_rejects_malformed_current_trajectory_schema(tmp_path: Pa
 
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            "ALTER TABLE lcm_trajectory_states "
+            "ALTER TABLE trove_trajectory_states "
             "RENAME COLUMN search_text TO malformed_search_text"
         )
         conn.commit()
 
     with pytest.raises(
         TrajectorySchemaUnavailableError,
-        match=r"column:lcm_trajectory_states\.search_text",
+        match=r"column:trove_trajectory_states\.search_text",
     ):
         TrajectoryStore(
             db_path,
@@ -220,7 +220,7 @@ def test_read_only_open_rejects_malformed_current_trajectory_schema(tmp_path: Pa
 
 
 def test_newer_trajectory_schema_is_rejected_before_fts_repair(tmp_path: Path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     store = TrajectoryStore(db_path, _identity(), asset_root=asset_root)
@@ -228,10 +228,10 @@ def test_newer_trajectory_schema_is_rejected_before_fts_repair(tmp_path: Path):
 
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            "UPDATE lcm_trajectory_corpora SET schema_version=? WHERE singleton=1",
+            "UPDATE trove_trajectory_corpora SET schema_version=? WHERE singleton=1",
             (TRAJECTORY_SCHEMA_VERSION + 1,),
         )
-        conn.execute("DROP TABLE lcm_trajectory_states_fts")
+        conn.execute("DROP TABLE trove_trajectory_states_fts")
         conn.commit()
 
     with pytest.raises(CorpusIdentityError):
@@ -240,7 +240,7 @@ def test_newer_trajectory_schema_is_rejected_before_fts_repair(tmp_path: Path):
     with sqlite3.connect(db_path) as conn:
         fts = conn.execute(
             "SELECT 1 FROM sqlite_master "
-            "WHERE name='lcm_trajectory_states_fts'"
+            "WHERE name='trove_trajectory_states_fts'"
         ).fetchone()
     assert fts is None
 
@@ -253,10 +253,10 @@ def test_insert_is_idempotent_and_conflicting_source_fails(trajectory_db):
     assert first.already_current is False
     assert second.already_current is True
     assert store.connection.execute(
-        "SELECT COUNT(*) FROM lcm_trajectory_sources"
+        "SELECT COUNT(*) FROM trove_trajectory_sources"
     ).fetchone()[0] == 1
     assert store.connection.execute(
-        "SELECT COUNT(*) FROM lcm_trajectory_states"
+        "SELECT COUNT(*) FROM trove_trajectory_states"
     ).fetchone()[0] == 3
 
     changed = _source(
@@ -273,7 +273,7 @@ def test_destination_action_sequence_and_unknown_times_are_preserved(trajectory_
     rows = store.connection.execute(
         """
         SELECT state_index, sequence_ordinal, incoming_action, observed_at, occurred_at
-        FROM lcm_trajectory_states
+        FROM trove_trajectory_states
         ORDER BY state_index
         """
     ).fetchall()
@@ -286,9 +286,9 @@ def test_destination_action_sequence_and_unknown_times_are_preserved(trajectory_
         """
         SELECT t.sequence_ordinal, pre.state_index, post.state_index,
                t.incoming_action
-        FROM lcm_trajectory_transitions t
-        JOIN lcm_trajectory_states pre ON pre.state_id = t.pre_state_id
-        JOIN lcm_trajectory_states post ON post.state_id = t.post_state_id
+        FROM trove_trajectory_transitions t
+        JOIN trove_trajectory_states pre ON pre.state_id = t.pre_state_id
+        JOIN trove_trajectory_states post ON post.state_id = t.post_state_id
         ORDER BY t.sequence_ordinal
         """
     ).fetchall()
@@ -299,7 +299,7 @@ def test_destination_action_sequence_and_unknown_times_are_preserved(trajectory_
 
 
 def test_interrupted_ingest_resumes_at_first_missing_contiguous_receipt(tmp_path: Path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     store = TrajectoryStore(db_path, _identity(), asset_root=asset_root)
@@ -318,10 +318,10 @@ def test_interrupted_ingest_resumes_at_first_missing_contiguous_receipt(tmp_path
             )
         )
     assert store.connection.execute(
-        "SELECT ingest_cursor FROM lcm_trajectory_corpora"
+        "SELECT ingest_cursor FROM trove_trajectory_corpora"
     ).fetchone()[0] == 1
     assert store.connection.execute(
-        "SELECT COUNT(*) FROM lcm_trajectory_ingest_receipts"
+        "SELECT COUNT(*) FROM trove_trajectory_ingest_receipts"
     ).fetchone()[0] == 1
     store.close()
 
@@ -330,13 +330,13 @@ def test_interrupted_ingest_resumes_at_first_missing_contiguous_receipt(tmp_path
         resumed.insert(missing)
         resumed.finalize(["trajectory-a", "trajectory-b"])
         assert resumed.connection.execute(
-            "SELECT ingest_cursor FROM lcm_trajectory_corpora"
+            "SELECT ingest_cursor FROM trove_trajectory_corpora"
         ).fetchone()[0] == 2
         assert resumed.connection.execute(
-            "SELECT COUNT(*) FROM lcm_trajectory_ingest_receipts"
+            "SELECT COUNT(*) FROM trove_trajectory_ingest_receipts"
         ).fetchone()[0] == 2
         assert resumed.connection.execute(
-            "SELECT COUNT(*) FROM lcm_trajectory_states"
+            "SELECT COUNT(*) FROM trove_trajectory_states"
         ).fetchone()[0] == 6
     finally:
         resumed.close()
@@ -366,7 +366,7 @@ def test_explicit_source_times_are_separate_from_ingest_time(trajectory_db):
         """
         SELECT observed_at, observed_at_source, occurred_at,
                occurred_at_source, ingested_at
-        FROM lcm_trajectory_states WHERE state_index = 1
+        FROM trove_trajectory_states WHERE state_index = 1
         """
     ).fetchone()
     assert row["observed_at"] == 1_700_000_000.0
@@ -425,7 +425,7 @@ def test_bounded_fts_returns_stable_exact_refs_and_late_adjacent_state(trajector
 
 
 def test_query_text_is_a_bounded_exact_excerpt_and_ref_hydrates_full_state(tmp_path: Path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     long_text = "prefix " * 600 + "needle exact answer" + " suffix" * 600
@@ -448,7 +448,7 @@ def test_query_text_is_a_bounded_exact_excerpt_and_ref_hydrates_full_state(tmp_p
 
 
 def test_asset_missing_outside_root_and_symlink_escape_fail_closed(tmp_path: Path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     outside = tmp_path / "outside.png"
@@ -508,7 +508,7 @@ def test_asset_missing_outside_root_and_symlink_escape_fail_closed(tmp_path: Pat
 
 def test_synthetic_secrets_are_redacted_before_sqlite_fts_and_output(tmp_path: Path):
     secret = "sk-proj-super-secret-value-1234567890"
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     store = TrajectoryStore(
@@ -525,7 +525,7 @@ def test_synthetic_secrets_are_redacted_before_sqlite_fts_and_output(tmp_path: P
         hits = store.query("api key", limit=3)
         assert secret not in serialized
         assert secret not in json.dumps([hit.to_dict() for hit in hits])
-        assert "[LCM sensitive redaction:" in serialized
+        assert "[TROVE sensitive redaction:" in serialized
     finally:
         store.close()
 
@@ -566,7 +566,7 @@ def test_query_is_read_only_and_backup_restore_preserves_query_digest(trajectory
 
 
 def test_missing_fts_artifact_rebuilds_from_exact_state_rows(tmp_path: Path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     store = TrajectoryStore(db_path, _identity(), asset_root=asset_root)
@@ -576,24 +576,24 @@ def test_missing_fts_artifact_rebuilds_from_exact_state_rows(tmp_path: Path):
     store.close()
 
     with sqlite3.connect(db_path) as conn:
-        conn.execute("DROP TRIGGER lcm_trajectory_fts_insert")
-        conn.execute("DROP TRIGGER lcm_trajectory_fts_delete")
-        conn.execute("DROP TRIGGER lcm_trajectory_fts_update")
-        conn.execute("DROP TABLE lcm_trajectory_states_fts")
+        conn.execute("DROP TRIGGER trove_trajectory_fts_insert")
+        conn.execute("DROP TRIGGER trove_trajectory_fts_delete")
+        conn.execute("DROP TRIGGER trove_trajectory_fts_update")
+        conn.execute("DROP TABLE trove_trajectory_states_fts")
         conn.commit()
 
     repaired = TrajectoryStore(db_path, _identity(), asset_root=asset_root)
     try:
         assert [hit.to_dict() for hit in repaired.query("exhausted", limit=3)] == expected
         assert repaired.connection.execute(
-            "SELECT COUNT(*) FROM lcm_trajectory_states_fts"
+            "SELECT COUNT(*) FROM trove_trajectory_states_fts"
         ).fetchone()[0] == 3
     finally:
         repaired.close()
 
 
 def test_equal_count_stale_fts_is_detected_and_rebuilt(tmp_path: Path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     store = TrajectoryStore(db_path, _identity(), asset_root=asset_root)
@@ -602,9 +602,9 @@ def test_equal_count_stale_fts_is_detected_and_rebuilt(tmp_path: Path):
     store.close()
 
     with sqlite3.connect(db_path) as conn:
-        conn.execute("DROP TRIGGER lcm_trajectory_fts_update")
+        conn.execute("DROP TRIGGER trove_trajectory_fts_update")
         conn.execute(
-            "UPDATE lcm_trajectory_states SET search_text = ? WHERE state_index = 1",
+            "UPDATE trove_trajectory_states SET search_text = ? WHERE state_index = 1",
             ("Visible state: replacement-marker",),
         )
         conn.commit()
@@ -624,7 +624,7 @@ def test_corpus_uid_includes_source_and_asset_bytes(tmp_path: Path):
         assets.mkdir()
         source = _source(assets, state_one_text=text)
         source.states[1].screenshot_path.write_bytes(b"png-" + asset_suffix)
-        store = TrajectoryStore(root / "lcm.db", _identity(), asset_root=assets)
+        store = TrajectoryStore(root / "trove.db", _identity(), asset_root=assets)
         try:
             store.insert(source)
             return store.finalize(["trajectory-a"])
@@ -638,7 +638,7 @@ def test_corpus_uid_includes_source_and_asset_bytes(tmp_path: Path):
 
 
 def test_concurrent_insert_and_finalize_preserve_complete_manifest(tmp_path: Path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     first = TrajectoryStore(db_path, _identity(), asset_root=asset_root)
@@ -665,7 +665,7 @@ def test_concurrent_insert_and_finalize_preserve_complete_manifest(tmp_path: Pat
             """
             SELECT status, ingest_cursor, trajectory_count, corpus_uid,
                    source_manifest_digest
-            FROM lcm_trajectory_corpora
+            FROM trove_trajectory_corpora
             """
         ).fetchone()
         assert tuple(row[:4]) == ("complete", 1, 1, corpus_uid)

@@ -3,14 +3,14 @@
 import json
 import os
 
-from hermes_lcm.engine import LCMEngine
-from hermes_lcm.reconcile import _tail_tagless
+from hermes_trove.engine import TROVEEngine
+from hermes_trove.reconcile import _tail_tagless
 
 
-def _engine(tmp_path, name: str, **overrides) -> LCMEngine:
-    from hermes_lcm.config import LCMConfig
+def _engine(tmp_path, name: str, **overrides) -> TROVEEngine:
+    from hermes_trove.config import TROVEConfig
 
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / f"{name}.db"),
         large_output_externalization_path=str(tmp_path / f"{name}-externalized"),
         fresh_tail_count=2,
@@ -26,7 +26,7 @@ def _engine(tmp_path, name: str, **overrides) -> LCMEngine:
     )
     for key, value in overrides.items():
         setattr(config, key, value)
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / f"{name}-home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / f"{name}-home"))
     engine.on_session_start(
         f"{name}-session",
         platform="synthetic",
@@ -43,7 +43,7 @@ def test_replay_identity_escape_closes_prefix_namespace(tmp_path):
     escape-prefixed strings unchanged, colliding with escaped
     absent-prefixed content; the counted escape embeds the number of leading
     reserved prefixes and keeps the original verbatim."""
-    from hermes_lcm.reconcile import (
+    from hermes_trove.reconcile import (
         _REPLAY_IDENTITY_ABSENT_CONTENT_PREFIX,
         _REPLAY_IDENTITY_ABSENT_CONTENT_ESCAPE_PREFIX,
         _strip_replay_identity_shape_tag,
@@ -125,9 +125,9 @@ def test_storage_rebind_serializes_close_bind_reset_with_claimed_sanitation(tmp_
     against a half-swapped or new store. (The close/bind path requires the
     per-home default database — a configured ``database_path`` keeps one file
     across homes and never closes.)"""
-    from hermes_lcm.config import LCMConfig
+    from hermes_trove.config import TROVEConfig
 
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path="",
         large_output_externalization_path=str(tmp_path / "rebind-lock-externalized"),
         fresh_tail_count=2,
@@ -141,7 +141,7 @@ def test_storage_rebind_serializes_close_bind_reset_with_claimed_sanitation(tmp_
             "private_key",
         ],
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "rebind-lock-home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "rebind-lock-home"))
     engine.on_session_start(
         "rebind-lock-session",
         platform="synthetic",
@@ -155,9 +155,9 @@ def test_storage_rebind_serializes_close_bind_reset_with_claimed_sanitation(tmp_
         engine.ingest([{"role": "user", "content": "seed"}])
         events: list[str] = []
         lock_held_flags: list[bool] = []
-        original_close = LCMEngine._close_storage
-        original_bind = LCMEngine._bind_storage
-        original_reset = LCMEngine._reset_profile_runtime_state
+        original_close = TROVEEngine._close_storage
+        original_bind = TROVEEngine._bind_storage
+        original_reset = TROVEEngine._reset_profile_runtime_state
 
         def tracing_close(self):
             events.append("close")
@@ -177,7 +177,7 @@ def test_storage_rebind_serializes_close_bind_reset_with_claimed_sanitation(tmp_
         import unittest.mock as mock
 
         with mock.patch.multiple(
-            LCMEngine,
+            TROVEEngine,
             _close_storage=tracing_close,
             _bind_storage=tracing_bind,
             _reset_profile_runtime_state=tracing_reset,
@@ -210,7 +210,7 @@ def test_replay_identity_distinguishes_structured_content_from_json_text(tmp_pat
     storage; the stored side derives the tag by exact round-trip decode (same
     convention as ``_identity_content_for_active_cleanup``). The tag therefore
     distinguishes structured from JSON-text at the LIVE boundary — including
-    any serialization that is not byte-identical to LCM's canonical
+    any serialization that is not byte-identical to TROVE's canonical
     ``json.dumps`` — and keeps every storage round trip stable except that
     narrow exact-canonical-string class (documented residual).
     """
@@ -354,7 +354,7 @@ def test_prefix_count_scan_is_not_quadratic():
     """Round-3 finding 4041509636: counting N leading reserved prefixes must be
     linear in the prefix bytes, not quadratic in the payload."""
     import time as _time
-    from hermes_lcm.reconcile import (
+    from hermes_trove.reconcile import (
         _REPLAY_IDENTITY_ABSENT_CONTENT_PREFIX,
         _count_leading_reserved_prefixes,
     )
@@ -369,17 +369,17 @@ def test_prefix_count_scan_is_not_quadratic():
 def test_claimed_sanitation_releases_lock_on_fallback(tmp_path):
     """Round-3 finding 4041509641: when the cleanup-only path does not apply,
     the claim lock must be released before model-backed compaction runs."""
-    from hermes_lcm.compaction import _SanitationFallbackNeeded
-    from hermes_lcm.config import LCMConfig
+    from hermes_trove.compaction import _SanitationFallbackNeeded
+    from hermes_trove.config import TROVEConfig
 
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / "fb.db"),
         large_output_externalization_path=str(tmp_path / "fb-ext"),
         fresh_tail_count=1,
         leaf_chunk_tokens=1,
         context_threshold=0.5,
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "fb-home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "fb-home"))
     engine.on_session_start("fb-session", platform="synthetic",
                             conversation_id="fb-conversation", context_length=100_000)
 
@@ -426,14 +426,14 @@ def test_cleanup_decodes_absent_sentinel_to_none(tmp_path):
     cleaned = engine._active_cleanup_replay_identity(identity)
     assert cleaned is not None
     # The sentinel must NOT survive as literal text in the cleaned content.
-    assert "[LCM replay identity: content absent]" not in cleaned[1]
+    assert "[TROVE replay identity: content absent]" not in cleaned[1]
 
 
 def test_sidecar_restored_content_is_re_escaped(tmp_path):
     """Round-3 finding 4041846916: content restored from a sidecar whose text
     begins with a reserved prefix must carry the counted escape encoding, or
     live and stored identities diverge."""
-    from hermes_lcm.reconcile import (
+    from hermes_trove.reconcile import (
         _REPLAY_IDENTITY_ABSENT_CONTENT_PREFIX,
         _escape_replay_identity_content,
     )
@@ -441,7 +441,7 @@ def test_sidecar_restored_content_is_re_escaped(tmp_path):
     raw = _REPLAY_IDENTITY_ABSENT_CONTENT_PREFIX + " payload tail"
     # The escaped live identity encoding:
     expected = _escape_replay_identity_content(raw)
-    assert expected.startswith("[LCM replay identity: content escaped] x1 ")
+    assert expected.startswith("[TROVE replay identity: content escaped] x1 ")
     # The identity fn applied to a payload-restored content string must produce
     # the same encoding (simulated by computing the identity of a message whose
     # content IS the restored raw string):

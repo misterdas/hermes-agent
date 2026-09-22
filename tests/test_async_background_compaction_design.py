@@ -12,8 +12,8 @@ import json
 
 import pytest
 
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.engine import LCMEngine
+from hermes_trove.config import TROVEConfig
+from hermes_trove.engine import TROVEEngine
 
 pytestmark = pytest.mark.xfail(
     strict=True,
@@ -22,7 +22,7 @@ pytestmark = pytest.mark.xfail(
 
 
 def _engine(tmp_path, *, session_id="async-session", conversation_id="async-conversation"):
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / f"{session_id}.db"),
         fresh_tail_count=2,
         leaf_chunk_tokens=20,
@@ -32,7 +32,7 @@ def _engine(tmp_path, *, session_id="async-session", conversation_id="async-conv
     # written before the dataclass grows the real fields.
     config.async_background_compaction_enabled = True
     config.async_background_compaction_worker_enabled = False
-    engine = LCMEngine(config=config)
+    engine = TROVEEngine(config=config)
     engine.on_session_start(
         session_id,
         conversation_id=conversation_id,
@@ -57,13 +57,13 @@ def _messages(count=10, *, prefix="message"):
 
 def test_default_disabled_async_compaction_is_inert(tmp_path):
     """Given default config, background prep is disabled and reports zero async debt."""
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / "disabled.db"),
         fresh_tail_count=2,
         leaf_chunk_tokens=20,
         context_threshold=0.10,
     )
-    engine = LCMEngine(config=config)
+    engine = TROVEEngine(config=config)
     engine.on_session_start(
         "disabled-session",
         conversation_id="disabled-conversation",
@@ -77,7 +77,7 @@ def test_default_disabled_async_compaction_is_inert(tmp_path):
         result = engine.prepare_background_compaction_once(messages)
 
         assert result is None or result.state == "disabled"
-        status = json.loads(engine.handle_tool_call("lcm_status", {}))
+        status = json.loads(engine.handle_tool_call("trove_status", {}))
         assert status["async_compaction"]["enabled"] is False
         assert status["async_compaction"]["pending_batches"] == 0
         assert status["async_compaction"]["prepared_batches"] == 0
@@ -97,10 +97,10 @@ def test_pending_summaries_are_invisible_until_atomic_promotion(tmp_path):
 
         assert batch.state == "ready"
         assert engine._dag.get_session_node_count(engine.current_session_id) == 0
-        status = json.loads(engine.handle_tool_call("lcm_status", {}))
+        status = json.loads(engine.handle_tool_call("trove_status", {}))
         assert status["async_compaction"]["prepared_batches"] == 1
         assert status["dag"]["total_nodes"] == 0
-        grep = json.loads(engine.handle_tool_call("lcm_grep", {"query": "message"}))
+        grep = json.loads(engine.handle_tool_call("trove_grep", {"query": "message"}))
         assert all(result.get("kind") != "pending_summary" for result in grep.get("results", []))
     finally:
         engine.shutdown()
@@ -193,7 +193,7 @@ def test_foreground_compaction_race_supersedes_pending_batch(tmp_path, monkeypat
     engine = _engine(tmp_path)
     try:
         monkeypatch.setattr(
-            "hermes_lcm.engine.summarize_with_escalation",
+            "hermes_trove.engine.summarize_with_escalation",
             lambda **kwargs: ("foreground summary", 0),
         )
         messages = _messages()
@@ -220,7 +220,7 @@ def test_summary_failure_backoff_does_not_wedge_foreground_compaction(tmp_path, 
         engine.ingest(messages)
 
         monkeypatch.setattr(
-            "hermes_lcm.engine.summarize_with_escalation",
+            "hermes_trove.engine.summarize_with_escalation",
             lambda **kwargs: (_ for _ in ()).throw(RuntimeError("summary spend backoff open")),
         )
         batch = engine.prepare_background_compaction_once(messages)
@@ -228,7 +228,7 @@ def test_summary_failure_backoff_does_not_wedge_foreground_compaction(tmp_path, 
         assert engine.get_async_compaction_status()["failed_batches"] == 1
 
         monkeypatch.setattr(
-            "hermes_lcm.engine.summarize_with_escalation",
+            "hermes_trove.engine.summarize_with_escalation",
             lambda **kwargs: ("foreground recovery summary", 0),
         )
         compacted = engine.compress(messages, current_tokens=engine.threshold_tokens + 1)
@@ -242,10 +242,10 @@ def test_summary_failure_backoff_does_not_wedge_foreground_compaction(tmp_path, 
 def test_restart_recovers_or_discards_pending_batches_safely(tmp_path):
     """Given pending/preparing rows at shutdown, restart never treats them as canonical."""
     db_path = tmp_path / "restart.db"
-    config = LCMConfig(database_path=str(db_path), fresh_tail_count=2, leaf_chunk_tokens=20)
+    config = TROVEConfig(database_path=str(db_path), fresh_tail_count=2, leaf_chunk_tokens=20)
     config.async_background_compaction_enabled = True
 
-    engine = LCMEngine(config=config)
+    engine = TROVEEngine(config=config)
     engine.on_session_start("restart-session", conversation_id="restart-conversation", context_length=1_000)
     messages = _messages()
     try:
@@ -255,7 +255,7 @@ def test_restart_recovers_or_discards_pending_batches_safely(tmp_path):
     finally:
         engine.shutdown()
 
-    restarted = LCMEngine(config=config)
+    restarted = TROVEEngine(config=config)
     try:
         restarted.on_session_start("restart-session", conversation_id="restart-conversation", context_length=1_000)
         status = restarted.get_async_compaction_status()
@@ -321,8 +321,8 @@ def test_status_and_doctor_report_async_compaction_counts(tmp_path):
         engine.reject_prepared_compaction(ready.batch_id, reason="policy_fingerprint_mismatch")
         engine.prepare_background_compaction_once(messages)
 
-        status = json.loads(engine.handle_tool_call("lcm_status", {}))
-        doctor = json.loads(engine.handle_tool_call("lcm_doctor", {}))
+        status = json.loads(engine.handle_tool_call("trove_status", {}))
+        doctor = json.loads(engine.handle_tool_call("trove_doctor", {}))
 
         assert status["async_compaction"]["prepared_batches"] == 1
         assert status["async_compaction"]["rejected_batches"] == 1

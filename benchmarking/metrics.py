@@ -1,4 +1,4 @@
-"""Metric helpers for deterministic LCM benchmark replays."""
+"""Metric helpers for deterministic TROVE benchmark replays."""
 
 from __future__ import annotations
 

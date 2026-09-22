@@ -1,4 +1,4 @@
-"""Tool handlers for LCM — the code that runs when the LLM calls each tool."""
+"""Tool handlers for TROVE — the code that runs when the LLM calls each tool."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ from .diagnostics import (
 from .dag import build_nodes_fts_spec
 from .db_bootstrap import (
     check_external_content_fts_integrity,
-    inspect_lcm_schema_health,
+    inspect_trove_schema_health,
     load_integrity_failed,
 )
 from .extraction import sanitize_pre_compaction_content
@@ -44,7 +44,7 @@ from .ingest_protection import (
     scan_sqlite_payload_risks,
     sensitive_pattern_status,
 )
-from .model_routing import apply_lcm_model_route
+from .model_routing import apply_trove_model_route
 from .prompt_boundary import build_untrusted_data_messages
 from .assertion_state import query_assertion_state
 from .assertion_store import ASSERTION_KINDS
@@ -67,8 +67,8 @@ from .rollup_periods import (
 )
 from .retrieval_core import (
     _hit_identity,
-    _lcm_grep_confidence,
-    _lcm_grep_deadline_error,
+    _trove_grep_confidence,
+    _trove_grep_deadline_error,
     _resolve_semantic_conversation_scope,
     _shape_message_hit,
     _shape_summary_hit,
@@ -86,7 +86,7 @@ from .store import build_message_fts_spec
 from .vector_store import VectorStore
 
 if TYPE_CHECKING:
-    from .engine import LCMEngine
+    from .engine import TROVEEngine
 
 
 logger = logging.getLogger(__name__)
@@ -135,12 +135,12 @@ def _combined_result_sort_key(result: dict[str, Any], sort: str) -> tuple:
         return (rank_tier, -sort_timestamp, type_bias, role_bias, rank_value, 0.0, float("inf"))
     return (rank_tier, -sort_timestamp, type_bias, 0, rank_value, 0.0, role_bias)
 
-def _require_engine(kwargs: Dict[str, Any]) -> "LCMEngine | None":
+def _require_engine(kwargs: Dict[str, Any]) -> "TROVEEngine | None":
     engine = kwargs.get("engine")
     return engine if engine is not None else None
 
 
-def _get_session_node(engine: "LCMEngine", node_id: int):
+def _get_session_node(engine: "TROVEEngine", node_id: int):
     node = engine._dag.get_node(node_id)
     if node is None or node.session_id != engine.current_session_id:
         return None
@@ -148,7 +148,7 @@ def _get_session_node(engine: "LCMEngine", node_id: int):
 
 
 def _get_externalized_payload(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     ref: str,
     *,
     allowed_session_ids: set[str] | None = None,
@@ -256,62 +256,62 @@ def _parse_strict_int(value: Any, name: str) -> tuple[int | None, str | None]:
         return None, f"{name} must be an integer"
 
 
-_LCM_GREP_VALID_SCOPES = frozenset({"current", "all", "session"})
-_LCM_GREP_VALID_CONTENT_SCOPES = frozenset({"history", "externalized", "both"})
-_LCM_GREP_HARD_LIMIT_CAP = 200
-_LCM_GREP_EXTERNALIZED_FILE_CAP = 256
-_LCM_GREP_EXTERNALIZED_DISCOVERY_CAP = 4096
-_LCM_GREP_EXTERNALIZED_METADATA_READ_BYTES = 64 * 1024
-_LCM_GREP_EXTERNALIZED_CONTENT_BYTES = 512_000
-_LCM_GREP_EXTERNALIZED_DOCUMENT_TAIL_BYTES = 64 * 1024
-_LCM_GREP_RESPONSE_CHAR_CAP = 64_000
-_LCM_RECENT_DEFAULT_LIMIT = 10
-_LCM_RECENT_HARD_LIMIT_CAP = 200
-_LCM_RECENT_FRONTIER_WORK_LIMIT = 4096
-_LCM_GREP_HYBRID_CANDIDATE_CAP = 500
-_LCM_GREP_SEMANTIC_SNIPPET_CHARS = 300
-_LCM_GREP_RRF_K = 60
-# -- lcm_recall (cross-conversation forever-memory recall) --
-_LCM_RECALL_DEFAULT_LIMIT = 8
-_LCM_RECALL_LIMIT_CAP = 25
-_LCM_RECALL_DEFAULT_SCOPE_BIAS = 0.5
-_LCM_RECALL_SNIPPET_CHARS = 300
-_LCM_RECALL_RESPONSE_CHAR_CAP = 64_000
-_LCM_QUERY_STATE_DEFAULT_LIMIT = 25
-_LCM_QUERY_STATE_LIMIT_CAP = 50
-_LCM_QUERY_STATE_RESPONSE_CHAR_CAP = 64_000
-_LCM_COMPUTE_RESPONSE_CHAR_CAP = 64_000
-_LCM_RECALL_VALID_INCLUDE = frozenset({"all", "summaries", "verbatim"})
-_LCM_RECALL_VALID_DETAIL = frozenset({"snippets", "answer_ready"})
-_LCM_RECALL_ANSWER_READY_PER_SESSION_LIMIT = 5
-_LCM_RECALL_ANSWER_READY_EXPANDED_HIT_LIMIT = 8
+_TROVE_GREP_VALID_SCOPES = frozenset({"current", "all", "session"})
+_TROVE_GREP_VALID_CONTENT_SCOPES = frozenset({"history", "externalized", "both"})
+_TROVE_GREP_HARD_LIMIT_CAP = 200
+_TROVE_GREP_EXTERNALIZED_FILE_CAP = 256
+_TROVE_GREP_EXTERNALIZED_DISCOVERY_CAP = 4096
+_TROVE_GREP_EXTERNALIZED_METADATA_READ_BYTES = 64 * 1024
+_TROVE_GREP_EXTERNALIZED_CONTENT_BYTES = 512_000
+_TROVE_GREP_EXTERNALIZED_DOCUMENT_TAIL_BYTES = 64 * 1024
+_TROVE_GREP_RESPONSE_CHAR_CAP = 64_000
+_TROVE_RECENT_DEFAULT_LIMIT = 10
+_TROVE_RECENT_HARD_LIMIT_CAP = 200
+_TROVE_RECENT_FRONTIER_WORK_LIMIT = 4096
+_TROVE_GREP_HYBRID_CANDIDATE_CAP = 500
+_TROVE_GREP_SEMANTIC_SNIPPET_CHARS = 300
+_TROVE_GREP_RRF_K = 60
+# -- trove_recall (cross-conversation forever-memory recall) --
+_TROVE_RECALL_DEFAULT_LIMIT = 8
+_TROVE_RECALL_LIMIT_CAP = 25
+_TROVE_RECALL_DEFAULT_SCOPE_BIAS = 0.5
+_TROVE_RECALL_SNIPPET_CHARS = 300
+_TROVE_RECALL_RESPONSE_CHAR_CAP = 64_000
+_TROVE_QUERY_STATE_DEFAULT_LIMIT = 25
+_TROVE_QUERY_STATE_LIMIT_CAP = 50
+_TROVE_QUERY_STATE_RESPONSE_CHAR_CAP = 64_000
+_TROVE_COMPUTE_RESPONSE_CHAR_CAP = 64_000
+_TROVE_RECALL_VALID_INCLUDE = frozenset({"all", "summaries", "verbatim"})
+_TROVE_RECALL_VALID_DETAIL = frozenset({"snippets", "answer_ready"})
+_TROVE_RECALL_ANSWER_READY_PER_SESSION_LIMIT = 5
+_TROVE_RECALL_ANSWER_READY_EXPANDED_HIT_LIMIT = 8
 # Bounded per-node fan-out when reference-strict delivery carries summary-KNN
 # relevance onto the source messages beneath a ranked node. Small on purpose:
 # the point is to make the SESSION reachable with citable evidence, and the FTS
 # and chunk arms are what rank individual messages inside it.
-_LCM_RECALL_SUMMARY_SOURCE_PER_NODE = 4
+_TROVE_RECALL_SUMMARY_SOURCE_PER_NODE = 4
 # How many candidate rows reference-strict selection reads per batch while it
 # walks the ranking. Verification needs the row, so the walk reads AHEAD of the
 # cursor in waves: a bounded number of batched reads per request rather than one
 # read per candidate it has to skip.
-_LCM_RECALL_STRICT_READ_WAVE = 32
-_LCM_RECALL_ANSWER_READY_CONTENT_CHARS = 2_400
+_TROVE_RECALL_STRICT_READ_WAVE = 32
+_TROVE_RECALL_ANSWER_READY_CONTENT_CHARS = 2_400
 # Recency boost half-life (30 days) and its floor: a memory's rank_score is
 # multiplied by 2**(-age/half_life), clamped so age never zeroes an otherwise
 # strong hit — it only nudges toward newer memories.
-_LCM_RECALL_RECENCY_HALF_LIFE_S = 30 * 24 * 3600.0
-_LCM_RECALL_RECENCY_FLOOR = 0.5
-_LCM_RECALL_RRF_K = 60
-_LCM_LOAD_SESSION_DEFAULT_LIMIT = 100
-_LCM_LOAD_SESSION_HARD_LIMIT_CAP = 200
-_LCM_LOAD_SESSION_DEFAULT_MAX_CONTENT_CHARS = 4000
-_LCM_LOAD_SESSION_HARD_MAX_CONTENT_CHARS = 20_000
-_LCM_RECENT_MAX_RESPONSE_CHARS = _LCM_LOAD_SESSION_HARD_MAX_CONTENT_CHARS
-_LCM_INSPECT_DEFAULT_LIMIT = 20
-_LCM_INSPECT_HARD_LIMIT_CAP = 200
-_LCM_INSPECT_REF_SCAN_MESSAGE_LIMIT = 10_000
-_LCM_INSPECT_PAYLOAD_METADATA_READ_BYTES = 16_384
-_LCM_INSPECT_MAX_RESPONSE_CHARS = 20_000
+_TROVE_RECALL_RECENCY_HALF_LIFE_S = 30 * 24 * 3600.0
+_TROVE_RECALL_RECENCY_FLOOR = 0.5
+_TROVE_RECALL_RRF_K = 60
+_TROVE_LOAD_SESSION_DEFAULT_LIMIT = 100
+_TROVE_LOAD_SESSION_HARD_LIMIT_CAP = 200
+_TROVE_LOAD_SESSION_DEFAULT_MAX_CONTENT_CHARS = 4000
+_TROVE_LOAD_SESSION_HARD_MAX_CONTENT_CHARS = 20_000
+_TROVE_RECENT_MAX_RESPONSE_CHARS = _TROVE_LOAD_SESSION_HARD_MAX_CONTENT_CHARS
+_TROVE_INSPECT_DEFAULT_LIMIT = 20
+_TROVE_INSPECT_HARD_LIMIT_CAP = 200
+_TROVE_INSPECT_REF_SCAN_MESSAGE_LIMIT = 10_000
+_TROVE_INSPECT_PAYLOAD_METADATA_READ_BYTES = 16_384
+_TROVE_INSPECT_MAX_RESPONSE_CHARS = 20_000
 _OPERATOR_TEXT_FIELD_MAX_CHARS = 1_000
 
 
@@ -375,11 +375,11 @@ def _shape_assertion_state_relation(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def lcm_query_state(args: Dict[str, Any], **kwargs) -> str:
+def trove_query_state(args: Dict[str, Any], **kwargs) -> str:
     """Return bounded typed assertion state with exact source provenance."""
     engine = _require_engine(kwargs)
     if engine is None:
-        return json.dumps({"error": "LCM engine not initialized"})
+        return json.dumps({"error": "TROVE engine not initialized"})
     store = getattr(engine, "_assertions", None)
     if store is None:
         return json.dumps({
@@ -413,7 +413,7 @@ def lcm_query_state(args: Dict[str, Any], **kwargs) -> str:
     if as_of_error:
         return json.dumps({"error": as_of_error})
     parsed_limit, limit_error = _parse_strict_int(
-        args.get("limit", _LCM_QUERY_STATE_DEFAULT_LIMIT),
+        args.get("limit", _TROVE_QUERY_STATE_DEFAULT_LIMIT),
         "limit",
     )
     if limit_error:
@@ -421,7 +421,7 @@ def lcm_query_state(args: Dict[str, Any], **kwargs) -> str:
     if parsed_limit is None or parsed_limit <= 0:
         return json.dumps({"error": "limit must be a positive integer"})
     requested_limit = parsed_limit
-    limit = min(requested_limit, _LCM_QUERY_STATE_LIMIT_CAP)
+    limit = min(requested_limit, _TROVE_QUERY_STATE_LIMIT_CAP)
 
     try:
         result = query_assertion_state(
@@ -461,20 +461,20 @@ def lcm_query_state(args: Dict[str, Any], **kwargs) -> str:
         "assertions_truncated": result.assertions_truncated,
         "relations_truncated": result.relations_truncated,
         "response_truncated": False,
-        "response_char_cap": _LCM_QUERY_STATE_RESPONSE_CHAR_CAP,
+        "response_char_cap": _TROVE_QUERY_STATE_RESPONSE_CHAR_CAP,
         "provenance": {
-            "store": "same_profile_lcm.db",
+            "store": "same_profile_trove.db",
             "evidence": "exact_source_spans",
             "recency_resolution": "disabled",
         },
     }
-    if requested_limit > _LCM_QUERY_STATE_LIMIT_CAP:
+    if requested_limit > _TROVE_QUERY_STATE_LIMIT_CAP:
         response["limit_clamped_from"] = requested_limit
 
     omitted = 0
     while assertions:
         encoded = json.dumps(response, ensure_ascii=False, separators=(",", ":"))
-        if len(encoded) <= _LCM_QUERY_STATE_RESPONSE_CHAR_CAP:
+        if len(encoded) <= _TROVE_QUERY_STATE_RESPONSE_CHAR_CAP:
             return encoded
         assertions.pop()
         omitted += 1
@@ -533,18 +533,18 @@ def _bound_operator_strings(value: Any) -> tuple[Any, int]:
 
 
 def _bounded_inspect_json(response: dict[str, Any]) -> str:
-    """Serialize ``lcm_inspect`` under one final response-size invariant."""
+    """Serialize ``trove_inspect`` under one final response-size invariant."""
     payload, truncated_fields = _bound_operator_strings(response)
     rollup_truncated_fields = (
         (payload.get("temporal_rollups") or {}).get("truncated_fields") or []
     )
     total_truncated_fields = truncated_fields + len(rollup_truncated_fields)
-    payload["char_limit"] = _LCM_INSPECT_MAX_RESPONSE_CHARS
+    payload["char_limit"] = _TROVE_INSPECT_MAX_RESPONSE_CHARS
     payload["truncated"] = bool(total_truncated_fields)
     if total_truncated_fields:
         payload["truncated_field_count"] = total_truncated_fields
     encoded = json.dumps(payload, ensure_ascii=False)
-    if len(encoded) <= _LCM_INSPECT_MAX_RESPONSE_CHARS:
+    if len(encoded) <= _TROVE_INSPECT_MAX_RESPONSE_CHARS:
         return encoded
 
     # If cardinality rather than one text field exceeds the cap, keep whole
@@ -567,7 +567,7 @@ def _bounded_inspect_json(response: dict[str, Any]) -> str:
         "limit_clamped_from",
     ]
     compact: dict[str, Any] = {
-        "char_limit": _LCM_INSPECT_MAX_RESPONSE_CHARS,
+        "char_limit": _TROVE_INSPECT_MAX_RESPONSE_CHARS,
         "truncated": True,
         "truncation": {
             "reason": "response_char_limit",
@@ -585,14 +585,14 @@ def _bounded_inspect_json(response: dict[str, Any]) -> str:
         if key not in payload:
             continue
         compact[key] = payload[key]
-        if len(json.dumps(compact, ensure_ascii=False)) <= _LCM_INSPECT_MAX_RESPONSE_CHARS - 1_000:
+        if len(json.dumps(compact, ensure_ascii=False)) <= _TROVE_INSPECT_MAX_RESPONSE_CHARS - 1_000:
             retained.append(key)
         else:
             compact.pop(key)
             omitted.append(key)
     compact["truncation"]["omitted_top_level_sections"] = omitted
     encoded = json.dumps(compact, ensure_ascii=False)
-    while len(encoded) > _LCM_INSPECT_MAX_RESPONSE_CHARS and retained:
+    while len(encoded) > _TROVE_INSPECT_MAX_RESPONSE_CHARS and retained:
         key = retained.pop()
         compact.pop(key, None)
         omitted.append(key)
@@ -618,12 +618,12 @@ def _compute_stage(
     }
 
 
-def lcm_compute(args: Dict[str, Any], **kwargs) -> str:
+def trove_compute(args: Dict[str, Any], **kwargs) -> str:
     """Run a pure operation over exact, selector-supplied evidence refs."""
     total_started = time.perf_counter()
     engine = _require_engine(kwargs)
     if engine is None:
-        return json.dumps({"error": "LCM engine not initialized"})
+        return json.dumps({"error": "TROVE engine not initialized"})
 
     question = str(args.get("question") or "").strip()
     question_date = args.get("question_date")
@@ -852,10 +852,10 @@ def lcm_compute(args: Dict[str, Any], **kwargs) -> str:
                 (time.perf_counter() - total_started) * 1_000.0, 3
             ),
         },
-        "response_char_cap": _LCM_COMPUTE_RESPONSE_CHAR_CAP,
+        "response_char_cap": _TROVE_COMPUTE_RESPONSE_CHAR_CAP,
     }
     encoded = json.dumps(response, ensure_ascii=False)
-    if len(encoded) > _LCM_COMPUTE_RESPONSE_CHAR_CAP:
+    if len(encoded) > _TROVE_COMPUTE_RESPONSE_CHAR_CAP:
         return json.dumps({
             "status": "fallback",
             "reason": "deterministic response exceeded its bounded response cap",
@@ -865,25 +865,25 @@ def lcm_compute(args: Dict[str, Any], **kwargs) -> str:
     return encoded
 
 
-def lcm_evidence_pack(args: Dict[str, Any], **kwargs) -> str:
+def trove_evidence_pack(args: Dict[str, Any], **kwargs) -> str:
     """Build a bounded exact-evidence packet and optional canonical trace."""
     engine = _require_engine(kwargs)
     if engine is None:
-        return json.dumps({"error": "LCM engine not initialized"})
+        return json.dumps({"error": "TROVE engine not initialized"})
     # Lazy import preserves the plugin's order-independent module bootstrap.
     from .evidence_pack import build_evidence_pack
     return build_evidence_pack(
         args,
         engine=engine,
-        retrieve=lambda recall_args: lcm_recall(recall_args, engine=engine),
+        retrieve=lambda recall_args: trove_recall(recall_args, engine=engine),
     )
 
 
-def lcm_compile_evidence(args: Dict[str, Any], **kwargs) -> str:
+def trove_compile_evidence(args: Dict[str, Any], **kwargs) -> str:
     """Compile evidence through legacy proposal or deterministic auto mode."""
     engine = _require_engine(kwargs)
     if engine is None:
-        return json.dumps({"error": "LCM engine not initialized"})
+        return json.dumps({"error": "TROVE engine not initialized"})
     # Lazy import preserves the plugin's order-independent module bootstrap.
     from .evidence_compiler import compile_evidence, compile_preanswer_evidence
 
@@ -896,7 +896,7 @@ def lcm_compile_evidence(args: Dict[str, Any], **kwargs) -> str:
             engine=engine,
             baseline_refs=args.get("baseline_refs") or (),
             question_as_of=args.get("question_date"),
-            retrieve=lambda recall_args: lcm_recall(recall_args, engine=engine),
+            retrieve=lambda recall_args: trove_recall(recall_args, engine=engine),
             enabled=True,
             budgets=args.get("budgets"),
         )
@@ -909,7 +909,7 @@ def lcm_compile_evidence(args: Dict[str, Any], **kwargs) -> str:
         baseline_refs=args.get("baseline_refs") or (),
         question_date=args.get("question_date"),
         selector=lambda _request: proposal,
-        retrieve=lambda recall_args: lcm_recall(recall_args, engine=engine),
+        retrieve=lambda recall_args: trove_recall(recall_args, engine=engine),
         enabled=True,
         persist_view=args.get("persist_view") is True,
         budgets=args.get("budgets"),
@@ -917,8 +917,8 @@ def lcm_compile_evidence(args: Dict[str, Any], **kwargs) -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
-_LCM_RETRIEVE_RESPONSE_CHAR_CAP = 64_000
-_LCM_RETRIEVE_ARGUMENTS = frozenset({
+_TROVE_RETRIEVE_RESPONSE_CHAR_CAP = 64_000
+_TROVE_RETRIEVE_ARGUMENTS = frozenset({
     "action",
     "retrieval_id",
     "question",
@@ -934,17 +934,17 @@ _LCM_RETRIEVE_ARGUMENTS = frozenset({
 })
 
 
-def lcm_retrieve(args: Dict[str, Any], **kwargs) -> str:
+def trove_retrieve(args: Dict[str, Any], **kwargs) -> str:
     """Drive one bounded retrieval episode inside the answerer's tool turn."""
     engine = _require_engine(kwargs)
     if engine is None:
-        return json.dumps({"error": "LCM engine not initialized"})
+        return json.dumps({"error": "TROVE engine not initialized"})
     controller = getattr(engine, "_adaptive_retrieval", None)
     if controller is None:
         return json.dumps({
             "status": "disabled",
             "reason": "adaptive retrieval is disabled",
-            "enable_with": "LCM_ADAPTIVE_RETRIEVAL_ENABLED=true",
+            "enable_with": "TROVE_ADAPTIVE_RETRIEVAL_ENABLED=true",
             "provenance": {
                 "controller": {
                     "transport": "deterministic_local",
@@ -955,12 +955,12 @@ def lcm_retrieve(args: Dict[str, Any], **kwargs) -> str:
         })
     if not isinstance(args, dict):
         return json.dumps({"status": "error", "error": "arguments must be an object"})
-    unknown = set(args) - _LCM_RETRIEVE_ARGUMENTS
+    unknown = set(args) - _TROVE_RETRIEVE_ARGUMENTS
     if unknown:
         return json.dumps({
             "status": "error",
             "error": (
-                "unsupported lcm_retrieve arguments: "
+                "unsupported trove_retrieve arguments: "
                 + ", ".join(sorted(str(value) for value in unknown))
             ),
         })
@@ -1021,11 +1021,11 @@ def lcm_retrieve(args: Dict[str, Any], **kwargs) -> str:
             },
         }
     encoded = json.dumps(result, ensure_ascii=False)
-    if len(encoded) > _LCM_RETRIEVE_RESPONSE_CHAR_CAP:
+    if len(encoded) > _TROVE_RETRIEVE_RESPONSE_CHAR_CAP:
         return json.dumps({
             "status": "error",
             "error": "adaptive retrieval response exceeded its bounded response cap",
-            "response_char_cap": _LCM_RETRIEVE_RESPONSE_CHAR_CAP,
+            "response_char_cap": _TROVE_RETRIEVE_RESPONSE_CHAR_CAP,
         })
     return encoded
 
@@ -1148,7 +1148,7 @@ def _is_compact_externalized_marker(content: str, ref: str | None) -> bool:
         or content.startswith("[GC'd externalized tool output:")
         or content.startswith("[Externalized payload:")
         or content.startswith("[GC'd externalized payload:")
-        or "[Externalized LCM ingest payload:" in content
+        or "[Externalized TROVE ingest payload:" in content
     )
 
 
@@ -1183,7 +1183,7 @@ def _pagination_payload(
 
 
 def _expand_message_sources(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     node,
     max_tokens: int,
     *,
@@ -1328,7 +1328,7 @@ def _expand_message_sources(
 
 
 def _expand_child_nodes(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     node,
     max_tokens: int | None = None,
     *,
@@ -1412,7 +1412,7 @@ def _bounded_source_path_payload(source_path: list[dict[str, int]]) -> dict[str,
 
 
 def _collect_descendant_evidence_blocks(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     node,
     max_tokens: int,
     *,
@@ -1503,7 +1503,7 @@ def _collect_descendant_evidence_blocks(
 
 
 def _collect_context_blocks_for_node(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     node,
     max_tokens: int,
     *,
@@ -1567,7 +1567,7 @@ def _collect_context_blocks_for_node(
 
 
 def _collect_raw_match_context_block(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     rows: list[dict[str, Any]],
     max_tokens: int,
     *,
@@ -1699,13 +1699,13 @@ def _synthesize_expansion_answer(
         "If the retrieved context is insufficient, say so plainly."
     )
     messages = build_untrusted_data_messages(
-        operation="lcm_expand_query",
+        operation="trove_expand_query",
         system_instructions=system_prompt,
         request={"question": prompt},
         sources=[
             {
                 "provenance": {
-                    "source_type": "expanded_lcm_context",
+                    "source_type": "expanded_trove_context",
                     "block_count": len(context_blocks),
                 },
                 "content": context_blocks,
@@ -1718,7 +1718,7 @@ def _synthesize_expansion_answer(
         "max_tokens": max_tokens,
         "timeout": timeout,
     }
-    apply_lcm_model_route(call_kwargs, model)
+    apply_trove_model_route(call_kwargs, model)
     response = call_llm(**call_kwargs)
     content = response.choices[0].message.content
     if not isinstance(content, str):
@@ -1758,7 +1758,7 @@ def _slice_loaded_content(content: Any, max_content_chars: int) -> dict[str, Any
 
 
 def _serialize_loaded_message(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     row: dict[str, Any],
     max_content_chars: int,
     *,
@@ -1787,37 +1787,37 @@ def _serialize_loaded_message(
         item["tool_name"] = row.get("tool_name")
     store_id = row.get("store_id")
     if include_exact_ref and isinstance(store_id, int) and content_slice["content_returned_chars"] > 0:
-        item["exact_ref"] = f"lcm:{store_id}:0-{content_slice['content_returned_chars']}"
+        item["exact_ref"] = f"trove:{store_id}:0-{content_slice['content_returned_chars']}"
     return item
 
 
-def lcm_load_session(args: Dict[str, Any], **kwargs) -> str:
+def trove_load_session(args: Dict[str, Any], **kwargs) -> str:
     """Load an ordered, bounded raw-message page for one explicit session_id."""
     engine = _require_engine(kwargs)
     if engine is None:
-        return json.dumps({"error": "LCM engine not initialized"})
+        return json.dumps({"error": "TROVE engine not initialized"})
 
     session_id = str(args.get("session_id") or "").strip()
     if not session_id:
         return json.dumps({"error": "session_id is required"})
 
-    raw_limit_arg = args.get("limit", _LCM_LOAD_SESSION_DEFAULT_LIMIT)
+    raw_limit_arg = args.get("limit", _TROVE_LOAD_SESSION_DEFAULT_LIMIT)
     parsed_limit, limit_error = _parse_strict_int(raw_limit_arg, "limit")
     if limit_error:
         return json.dumps({"error": limit_error})
     if parsed_limit is None or parsed_limit <= 0:
         return json.dumps({"error": "limit must be a positive integer"})
     requested_limit = parsed_limit
-    limit = min(requested_limit, _LCM_LOAD_SESSION_HARD_LIMIT_CAP)
+    limit = min(requested_limit, _TROVE_LOAD_SESSION_HARD_LIMIT_CAP)
 
-    raw_max_content_chars = args.get("max_content_chars", _LCM_LOAD_SESSION_DEFAULT_MAX_CONTENT_CHARS)
+    raw_max_content_chars = args.get("max_content_chars", _TROVE_LOAD_SESSION_DEFAULT_MAX_CONTENT_CHARS)
     max_content_chars, max_content_error = _parse_strict_int(raw_max_content_chars, "max_content_chars")
     if max_content_error:
         return json.dumps({"error": max_content_error})
     if max_content_chars is None or max_content_chars <= 0:
         return json.dumps({"error": "max_content_chars must be a positive integer"})
     requested_max_content_chars = max_content_chars
-    max_content_chars = min(max_content_chars, _LCM_LOAD_SESSION_HARD_MAX_CONTENT_CHARS)
+    max_content_chars = min(max_content_chars, _TROVE_LOAD_SESSION_HARD_MAX_CONTENT_CHARS)
 
     after_store_id, cursor_error = _parse_strict_int(args.get("after_store_id", 0), "after_store_id")
     if cursor_error:
@@ -1885,9 +1885,9 @@ def lcm_load_session(args: Dict[str, Any], **kwargs) -> str:
         response["time_from"] = time_from
     if time_to is not None:
         response["time_to"] = time_to
-    if requested_limit > _LCM_LOAD_SESSION_HARD_LIMIT_CAP:
+    if requested_limit > _TROVE_LOAD_SESSION_HARD_LIMIT_CAP:
         response["limit_clamped_from"] = requested_limit
-    if requested_max_content_chars > _LCM_LOAD_SESSION_HARD_MAX_CONTENT_CHARS:
+    if requested_max_content_chars > _TROVE_LOAD_SESSION_HARD_MAX_CONTENT_CHARS:
         response["max_content_chars_clamped_from"] = requested_max_content_chars
     return json.dumps(response)
 
@@ -1913,7 +1913,7 @@ def _recent_expected_period_starts(window: RecentPeriodWindow) -> list[str]:
         first = window.start.date()
         last = (window.end - timedelta(microseconds=1)).date()
         day_count = (last - first).days + 1
-        if day_count > _LCM_RECENT_FRONTIER_WORK_LIMIT:
+        if day_count > _TROVE_RECENT_FRONTIER_WORK_LIMIT:
             return []
         days: list[str] = []
         current = first
@@ -1944,13 +1944,13 @@ def _recent_has_unready_rollups(
         expected_count = (last - first).days + 1
     else:
         expected_count = 1
-    if expected_count <= 0 or expected_count > _LCM_RECENT_FRONTIER_WORK_LIMIT:
+    if expected_count <= 0 or expected_count > _TROVE_RECENT_FRONTIER_WORK_LIMIT:
         return True
     start, end = _recent_rollup_bounds(window)
     ready_row = connection.execute(
         """
         SELECT COUNT(*)
-        FROM lcm_rollups
+        FROM trove_rollups
         WHERE period_kind = ?
           AND period_start >= ?
           AND period_start <= ?
@@ -1963,7 +1963,7 @@ def _recent_has_unready_rollups(
 
 
 def _session_has_window_content(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     window: RecentPeriodWindow,
     session_id: str,
 ) -> bool:
@@ -1993,7 +1993,7 @@ def _session_has_window_content(
 
 
 def _recent_ready_rollups(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     window: RecentPeriodWindow,
     scope: str,
 ) -> tuple[list[dict[str, object]], str | None]:
@@ -2033,14 +2033,14 @@ def _recent_ready_rollups(
             return [], "rollups_unavailable"
         return rollups, None
     except Exception:
-        logger.debug("LCM recent rollup read failed; using leaf summaries", exc_info=True)
+        logger.debug("TROVE recent rollup read failed; using leaf summaries", exc_info=True)
         return [], "rollups_unavailable"
     finally:
         if store is not None:
             store.close()
 
 
-def _recent_conversation_scope_session_ids(engine: "LCMEngine") -> list[str]:
+def _recent_conversation_scope_session_ids(engine: "TROVEEngine") -> list[str]:
     """Session ids that make up the current conversation family for fallback.
 
     Rotation reassigns retained higher-depth/carry-forward summaries into the
@@ -2068,7 +2068,7 @@ def _recent_conversation_scope_session_ids(engine: "LCMEngine") -> list[str]:
 
 
 def _recent_leaf_sections(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     window: RecentPeriodWindow,
     requested_scope: str,
     limit: int,
@@ -2088,7 +2088,7 @@ def _recent_leaf_sections(
 
 
 def _recent_leaf_sections_staged(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     window: RecentPeriodWindow,
     requested_scope: str,
     limit: int,
@@ -2097,7 +2097,7 @@ def _recent_leaf_sections_staged(
     if connection is None:
         return []
     # Include retained higher-depth/carry-forward summaries, not just depth-0
-    # current-session leaves, mirroring how lcm_grep/describe select across
+    # current-session leaves, mirroring how trove_grep/describe select across
     # depths and retained lineage (maintainer #389 blocker 2).
     # Include any summary whose covered span INTERSECTS the window, not only
     # those whose newest timestamp lands inside it: a summary spanning several
@@ -2117,7 +2117,7 @@ def _recent_leaf_sections_staged(
     # Probe one sentinel row beyond the work cap without an expression ORDER BY.
     # The session index can stop at the sentinel instead of scanning/sorting the
     # full matching corpus; ordering happens only after this set is proven small.
-    probe_params = [*params, _LCM_RECENT_FRONTIER_WORK_LIMIT + 1]
+    probe_params = [*params, _TROVE_RECENT_FRONTIER_WORK_LIMIT + 1]
     try:
         with engine._dag._db_lock:
             id_rows = connection.execute(
@@ -2129,24 +2129,24 @@ def _recent_leaf_sections_staged(
                 """,
                 probe_params,
             ).fetchall()
-            if len(id_rows) > _LCM_RECENT_FRONTIER_WORK_LIMIT:
+            if len(id_rows) > _TROVE_RECENT_FRONTIER_WORK_LIMIT:
                 logger.warning(
-                    "LCM recent fallback exceeded the %d-node canonical frontier "
+                    "TROVE recent fallback exceeded the %d-node canonical frontier "
                     "bound; returning no partial frontier",
-                    _LCM_RECENT_FRONTIER_WORK_LIMIT,
+                    _TROVE_RECENT_FRONTIER_WORK_LIMIT,
                 )
                 return []
             if not id_rows:
                 return []
 
             connection.execute(
-                "CREATE TEMP TABLE IF NOT EXISTS lcm_recent_frontier_ids "
+                "CREATE TEMP TABLE IF NOT EXISTS trove_recent_frontier_ids "
                 "(node_id INTEGER PRIMARY KEY) WITHOUT ROWID"
             )
-            connection.execute("DELETE FROM temp.lcm_recent_frontier_ids")
+            connection.execute("DELETE FROM temp.trove_recent_frontier_ids")
             try:
                 connection.executemany(
-                    "INSERT INTO temp.lcm_recent_frontier_ids(node_id) VALUES(?)",
+                    "INSERT INTO temp.trove_recent_frontier_ids(node_id) VALUES(?)",
                     ((int(row[0]),) for row in id_rows),
                 )
                 rows = connection.execute(
@@ -2156,23 +2156,23 @@ def _recent_leaf_sections_staged(
                            node.source_type,
                            COALESCE(node.earliest_at, node.created_at) AS earliest_at,
                            COALESCE(node.latest_at, node.created_at) AS latest_at
-                    FROM temp.lcm_recent_frontier_ids wanted
+                    FROM temp.trove_recent_frontier_ids wanted
                     JOIN summary_nodes node ON node.node_id = wanted.node_id
                     ORDER BY COALESCE(node.latest_at, node.created_at) DESC,
                              node.node_id DESC
                     """
                 ).fetchall()
             finally:
-                connection.execute("DELETE FROM temp.lcm_recent_frontier_ids")
+                connection.execute("DELETE FROM temp.trove_recent_frontier_ids")
 
             source_lineage = load_source_lineage(
                 connection,
                 [int(row[0]) for row in rows],
-                limit=_LCM_RECENT_FRONTIER_WORK_LIMIT,
+                limit=_TROVE_RECENT_FRONTIER_WORK_LIMIT,
             )
     except Exception:
         logger.debug(
-            "LCM recent fallback or transitive lineage read failed closed",
+            "TROVE recent fallback or transitive lineage read failed closed",
             exc_info=True,
         )
         return []
@@ -2211,7 +2211,7 @@ def _recent_leaf_sections_staged(
             )
         ][:limit]
     except Exception:
-        logger.debug("LCM recent canonical frontier failed closed", exc_info=True)
+        logger.debug("TROVE recent canonical frontier failed closed", exc_info=True)
         return []
     return [
         {
@@ -2270,7 +2270,7 @@ def _bounded_recent_json(response: dict[str, Any], sections: list[dict[str, Any]
     for section in sections:
         response["sections"].append(section)
         response["returned_sections"] = len(response["sections"])
-        if len(encode()) <= _LCM_RECENT_MAX_RESPONSE_CHARS:
+        if len(encode()) <= _TROVE_RECENT_MAX_RESPONSE_CHARS:
             continue
 
         response["sections"].pop()
@@ -2285,7 +2285,7 @@ def _bounded_recent_json(response: dict[str, Any], sections: list[dict[str, Any]
             candidate["content_truncated"] = midpoint < len(content)
             response["sections"].append(candidate)
             response["returned_sections"] = len(response["sections"])
-            fits = len(encode()) <= _LCM_RECENT_MAX_RESPONSE_CHARS
+            fits = len(encode()) <= _TROVE_RECENT_MAX_RESPONSE_CHARS
             response["sections"].pop()
             response["returned_sections"] = len(response["sections"])
             if fits:
@@ -2304,11 +2304,11 @@ def _bounded_recent_json(response: dict[str, Any], sections: list[dict[str, Any]
     return encode()
 
 
-def lcm_recent(args: Dict[str, Any], **kwargs) -> str:
+def trove_recent(args: Dict[str, Any], **kwargs) -> str:
     """Serve conversation rollups or fall back; cross-session rollups are future work."""
     engine = _require_engine(kwargs)
     if engine is None:
-        return json.dumps({"error": "LCM engine not initialized"})
+        return json.dumps({"error": "TROVE engine not initialized"})
 
     try:
         window = parse_recent_period(args.get("period"))
@@ -2320,7 +2320,7 @@ def lcm_recent(args: Dict[str, Any], **kwargs) -> str:
         return json.dumps({"error": "scope must be one of: conversation"})
 
     parsed_limit, limit_error = _parse_strict_int(
-        args.get("limit", _LCM_RECENT_DEFAULT_LIMIT),
+        args.get("limit", _TROVE_RECENT_DEFAULT_LIMIT),
         "limit",
     )
     if limit_error:
@@ -2328,7 +2328,7 @@ def lcm_recent(args: Dict[str, Any], **kwargs) -> str:
     if parsed_limit is None or parsed_limit <= 0:
         return json.dumps({"error": "limit must be a positive integer"})
     requested_limit = parsed_limit
-    limit = min(requested_limit, _LCM_RECENT_HARD_LIMIT_CAP)
+    limit = min(requested_limit, _TROVE_RECENT_HARD_LIMIT_CAP)
 
     rollup_scope = engine.current_session_id
     rollups, fallback_reason = _recent_ready_rollups(engine, window, rollup_scope)
@@ -2346,7 +2346,7 @@ def lcm_recent(args: Dict[str, Any], **kwargs) -> str:
             "end": _recent_iso(window.end),
         },
         "limit": limit,
-        "char_limit": _LCM_RECENT_MAX_RESPONSE_CHARS,
+        "char_limit": _TROVE_RECENT_MAX_RESPONSE_CHARS,
         "mode": "leaf_summary_fallback" if fallback else "rollup",
         # ``provenance.rollups`` is filled by _bounded_recent_json from the
         # sections actually returned (bounded by limit + char cap);
@@ -2358,25 +2358,25 @@ def lcm_recent(args: Dict[str, Any], **kwargs) -> str:
     }
     if fallback_reason is not None:
         response["fallback_reason"] = fallback_reason
-    if requested_limit > _LCM_RECENT_HARD_LIMIT_CAP:
+    if requested_limit > _TROVE_RECENT_HARD_LIMIT_CAP:
         response["limit_clamped_from"] = requested_limit
     return _bounded_recent_json(response, sections)
 
 
-def _lcm_grep_full_text(args: Dict[str, Any], **kwargs) -> str:
+def _trove_grep_full_text(args: Dict[str, Any], **kwargs) -> str:
     """Search raw messages + summaries with optional cross-session scoping.
 
     Default scope is the current session, preserving historical behavior and returning
     both raw-message and summary-node hits. Callers may explicitly request
-    ``session_scope='all'`` (every session in the local LCM database) or
+    ``session_scope='all'`` (every session in the local TROVE database) or
     ``session_scope='session'`` (a single ``session_id``); broader scopes return
     raw-message hits only and exist for bounded archive recovery over rows already
-    present in ``lcm.db``. ``limit`` is clamped to ``_LCM_GREP_HARD_LIMIT_CAP``
+    present in ``trove.db``. ``limit`` is clamped to ``_TROVE_GREP_HARD_LIMIT_CAP``
     regardless of input.
     """
     engine = _require_engine(kwargs)
     if engine is None:
-        return json.dumps({"error": "LCM engine not initialized"})
+        return json.dumps({"error": "TROVE engine not initialized"})
 
     query = args.get("query", "").strip()
     if not query:
@@ -2387,13 +2387,13 @@ def _lcm_grep_full_text(args: Dict[str, Any], **kwargs) -> str:
     if parsed_limit <= 0:
         return json.dumps({"error": "limit must be a positive integer"})
     requested_limit = parsed_limit
-    limit_cap = int(kwargs.get("_limit_cap", _LCM_GREP_HARD_LIMIT_CAP))
+    limit_cap = int(kwargs.get("_limit_cap", _TROVE_GREP_HARD_LIMIT_CAP))
     limit = min(requested_limit, limit_cap)
     sort = normalize_search_sort(args.get("sort"))
     source_limit = max(limit * 4, limit, 20)
 
     content_scope = str(args.get("content_scope") or "history").strip().lower()
-    if content_scope not in _LCM_GREP_VALID_CONTENT_SCOPES:
+    if content_scope not in _TROVE_GREP_VALID_CONTENT_SCOPES:
         return json.dumps({"error": "content_scope must be one of: history, externalized, both"})
     raw_externalized_refs = args.get("externalized_refs")
     if raw_externalized_refs is not None and content_scope == "history":
@@ -2402,8 +2402,8 @@ def _lcm_grep_full_text(args: Dict[str, Any], **kwargs) -> str:
     if raw_externalized_refs is not None:
         if not isinstance(raw_externalized_refs, list):
             return json.dumps({"error": "externalized_refs must be an array of ref filenames"})
-        if len(raw_externalized_refs) > _LCM_GREP_EXTERNALIZED_FILE_CAP:
-            return json.dumps({"error": f"externalized_refs is limited to {_LCM_GREP_EXTERNALIZED_FILE_CAP} refs"})
+        if len(raw_externalized_refs) > _TROVE_GREP_EXTERNALIZED_FILE_CAP:
+            return json.dumps({"error": f"externalized_refs is limited to {_TROVE_GREP_EXTERNALIZED_FILE_CAP} refs"})
         externalized_refs = []
         for value in raw_externalized_refs:
             ref = str(value or "").strip()
@@ -2479,7 +2479,7 @@ def _lcm_grep_full_text(args: Dict[str, Any], **kwargs) -> str:
         search_session_id = engine.current_session_id
         session_scope = "current"
         logger.warning(
-            "Ignoring unsupported session_scope=%s for lcm_grep",
+            "Ignoring unsupported session_scope=%s for trove_grep",
             requested_session_scope,
         )
 
@@ -2523,7 +2523,7 @@ def _lcm_grep_full_text(args: Dict[str, Any], **kwargs) -> str:
     # DAG expansion is deferred; returning summary hits without an expansion
     # contract would push this tool toward a memory-system shape rather than
     # a plugin-local archive search. Raw-message hits remain expandable across
-    # sessions via lcm_expand(store_id=...).
+    # sessions via trove_expand(store_id=...).
     if content_scope in {"history", "both"} and session_scope == "current" and not raw_message_filter_active:
         try:
             node_hits = engine._dag.search(
@@ -2572,7 +2572,7 @@ def _lcm_grep_full_text(args: Dict[str, Any], **kwargs) -> str:
             discovered_refs = []
             try:
                 for entries_seen, path in enumerate(storage_dir.iterdir(), start=1):
-                    if entries_seen > _LCM_GREP_EXTERNALIZED_DISCOVERY_CAP:
+                    if entries_seen > _TROVE_GREP_EXTERNALIZED_DISCOVERY_CAP:
                         scan_counts["discovery_truncated"] = True
                         break
                     if not path.name.endswith(".json"):
@@ -2594,7 +2594,7 @@ def _lcm_grep_full_text(args: Dict[str, Any], **kwargs) -> str:
                     engine,
                     ref,
                     engine.current_session_id,
-                    max_read_bytes=_LCM_GREP_EXTERNALIZED_METADATA_READ_BYTES,
+                    max_read_bytes=_TROVE_GREP_EXTERNALIZED_METADATA_READ_BYTES,
                 )
                 if metadata.get("readable"):
                     try:
@@ -2619,7 +2619,7 @@ def _lcm_grep_full_text(args: Dict[str, Any], **kwargs) -> str:
                         scan_counts["rejected_session_mismatch"] += 1
                     else:
                         candidate_refs.append(ref)
-                        if len(candidate_refs) >= _LCM_GREP_EXTERNALIZED_FILE_CAP:
+                        if len(candidate_refs) >= _TROVE_GREP_EXTERNALIZED_FILE_CAP:
                             break
                 elif metadata.get("error") == "session_mismatch":
                     scan_counts["rejected_session_mismatch"] += 1
@@ -2640,7 +2640,7 @@ def _lcm_grep_full_text(args: Dict[str, Any], **kwargs) -> str:
                     engine,
                     ref,
                     engine.current_session_id,
-                    max_read_bytes=_LCM_GREP_EXTERNALIZED_METADATA_READ_BYTES,
+                    max_read_bytes=_TROVE_GREP_EXTERNALIZED_METADATA_READ_BYTES,
                     require_valid_document_tail=True,
                 )
                 if not metadata.get("readable"):
@@ -2654,7 +2654,7 @@ def _lcm_grep_full_text(args: Dict[str, Any], **kwargs) -> str:
                     ref,
                     config=engine._config,
                     hermes_home=engine._hermes_home,
-                    max_content_bytes=_LCM_GREP_EXTERNALIZED_CONTENT_BYTES,
+                    max_content_bytes=_TROVE_GREP_EXTERNALIZED_CONTENT_BYTES,
                 )
             except (OSError, ValueError) as exc:
                 return json.dumps({
@@ -2712,16 +2712,16 @@ def _lcm_grep_full_text(args: Dict[str, Any], **kwargs) -> str:
         response_chars = 0
         for item in externalized_matches:
             item_chars = len(json.dumps(item, ensure_ascii=False))
-            if response_chars + item_chars > _LCM_GREP_RESPONSE_CHAR_CAP:
+            if response_chars + item_chars > _TROVE_GREP_RESPONSE_CHAR_CAP:
                 break
             response_chars += item_chars
             results.append(item)
         externalized_scan = {
             **scan_counts,
-            "file_limit": _LCM_GREP_EXTERNALIZED_FILE_CAP,
-            "discovery_limit": _LCM_GREP_EXTERNALIZED_DISCOVERY_CAP,
-            "content_bytes_per_file": _LCM_GREP_EXTERNALIZED_CONTENT_BYTES,
-            "response_char_limit": _LCM_GREP_RESPONSE_CHAR_CAP,
+            "file_limit": _TROVE_GREP_EXTERNALIZED_FILE_CAP,
+            "discovery_limit": _TROVE_GREP_EXTERNALIZED_DISCOVERY_CAP,
+            "content_bytes_per_file": _TROVE_GREP_EXTERNALIZED_CONTENT_BYTES,
+            "response_char_limit": _TROVE_GREP_RESPONSE_CHAR_CAP,
             "active_session_only": True,
         }
 
@@ -2766,7 +2766,7 @@ def _lcm_grep_full_text(args: Dict[str, Any], **kwargs) -> str:
         response["session_id"] = explicit_session_id
     if requested_limit > limit_cap:
         response["limit_clamped_from"] = requested_limit
-    if requested_session_scope not in _LCM_GREP_VALID_SCOPES:
+    if requested_session_scope not in _TROVE_GREP_VALID_SCOPES:
         response["ignored_session_scope"] = requested_session_scope
         response["scope_note"] = (
             "Unsupported session_scope; stayed on current. "
@@ -2784,12 +2784,12 @@ def _lcm_grep_full_text(args: Dict[str, Any], **kwargs) -> str:
 # A worker releases its slot when it eventually finishes; once every slot is
 # held by a stuck worker, further requests degrade to full-text immediately
 # instead of spawning unbounded threads under repeated timeouts.
-_LCM_SEMANTIC_MAX_WORKERS = 4
-_lcm_semantic_worker_slots = threading.BoundedSemaphore(_LCM_SEMANTIC_MAX_WORKERS)
+_TROVE_SEMANTIC_MAX_WORKERS = 4
+_trove_semantic_worker_slots = threading.BoundedSemaphore(_TROVE_SEMANTIC_MAX_WORKERS)
 # FTS fallback has its own bounded lane so abandoned semantic calls cannot
 # consume the capacity required to degrade safely.
-_LCM_FULL_TEXT_MAX_WORKERS = 4
-_lcm_full_text_worker_slots = threading.BoundedSemaphore(_LCM_FULL_TEXT_MAX_WORKERS)
+_TROVE_FULL_TEXT_MAX_WORKERS = 4
+_trove_full_text_worker_slots = threading.BoundedSemaphore(_TROVE_FULL_TEXT_MAX_WORKERS)
 
 
 class _WorkerCapacityError(RuntimeError):
@@ -2812,7 +2812,7 @@ def _run_within_deadline(
     remaining_s = float(remaining_s)
     if remaining_s <= 0:
         raise TimeoutError("semantic latency budget exhausted")
-    slots = _lcm_semantic_worker_slots if worker_slots is None else worker_slots
+    slots = _trove_semantic_worker_slots if worker_slots is None else worker_slots
     if not slots.acquire(blocking=False):
         raise _WorkerCapacityError(f"{name} worker capacity is exhausted")
     outcome: list[tuple[bool, Any]] = []
@@ -2840,17 +2840,17 @@ def _run_within_deadline(
     return value
 
 
-def _lcm_grep_full_text_with_deadline(
+def _trove_grep_full_text_with_deadline(
     args: Dict[str, Any],
     *,
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     deadline: float,
-    limit_cap: int = _LCM_GREP_HARD_LIMIT_CAP,
+    limit_cap: int = _TROVE_GREP_HARD_LIMIT_CAP,
 ) -> dict[str, Any]:
     """Run FTS on independent read connections under the request deadline."""
     remaining = deadline - time.monotonic()
     if remaining <= 0:
-        return _lcm_grep_deadline_error(
+        return _trove_grep_deadline_error(
             str(args.get("mode") or "semantic").lower(), "full_text"
         )
 
@@ -2862,7 +2862,7 @@ def _lcm_grep_full_text_with_deadline(
         def require_remaining(stage: str) -> float:
             stage_remaining = deadline - time.monotonic()
             if stage_remaining <= 0:
-                raise TimeoutError(f"lcm full-text deadline exhausted before {stage}")
+                raise TimeoutError(f"trove full-text deadline exhausted before {stage}")
             return stage_remaining
 
         def interrupt_if_expired() -> int:
@@ -2908,14 +2908,14 @@ def _lcm_grep_full_text_with_deadline(
             read_engine._dag = read_dag
             require_remaining("full-text search")
             payload = json.loads(
-                _lcm_grep_full_text(
+                _trove_grep_full_text(
                     args,
                     engine=read_engine,
                     _limit_cap=limit_cap,
                 )
             )
             if expired[0] or time.monotonic() >= deadline:
-                return _lcm_grep_deadline_error(
+                return _trove_grep_deadline_error(
                     str(args.get("mode") or "semantic").lower(), "full_text"
                 )
             return payload
@@ -2929,11 +2929,11 @@ def _lcm_grep_full_text_with_deadline(
         return _run_within_deadline(
             invoke,
             remaining_s=remaining,
-            name="lcm-full-text",
-            worker_slots=_lcm_full_text_worker_slots,
+            name="trove-full-text",
+            worker_slots=_trove_full_text_worker_slots,
         )
     except (_WorkerCapacityError, TimeoutError):
-        return _lcm_grep_deadline_error(
+        return _trove_grep_deadline_error(
             str(args.get("mode") or "semantic").lower(), "full_text"
         )
     except Exception as exc:
@@ -2943,7 +2943,7 @@ def _lcm_grep_full_text_with_deadline(
         }
 
 
-def _lcm_grep_embed_query(
+def _trove_grep_embed_query(
     provider: Any, query: str, *, remaining_s: float
 ) -> list[float]:
     """Embed one query within the operation's remaining absolute budget."""
@@ -2954,12 +2954,12 @@ def _lcm_grep_embed_query(
         return provider.embed_query(query)
 
     vector = _run_within_deadline(
-        invoke, remaining_s=remaining_s, name="lcm-query-embed"
+        invoke, remaining_s=remaining_s, name="trove-query-embed"
     )
     return [float(value) for value in vector]
 
 
-def _lcm_embedding_query_metric(provider: Any) -> dict[str, Any]:
+def _trove_embedding_query_metric(provider: Any) -> dict[str, Any]:
     """Return non-secret provider accounting for one completed query embed."""
     raw_tokens = getattr(provider, "last_usage_tokens", None)
     try:
@@ -2973,15 +2973,15 @@ def _lcm_embedding_query_metric(provider: Any) -> dict[str, Any]:
     }
 
 
-def _lcm_grep_resolve_provider(
-    engine: "LCMEngine", *, deadline: float | None = None
+def _trove_grep_resolve_provider(
+    engine: "TROVEEngine", *, deadline: float | None = None
 ) -> Any:
     config = engine._config
     cache_key = (
         str(getattr(config, "embedding_provider", "") or "").strip().lower(),
         str(getattr(config, "embedding_model", "") or "").strip(),
     )
-    cached = getattr(engine, "_lcm_embedding_provider_cache", None)
+    cached = getattr(engine, "_trove_embedding_provider_cache", None)
     if cached is not None and cached[0] == cache_key:
         return cached[1]
     if deadline is not None and time.monotonic() >= deadline:
@@ -2989,12 +2989,12 @@ def _lcm_grep_resolve_provider(
     provider = resolve_provider(config)
     if deadline is not None and time.monotonic() >= deadline:
         raise TimeoutError("provider resolution deadline exhausted")
-    engine._lcm_embedding_provider_cache = (cache_key, provider)
+    engine._trove_embedding_provider_cache = (cache_key, provider)
     return provider
 
 
 def _resolve_recall_provider(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     *,
     deadline: float | None = None,
     provider_override: str | None = None,
@@ -3011,13 +3011,13 @@ def _resolve_recall_provider(
     """
     override = str(provider_override or "").strip()
     if not override:
-        return _lcm_grep_resolve_provider(engine, deadline=deadline)
+        return _trove_grep_resolve_provider(engine, deadline=deadline)
     config = engine._config
     cache_key = (
         override.lower(),
         str(getattr(config, "embedding_model", "") or "").strip(),
     )
-    cached = getattr(engine, "_lcm_proactive_provider_cache", None)
+    cached = getattr(engine, "_trove_proactive_provider_cache", None)
     if cached is not None and cached[0] == cache_key:
         return cached[1]
     if deadline is not None and time.monotonic() >= deadline:
@@ -3027,12 +3027,12 @@ def _resolve_recall_provider(
     provider = resolve_provider(override_config)
     if deadline is not None and time.monotonic() >= deadline:
         raise TimeoutError("provider resolution deadline exhausted")
-    engine._lcm_proactive_provider_cache = (cache_key, provider)
+    engine._trove_proactive_provider_cache = (cache_key, provider)
     return provider
 
 
 def _resolve_recall_chunk_provider(
-    engine: "LCMEngine", summary_provider: Any, *, deadline: float | None = None
+    engine: "TROVEEngine", summary_provider: Any, *, deadline: float | None = None
 ) -> Any:
     """Resolve the provider/model identity registered for the chunk corpus."""
     chunk_model = default_chunk_model(
@@ -3041,7 +3041,7 @@ def _resolve_recall_chunk_provider(
     if chunk_model == summary_provider.model_id:
         return summary_provider
     cache_key = (str(summary_provider.provider_id).lower(), chunk_model)
-    cached = getattr(engine, "_lcm_chunk_provider_cache", None)
+    cached = getattr(engine, "_trove_chunk_provider_cache", None)
     if cached is not None and cached[0] == cache_key:
         return cached[1]
     if deadline is not None and time.monotonic() >= deadline:
@@ -3052,21 +3052,21 @@ def _resolve_recall_chunk_provider(
     provider = resolve_provider(chunk_config)
     if deadline is not None and time.monotonic() >= deadline:
         raise TimeoutError("chunk provider resolution deadline exhausted")
-    engine._lcm_chunk_provider_cache = (cache_key, provider)
+    engine._trove_chunk_provider_cache = (cache_key, provider)
     return provider
 
 
-def _lcm_grep_semantic(
+def _trove_grep_semantic(
     args: Dict[str, Any],
     *,
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     deadline: float,
     candidate_limit: int | None = None,
     allow_fallback: bool = True,
 ) -> dict[str, Any]:
     mode = str(args.get("mode") or "semantic").lower()
     if time.monotonic() >= deadline:
-        return _lcm_grep_deadline_error(mode, "semantic_entry")
+        return _trove_grep_deadline_error(mode, "semantic_entry")
     query = str(args.get("query", "")).strip()
     if not query:
         return {"error": "No query provided"}
@@ -3076,7 +3076,7 @@ def _lcm_grep_semantic(
     if parsed_limit <= 0:
         return {"error": "limit must be a positive integer"}
     requested_limit = parsed_limit
-    limit = min(requested_limit, _LCM_GREP_HARD_LIMIT_CAP)
+    limit = min(requested_limit, _TROVE_GREP_HARD_LIMIT_CAP)
     knn_limit = candidate_limit if candidate_limit is not None else limit
 
     requested_session_scope = str(args.get("session_scope", "current")).lower()
@@ -3103,7 +3103,7 @@ def _lcm_grep_semantic(
         session_scope = "current"
         search_session_id = engine.current_session_id
         logger.warning(
-            "Ignoring unsupported session_scope=%s for semantic lcm_grep",
+            "Ignoring unsupported session_scope=%s for semantic trove_grep",
             requested_session_scope,
         )
 
@@ -3132,7 +3132,7 @@ def _lcm_grep_semantic(
             }
         fts_args = dict(args)
         fts_args.pop("mode", None)
-        payload = _lcm_grep_full_text_with_deadline(
+        payload = _trove_grep_full_text_with_deadline(
             fts_args,
             engine=engine,
             deadline=deadline,
@@ -3154,7 +3154,7 @@ def _lcm_grep_semantic(
     if role is not None:
         return degraded("role filtering is only supported by full_text retrieval")
 
-    # The advertised lcm_grep contract (schemas.LCM_GREP) returns RAW message
+    # The advertised trove_grep contract (schemas.TROVE_GREP) returns RAW message
     # hits only for broader scopes and for time/conversation filters; full_text
     # honors this by omitting summary hits in exactly these cases. Embedded
     # summaries have no single lane and are cross-session/unexpandable, so the
@@ -3188,25 +3188,25 @@ def _lcm_grep_semantic(
         engine, search_session_id=search_session_id, conversation_id=conversation_id
     )
     if time.monotonic() >= deadline:
-        return _lcm_grep_deadline_error(mode, "scope_resolution")
+        return _trove_grep_deadline_error(mode, "scope_resolution")
 
     try:
         provider = _run_within_deadline(
-            lambda: _lcm_grep_resolve_provider(engine, deadline=deadline),
+            lambda: _trove_grep_resolve_provider(engine, deadline=deadline),
             remaining_s=deadline - time.monotonic(),
-            name="lcm-provider-resolution",
+            name="trove-provider-resolution",
         )
     except _WorkerCapacityError as exc:
         return degraded(f"semantic capacity exhausted: {exc}")
     except TimeoutError:
-        return _lcm_grep_deadline_error(mode, "provider_resolution")
+        return _trove_grep_deadline_error(mode, "provider_resolution")
     except Exception as exc:
         return degraded(f"embedding provider unavailable: {exc}")
     if provider is None:
         return degraded("embedding provider is not configured")
 
     try:
-        query_vector = _lcm_grep_embed_query(
+        query_vector = _trove_grep_embed_query(
             provider, query, remaining_s=deadline - time.monotonic()
         )
     except VoyageError as exc:
@@ -3241,7 +3241,7 @@ def _lcm_grep_semantic(
         knn_results = _run_within_deadline(
             _run_knn,
             remaining_s=deadline - time.monotonic(),
-            name="lcm-knn",
+            name="trove-knn",
         )
         coverage = knn_results.coverage
         ranked_rows = list(knn_results)
@@ -3266,12 +3266,12 @@ def _lcm_grep_semantic(
                 deadline=deadline,
             ),
             remaining_s=deadline - time.monotonic(),
-            name="lcm-result-hydration",
+            name="trove-result-hydration",
         )
     except _WorkerCapacityError as exc:
         return degraded(f"semantic capacity exhausted: {exc}")
     except TimeoutError:
-        return _lcm_grep_deadline_error(mode, "result_resolution")
+        return _trove_grep_deadline_error(mode, "result_resolution")
     except Exception as exc:
         return degraded(f"semantic result hydration failed: {exc}")
 
@@ -3280,17 +3280,17 @@ def _lcm_grep_semantic(
     results: list[dict[str, Any]] = []
     for node, score in hydrated_nodes:
         if time.monotonic() >= deadline:
-            return _lcm_grep_deadline_error(mode, "result_resolution")
+            return _trove_grep_deadline_error(mode, "result_resolution")
         # conversation/role/source/time filters are enforced inside knn() before
         # the top-k cap, so no eligible lower-ranked vector was dropped for an
         # ineligible top hit; nothing further to post-filter here.
-        confidence = _lcm_grep_confidence(score)
+        confidence = _trove_grep_confidence(score)
         result = {
             "type": "summary",
             "depth": f"d{node.depth}",
             "node_id": node.node_id,
             "session_id": node.session_id,
-            "snippet": node.summary[:_LCM_GREP_SEMANTIC_SNIPPET_CHARS],
+            "snippet": node.summary[:_TROVE_GREP_SEMANTIC_SNIPPET_CHARS],
             "token_count": node.token_count,
             "expand_hint": node.expand_hint,
             "earliest_at": node.earliest_at,
@@ -3329,9 +3329,9 @@ def _lcm_grep_semantic(
         response["time_to"] = time_to
     if session_scope == "session":
         response["session_id"] = explicit_session_id
-    if requested_limit > _LCM_GREP_HARD_LIMIT_CAP:
+    if requested_limit > _TROVE_GREP_HARD_LIMIT_CAP:
         response["limit_clamped_from"] = requested_limit
-    if requested_session_scope not in _LCM_GREP_VALID_SCOPES:
+    if requested_session_scope not in _TROVE_GREP_VALID_SCOPES:
         response["ignored_session_scope"] = requested_session_scope
         response["scope_note"] = (
             "Unsupported session_scope; stayed on current. "
@@ -3340,28 +3340,28 @@ def _lcm_grep_semantic(
     return response
 
 
-def _lcm_grep_hybrid(
-    args: Dict[str, Any], *, engine: "LCMEngine", deadline: float
+def _trove_grep_hybrid(
+    args: Dict[str, Any], *, engine: "TROVEEngine", deadline: float
 ) -> dict[str, Any]:
     if time.monotonic() >= deadline:
-        return _lcm_grep_deadline_error("hybrid", "hybrid_entry")
+        return _trove_grep_deadline_error("hybrid", "hybrid_entry")
     requested_limit = _parse_int_value(args.get("limit", 10), 10)
     if requested_limit <= 0:
         return {"error": "limit must be a positive integer"}
-    limit = min(requested_limit, _LCM_GREP_HARD_LIMIT_CAP)
+    limit = min(requested_limit, _TROVE_GREP_HARD_LIMIT_CAP)
     candidate_limit = min(
-        _LCM_GREP_HYBRID_CANDIDATE_CAP,
+        _TROVE_GREP_HYBRID_CANDIDATE_CAP,
         max(50, limit * 3),
     )
 
     fts_args = dict(args)
     fts_args["mode"] = "hybrid"
     fts_args["limit"] = candidate_limit
-    fts = _lcm_grep_full_text_with_deadline(
+    fts = _trove_grep_full_text_with_deadline(
         fts_args,
         engine=engine,
         deadline=deadline,
-        limit_cap=_LCM_GREP_HYBRID_CANDIDATE_CAP,
+        limit_cap=_TROVE_GREP_HYBRID_CANDIDATE_CAP,
     )
     if "error" in fts:
         return fts
@@ -3375,7 +3375,7 @@ def _lcm_grep_hybrid(
         response["degraded_to_fts"] = True
         response["degraded_reason"] = reason
         response["coverage"] = coverage
-        if requested_limit > _LCM_GREP_HARD_LIMIT_CAP:
+        if requested_limit > _TROVE_GREP_HARD_LIMIT_CAP:
             response["limit_clamped_from"] = requested_limit
         else:
             response.pop("limit_clamped_from", None)
@@ -3389,7 +3389,7 @@ def _lcm_grep_hybrid(
     semantic_args = dict(args)
     semantic_args["mode"] = "hybrid"
     semantic_args["limit"] = candidate_limit
-    semantic = _lcm_grep_semantic(
+    semantic = _trove_grep_semantic(
         semantic_args,
         engine=engine,
         deadline=deadline,
@@ -3410,13 +3410,13 @@ def _lcm_grep_hybrid(
         )
 
     if time.monotonic() >= deadline:
-        return _lcm_grep_deadline_error("hybrid", "fusion")
+        return _trove_grep_deadline_error("hybrid", "fusion")
     # FTS is arm 0, semantic is arm 1; rrf_fuse merges by hit identity and
     # accumulates 1/(k+rank). Arm-specific metadata (which arm, confidence,
     # snippet provenance) is grep-presentation and stays here.
     ordered = rrf_fuse(
         [fts.get("results", []), semantic.get("results", [])],
-        k=_LCM_GREP_RRF_K,
+        k=_TROVE_GREP_RRF_K,
     )
     semantic_by_identity = {
         _hit_identity(hit): hit for hit in semantic.get("results", [])
@@ -3432,7 +3432,7 @@ def _lcm_grep_hybrid(
     results: list[dict[str, Any]] = []
     for entry in ordered[:limit]:
         if time.monotonic() >= deadline:
-            return _lcm_grep_deadline_error("hybrid", "fusion")
+            return _trove_grep_deadline_error("hybrid", "fusion")
         ranks = entry["ranks"]
         hit = dict(entry["hit"])
         hit["score"] = float(entry["rrf_score"])
@@ -3455,68 +3455,68 @@ def _lcm_grep_hybrid(
     response["coverage"] = semantic.get("coverage", "none")
     response["degraded_to_fts"] = False
     response["fusion"] = "rrf"
-    response["rrf_k"] = _LCM_GREP_RRF_K
-    if requested_limit > _LCM_GREP_HARD_LIMIT_CAP:
+    response["rrf_k"] = _TROVE_GREP_RRF_K
+    if requested_limit > _TROVE_GREP_HARD_LIMIT_CAP:
         response["limit_clamped_from"] = requested_limit
     else:
         response.pop("limit_clamped_from", None)
     return response
 
 
-def lcm_grep(args: Dict[str, Any], **kwargs) -> str:
-    """Search LCM history using full-text, semantic, or RRF hybrid retrieval."""
+def trove_grep(args: Dict[str, Any], **kwargs) -> str:
+    """Search TROVE history using full-text, semantic, or RRF hybrid retrieval."""
     request_started = time.monotonic()
     mode = str(args.get("mode") or "full_text").strip().lower()
     if mode == "full_text":
-        return _lcm_grep_full_text(args, **kwargs)
+        return _trove_grep_full_text(args, **kwargs)
 
     engine = _require_engine(kwargs)
     if engine is None:
-        return json.dumps({"error": "LCM engine not initialized"})
+        return json.dumps({"error": "TROVE engine not initialized"})
     timeout_s = max(
         0.001,
         float(getattr(engine._config, "embedding_query_timeout_s", 3.0)),
     )
     deadline = request_started + timeout_s
     if time.monotonic() >= deadline:
-        return json.dumps(_lcm_grep_deadline_error(mode, "tool_entry"))
+        return json.dumps(_trove_grep_deadline_error(mode, "tool_entry"))
     if mode == "semantic":
-        return json.dumps(_lcm_grep_semantic(args, engine=engine, deadline=deadline))
+        return json.dumps(_trove_grep_semantic(args, engine=engine, deadline=deadline))
     if mode == "hybrid":
-        return json.dumps(_lcm_grep_hybrid(args, engine=engine, deadline=deadline))
+        return json.dumps(_trove_grep_hybrid(args, engine=engine, deadline=deadline))
     return json.dumps({
         "error": "mode must be one of: full_text, semantic, hybrid",
     })
 
 
-def _lcm_recall_recency_boost(timestamp: Any, *, now: float) -> float:
+def _trove_recall_recency_boost(timestamp: Any, *, now: float) -> float:
     """Half-life recency multiplier in ``[floor, 1.0]`` (newer => closer to 1)."""
     try:
         ts = float(timestamp or 0.0)
     except (TypeError, ValueError):
         ts = 0.0
     if ts <= 0:
-        return _LCM_RECALL_RECENCY_FLOOR
+        return _TROVE_RECALL_RECENCY_FLOOR
     age = max(0.0, now - ts)
-    boost = 2.0 ** (-(age / _LCM_RECALL_RECENCY_HALF_LIFE_S))
-    return max(_LCM_RECALL_RECENCY_FLOOR, boost)
+    boost = 2.0 ** (-(age / _TROVE_RECALL_RECENCY_HALF_LIFE_S))
+    return max(_TROVE_RECALL_RECENCY_FLOOR, boost)
 
 
-def _lcm_recall_summary_expand_hint(hit: dict[str, Any]) -> str:
-    # Cross-session summary/DAG expansion is deferred (lcm_expand node_id is
+def _trove_recall_summary_expand_hint(hit: dict[str, Any]) -> str:
+    # Cross-session summary/DAG expansion is deferred (trove_expand node_id is
     # current-session only), so a cross-session summary points at the session
     # loader instead of a node handle it cannot expand.
     if hit.get("from_current_session"):
-        return f"lcm_expand(node_id={hit.get('node_id')})"
-    return f"lcm_load_session(session_id='{hit.get('session_id') or ''}')"
+        return f"trove_expand(node_id={hit.get('node_id')})"
+    return f"trove_load_session(session_id='{hit.get('session_id') or ''}')"
 
 
-def _lcm_recall_excerpt_expand_hint(hit: dict[str, Any]) -> str:
+def _trove_recall_excerpt_expand_hint(hit: dict[str, Any]) -> str:
     offset = int(hit.get("content_offset") or 0)
-    return f"lcm_expand(store_id={hit.get('store_id')}, content_offset={offset})"
+    return f"trove_expand(store_id={hit.get('store_id')}, content_offset={offset})"
 
 
-def _lcm_recall_diverse_entries(
+def _trove_recall_diverse_entries(
     ordered: list[dict[str, Any]],
     *,
     limit: int,
@@ -3546,22 +3546,22 @@ def _lcm_recall_diverse_entries(
     return selected, dropped
 
 
-def _lcm_recall_reference_shape(hit: dict[str, Any], *, hydratable: bool) -> str | None:
+def _trove_recall_reference_shape(hit: dict[str, Any], *, hydratable: bool) -> str | None:
     """Name the delivery shape that gives this hit a truthful source reference.
 
     Reference-strict delivery (FINDING-F35 §2). This is only the CHEAP,
     rank-ordered ADMISSION test -- it says a candidate could plausibly resolve to
     a ``(store_id, char_start, char_end)`` span, not that it does. Truth is
-    established later by :func:`_lcm_recall_verified_span`, which reads the row
+    established later by :func:`_trove_recall_verified_span`, which reads the row
     and checks that the delivered text really sits at the claimed offset.
 
     A summary is rejected here and cannot be given a reference. Its text is
     model-generated prose, not a verbatim span of any row, so
-    ``lcm:<store_id>:<start>-<end>`` would assert bytes that are not at that
+    ``trove:<store_id>:<start>-<end>`` would assert bytes that are not at that
     offset. ``SummaryNode.source_ids`` is the list of *every* message a leaf node
     summarizes, so even a message-sourced node's first source is lineage, not a
     citation (#164a). The summary arm keeps its ranking influence through
-    :func:`_lcm_recall_summary_source_hits`, which lets the nodes' SOURCE
+    :func:`_trove_recall_summary_source_hits`, which lets the nodes' SOURCE
     MESSAGES compete as ordinary citable candidates.
     """
     if hit.get("kind") == "summary":
@@ -3580,7 +3580,7 @@ def _lcm_recall_reference_shape(hit: dict[str, Any], *, hydratable: bool) -> str
     return None
 
 
-def _lcm_recall_verified_span(
+def _trove_recall_verified_span(
     item: dict[str, Any], row: dict[str, Any] | None
 ) -> tuple[int, int] | None:
     """Return the ``(offset, chars)`` the delivered text ACTUALLY occupies.
@@ -3622,16 +3622,16 @@ def _lcm_recall_verified_span(
     return offset, len(text)
 
 
-def _lcm_recall_citable_entries(
+def _trove_recall_citable_entries(
     ordered: list[dict[str, Any]],
     *,
     limit: int,
     per_session_limit: int,
     expanded_limit: int,
-    engine: "LCMEngine" | None = None,
+    engine: "TROVEEngine" | None = None,
 ) -> tuple[list[dict[str, Any]], int, int]:
     """Reference-strict selection helper (kept for direct unit use)."""
-    selector = _LcmRecallStrictSelector(
+    selector = _TroveRecallStrictSelector(
         ordered,
         engine=engine,
         per_session_limit=per_session_limit,
@@ -3641,7 +3641,7 @@ def _lcm_recall_citable_entries(
     return selected, selector.diversity_dropped, selector.unreferenced_dropped
 
 
-class _LcmRecallSelectionLedger:
+class _TroveRecallSelectionLedger:
     """Per-entry lifecycle, and every resource an entry holds while it is live.
 
     Session density, the hydration budget and row retention used to be three
@@ -3735,10 +3735,10 @@ class _LcmRecallSelectionLedger:
         return True
 
 
-class _LcmRecallStrictSelector:
+class _TroveRecallStrictSelector:
     """Rank-ordered admission that VERIFIES a candidate before it is admitted.
 
-    Reference-strict replacement for :func:`_lcm_recall_diverse_entries`. Same
+    Reference-strict replacement for :func:`_trove_recall_diverse_entries`. Same
     stable rank-preserving walk with bounded session density, plus the rule that
     makes the mode meaningful: a candidate is admitted only once its delivered
     text has been found at its claimed offset in the CURRENT row.
@@ -3775,10 +3775,10 @@ class _LcmRecallStrictSelector:
         self,
         ordered: list[dict[str, Any]],
         *,
-        engine: "LCMEngine" | None,
+        engine: "TROVEEngine" | None,
         per_session_limit: int,
         expanded_limit: int,
-        wave_size: int = _LCM_RECALL_STRICT_READ_WAVE,
+        wave_size: int = _TROVE_RECALL_STRICT_READ_WAVE,
     ) -> None:
         self._ordered = ordered
         self._engine = engine
@@ -3797,7 +3797,7 @@ class _LcmRecallStrictSelector:
         self._examining = 0
         self._prefetched_to = 0
         self._missing: set[int] = set()
-        self.ledger = _LcmRecallSelectionLedger()
+        self.ledger = _TroveRecallSelectionLedger()
         self.rows: dict[int, dict[str, Any]] = {}
         self.batched_reads = 0
 
@@ -3924,7 +3924,7 @@ class _LcmRecallStrictSelector:
                 "snippet": candidate.get("snippet"),
                 "content_offset": candidate.get("content_offset"),
             }
-            span = _lcm_recall_verified_span(probe, row)
+            span = _trove_recall_verified_span(probe, row)
             if span is None:
                 continue
             if candidate is not hit:
@@ -3933,7 +3933,7 @@ class _LcmRecallStrictSelector:
                 hit["content_offset"] = candidate.get("content_offset")
                 if candidate.get("chunk_span"):
                     hit["chunk_span"] = candidate["chunk_span"]
-                hit["expand_hint"] = _lcm_recall_excerpt_expand_hint(hit)
+                hit["expand_hint"] = _trove_recall_excerpt_expand_hint(hit)
             entry["_strict_span"] = span
             return True
         return False
@@ -4009,7 +4009,7 @@ class _LcmRecallStrictSelector:
             # blocked candidate releases its row -- which may then be rewritten or
             # deleted before a refund brings the walk back. Re-proving against the
             # row as REFETCHED is what makes the rewind safe.
-            if _lcm_recall_reference_shape(hit, hydratable=hydratable) is None or (
+            if _trove_recall_reference_shape(hit, hydratable=hydratable) is None or (
                 not self._verify(entry, hydratable=hydratable)
             ):
                 self._rejected[id(entry)] = hydratable
@@ -4051,7 +4051,7 @@ class _LcmRecallStrictSelector:
 
 
 
-def _lcm_recall_content_window(
+def _trove_recall_content_window(
     content: Any,
     *,
     match_start: int,
@@ -4079,12 +4079,12 @@ def _lcm_recall_content_window(
     }
 
 
-def _lcm_recall_answer_ready_content(
-    engine: "LCMEngine",
+def _trove_recall_answer_ready_content(
+    engine: "TROVEEngine",
     entries: list[dict[str, Any]],
     *,
     query: str,
-    expanded_limit: int = _LCM_RECALL_ANSWER_READY_EXPANDED_HIT_LIMIT,
+    expanded_limit: int = _TROVE_RECALL_ANSWER_READY_EXPANDED_HIT_LIMIT,
     rows_by_id: dict[int, dict[str, Any]] | None = None,
 ) -> dict[tuple, dict[str, Any]]:
     """Hydrate selected exact refs with bounded reads and no retrieval search.
@@ -4118,11 +4118,11 @@ def _lcm_recall_answer_ready_content(
             if node is None:
                 continue
             content = node.summary or ""
-            window = _lcm_recall_content_window(
+            window = _trove_recall_content_window(
                 content,
                 match_start=0,
-                match_end=min(len(content), _LCM_RECALL_SNIPPET_CHARS),
-                char_cap=_LCM_RECALL_ANSWER_READY_CONTENT_CHARS,
+                match_end=min(len(content), _TROVE_RECALL_SNIPPET_CHARS),
+                char_cap=_TROVE_RECALL_ANSWER_READY_CONTENT_CHARS,
             )
             hydrated[identity] = {
                 **window,
@@ -4144,13 +4144,13 @@ def _lcm_recall_answer_ready_content(
         except (KeyError, TypeError, ValueError):
             match_start = _content_offset_for_query_match(content, query)
             match_end = match_start + min(
-                max(1, len(query)), _LCM_RECALL_SNIPPET_CHARS
+                max(1, len(query)), _TROVE_RECALL_SNIPPET_CHARS
             )
-        window = _lcm_recall_content_window(
+        window = _trove_recall_content_window(
             content,
             match_start=match_start,
             match_end=match_end,
-            char_cap=_LCM_RECALL_ANSWER_READY_CONTENT_CHARS,
+            char_cap=_TROVE_RECALL_ANSWER_READY_CONTENT_CHARS,
         )
         hydrated[identity] = {
             **window,
@@ -4161,20 +4161,20 @@ def _lcm_recall_answer_ready_content(
     return hydrated
 
 
-def _lcm_recall_exact_ref(hit: dict[str, Any], hydrated: dict[str, Any] | None) -> str | None:
+def _trove_recall_exact_ref(hit: dict[str, Any], hydrated: dict[str, Any] | None) -> str | None:
     """Return the exact identity for an opt-in delta item."""
     if hit.get("kind") == "summary":
         node_id = hit.get("node_id")
-        return f"lcm-summary:{node_id}" if node_id is not None else None
+        return f"trove-summary:{node_id}" if node_id is not None else None
     store_id = hit.get("store_id")
     if store_id is None or hydrated is None or "content" not in hydrated:
         return None
     start = int(hydrated.get("content_offset") or 0)
     end = start + len(str(hydrated.get("content") or ""))
-    return f"lcm:{int(store_id)}:{start}-{end}"
+    return f"trove:{int(store_id)}:{start}-{end}"
 
 
-def _lcm_recall_bounded_reason(
+def _trove_recall_bounded_reason(
     arm: str, scanned: int | None, total: int | None
 ) -> str:
     """Degraded-reasons text for a ``coverage='bounded'`` arm (SCAN-1).
@@ -4195,7 +4195,7 @@ def _lcm_recall_bounded_reason(
     )
 
 
-def _lcm_recall_approx_reason(arm: str) -> str:
+def _trove_recall_approx_reason(arm: str) -> str:
     """Disclosure text for a ``coverage='full_approx'`` arm (FIX 2).
 
     The two-stage path reaches the WHOLE corpus but stage-1 Hamming keeps only
@@ -4211,11 +4211,11 @@ def _lcm_recall_approx_reason(arm: str) -> str:
     )
 
 
-def _lcm_recall_fts_arm(
-    engine: "LCMEngine", query: str, *, candidate_limit: int, deadline: float
+def _trove_recall_fts_arm(
+    engine: "TROVEEngine", query: str, *, candidate_limit: int, deadline: float
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """FTS arm: raw messages across ALL sessions (no conversation filter)."""
-    payload = _lcm_grep_full_text_with_deadline(
+    payload = _trove_grep_full_text_with_deadline(
         {
             "query": query,
             "mode": "recall",
@@ -4224,7 +4224,7 @@ def _lcm_recall_fts_arm(
         },
         engine=engine,
         deadline=deadline,
-        limit_cap=_LCM_GREP_HYBRID_CANDIDATE_CAP,
+        limit_cap=_TROVE_GREP_HYBRID_CANDIDATE_CAP,
     )
     if "error" in payload:
         return [], payload
@@ -4241,18 +4241,18 @@ def _lcm_recall_fts_arm(
             "role": row.get("role"),
             "timestamp": row.get("timestamp") or 0,
             "content_offset": 0,
-            "snippet": (row.get("snippet") or "")[:_LCM_RECALL_SNIPPET_CHARS],
+            "snippet": (row.get("snippet") or "")[:_TROVE_RECALL_SNIPPET_CHARS],
             "from_current_session": bool(row.get("from_current_session")),
         }
-        hit["expand_hint"] = _lcm_recall_excerpt_expand_hint(hit)
+        hit["expand_hint"] = _trove_recall_excerpt_expand_hint(hit)
         hits.append(hit)
     return hits, None
 
 
-def _lcm_recall_scan_bounds(engine: "LCMEngine") -> dict[str, Any]:
+def _trove_recall_scan_bounds(engine: "TROVEEngine") -> dict[str, Any]:
     """Full-corpus scan settings shared by both vector arms.
 
-    lcm_recall promises "all conversations, all time", so both arms scan the
+    trove_recall promises "all conversations, all time", so both arms scan the
     WHOLE corpus in ``recall_scan_rows``-sized batches. The optional cap and
     latency budget default to 0 (no early stop); either one firing degrades the
     arm to ``coverage='bounded'``, which the caller already discloses.
@@ -4266,8 +4266,8 @@ def _lcm_recall_scan_bounds(engine: "LCMEngine") -> dict[str, Any]:
     }
 
 
-def _lcm_recall_summary_source_hits(
-    engine: "LCMEngine",
+def _trove_recall_summary_source_hits(
+    engine: "TROVEEngine",
     nodes: list[tuple[Any, float]],
     *,
     current: str | None,
@@ -4344,14 +4344,14 @@ def _lcm_recall_summary_source_hits(
                     "from_current_session": bool(current)
                     and node.session_id == current,
                 }
-                hint = _lcm_recall_summary_expand_hint(lead)
+                hint = _trove_recall_summary_expand_hint(lead)
                 if hint:
                     lead["expand_hint"] = hint
                 leads.append(lead)
             if len(ordered_ids) >= candidate_limit:
                 continue
             for store_id in read_dag.source_message_ids(
-                node.node_id, limit=_LCM_RECALL_SUMMARY_SOURCE_PER_NODE
+                node.node_id, limit=_TROVE_RECALL_SUMMARY_SOURCE_PER_NODE
             ):
                 if store_id in seen:
                     continue
@@ -4382,10 +4382,10 @@ def _lcm_recall_summary_source_hits(
                 # The excerpt is the row's own prefix, so offset 0 is the truth
                 # here rather than the fabricated default a consumer would guess.
                 "content_offset": 0,
-                "snippet": content[:_LCM_RECALL_SNIPPET_CHARS],
+                "snippet": content[:_TROVE_RECALL_SNIPPET_CHARS],
                 "from_current_session": bool(current) and session_id == current,
             }
-            hit["expand_hint"] = _lcm_recall_excerpt_expand_hint(hit)
+            hit["expand_hint"] = _trove_recall_excerpt_expand_hint(hit)
             hits.append(hit)
         return hits, leads
     except sqlite3.OperationalError as exc:
@@ -4397,8 +4397,8 @@ def _lcm_recall_summary_source_hits(
             conn.close()
 
 
-def _lcm_recall_summary_arm(
-    engine: "LCMEngine",
+def _trove_recall_summary_arm(
+    engine: "TROVEEngine",
     *,
     query_vector: list[float],
     provider: Any,
@@ -4421,10 +4421,10 @@ def _lcm_recall_summary_arm(
             source=None,
             vector_store_cls=VectorStore,
             scan_rows=max(1, int(getattr(engine._config, "recall_scan_rows", 25_000))),
-            **_lcm_recall_scan_bounds(engine),
+            **_trove_recall_scan_bounds(engine),
         ),
         remaining_s=deadline - time.monotonic(),
-        name="lcm-recall-summary-knn",
+        name="trove-recall-summary-knn",
     )
     coverage = knn_results.coverage
     ranked_rows = list(knn_results)
@@ -4438,11 +4438,11 @@ def _lcm_recall_summary_arm(
             deadline=deadline,
         ),
         remaining_s=deadline - time.monotonic(),
-        name="lcm-recall-summary-hydrate",
+        name="trove-recall-summary-hydrate",
     )
     current = engine.current_session_id
     if reference_strict:
-        source_hits, leads = _lcm_recall_summary_source_hits(
+        source_hits, leads = _trove_recall_summary_source_hits(
             engine,
             nodes,
             current=current,
@@ -4464,16 +4464,16 @@ def _lcm_recall_summary_arm(
             "store_id": source_store_id,
             "session_id": node.session_id,
             "timestamp": node.latest_at or node.created_at or 0,
-            "snippet": (node.summary or "")[:_LCM_RECALL_SNIPPET_CHARS],
+            "snippet": (node.summary or "")[:_TROVE_RECALL_SNIPPET_CHARS],
             "from_current_session": bool(current) and node.session_id == current,
         }
-        hit["expand_hint"] = _lcm_recall_summary_expand_hint(hit)
+        hit["expand_hint"] = _trove_recall_summary_expand_hint(hit)
         hits.append(hit)
     return hits, coverage, knn_results.scanned, knn_results.total, []
 
 
-def _lcm_recall_chunk_arm(
-    engine: "LCMEngine",
+def _trove_recall_chunk_arm(
+    engine: "TROVEEngine",
     *,
     query_vector: list[float],
     provider: Any,
@@ -4494,10 +4494,10 @@ def _lcm_recall_chunk_arm(
             source=None,
             vector_store_cls=VectorStore,
             scan_rows=max(1, int(getattr(engine._config, "recall_scan_rows", 25_000))),
-            **_lcm_recall_scan_bounds(engine),
+            **_trove_recall_scan_bounds(engine),
         ),
         remaining_s=deadline - time.monotonic(),
-        name="lcm-recall-chunk-knn",
+        name="trove-recall-chunk-knn",
     )
     coverage = knn_results.coverage
     ranked_rows = list(knn_results)
@@ -4509,21 +4509,21 @@ def _lcm_recall_chunk_arm(
             ranked_rows=ranked_rows,
             knn_limit=candidate_limit,
             deadline=deadline,
-            snippet_chars=_LCM_RECALL_SNIPPET_CHARS,
+            snippet_chars=_TROVE_RECALL_SNIPPET_CHARS,
         ),
         remaining_s=deadline - time.monotonic(),
-        name="lcm-recall-chunk-hydrate",
+        name="trove-recall-chunk-hydrate",
     )
     current = engine.current_session_id
     hits: list[dict[str, Any]] = []
     for hit, _score in raw_hits:
         hit["from_current_session"] = bool(current) and hit.get("session_id") == current
-        hit["expand_hint"] = _lcm_recall_excerpt_expand_hint(hit)
+        hit["expand_hint"] = _trove_recall_excerpt_expand_hint(hit)
         hits.append(hit)
     return hits, coverage, knn_results.scanned, knn_results.total
 
 
-def _lcm_recall_rerank(
+def _trove_recall_rerank(
     provider: Any,
     query: str,
     ordered: list[dict[str, Any]],
@@ -4566,7 +4566,7 @@ def _lcm_recall_rerank(
                 timeout=max(0.001, deadline - time.monotonic()),
             ),
             remaining_s=deadline - time.monotonic(),
-            name="lcm-recall-rerank",
+            name="trove-recall-rerank",
         )
     except Exception as exc:  # noqa: BLE001 - any failure => skip rerank
         return ordered, f"skipped: {exc}"
@@ -4585,7 +4585,7 @@ def _lcm_recall_rerank(
     return reordered, "applied"
 
 
-def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
+def trove_recall(args: Dict[str, Any], **kwargs) -> str:
     """Search the agent's entire memory (all conversations, all time) by meaning.
 
     Fuses three arms over the whole local database — FTS raw messages, embedded
@@ -4596,31 +4596,31 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
     request_started = time.monotonic()
     engine = _require_engine(kwargs)
     if engine is None:
-        return json.dumps({"error": "LCM engine not initialized"})
+        return json.dumps({"error": "TROVE engine not initialized"})
 
     query = str(args.get("query", "")).strip()
     if not query:
         return json.dumps({"error": "No query provided"})
 
-    parsed_limit = _parse_int_value(args.get("limit", _LCM_RECALL_DEFAULT_LIMIT), _LCM_RECALL_DEFAULT_LIMIT)
+    parsed_limit = _parse_int_value(args.get("limit", _TROVE_RECALL_DEFAULT_LIMIT), _TROVE_RECALL_DEFAULT_LIMIT)
     if parsed_limit <= 0:
         return json.dumps({"error": "limit must be a positive integer"})
     requested_limit = parsed_limit
-    limit = min(requested_limit, _LCM_RECALL_LIMIT_CAP)
+    limit = min(requested_limit, _TROVE_RECALL_LIMIT_CAP)
 
     scope_bias, scope_bias_error = _parse_optional_float(args.get("scope_bias"), "scope_bias")
     if scope_bias_error:
         return json.dumps({"error": scope_bias_error})
     if scope_bias is None:
-        scope_bias = _LCM_RECALL_DEFAULT_SCOPE_BIAS
+        scope_bias = _TROVE_RECALL_DEFAULT_SCOPE_BIAS
     scope_bias = max(0.0, min(1.0, float(scope_bias)))
 
     include = str(args.get("include") or "all").strip().lower()
-    if include not in _LCM_RECALL_VALID_INCLUDE:
+    if include not in _TROVE_RECALL_VALID_INCLUDE:
         return json.dumps({"error": "include must be one of: all, summaries, verbatim"})
 
     detail = str(args.get("detail") or "snippets").strip().lower()
-    if detail not in _LCM_RECALL_VALID_DETAIL:
+    if detail not in _TROVE_RECALL_VALID_DETAIL:
         return json.dumps({"error": "detail must be one of: snippets, answer_ready"})
 
     # Reference-strict delivery applies to the citation-bearing mode only: the
@@ -4643,8 +4643,8 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
     if include_occurrence_time and detail != "answer_ready":
         return json.dumps({"error": "include_occurrence_time requires detail='answer_ready'"})
 
-    # lcm_recall fans out three arms + fusion/hydration/rerank, so it uses its own
-    # (larger) budget rather than lcm_grep's single-arm query deadline (sprint-opt-2).
+    # trove_recall fans out three arms + fusion/hydration/rerank, so it uses its own
+    # (larger) budget rather than trove_grep's single-arm query deadline (sprint-opt-2).
     timeout_s = max(0.001, float(getattr(engine._config, "recall_query_timeout_s", 8.0)))
     deadline = request_started + timeout_s
     # Issue #460: the FTS arm runs first, synchronously, and would otherwise
@@ -4657,7 +4657,7 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
     # deadline; total wallclock is still bounded by `recall_query_timeout_s`.
     fts_arm_deadline = request_started + timeout_s * 0.5
 
-    candidate_limit = min(_LCM_GREP_HYBRID_CANDIDATE_CAP, max(50, limit * 4))
+    candidate_limit = min(_TROVE_GREP_HYBRID_CANDIDATE_CAP, max(50, limit * 4))
     rerank_window = min(50, max(1, limit * 4))
 
     embeddings_enabled = bool(getattr(engine._config, "embeddings_enabled", False))
@@ -4683,7 +4683,7 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
     # -- FTS arm (the default-on value: works with embeddings disabled) --
     if run_fts:
         try:
-            hits, fts_error = _lcm_recall_fts_arm(
+            hits, fts_error = _trove_recall_fts_arm(
                 engine, query, candidate_limit=candidate_limit, deadline=fts_arm_deadline
             )
         except (_WorkerCapacityError, TimeoutError) as exc:
@@ -4720,16 +4720,16 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
                         provider_override=provider_override,
                     ),
                     remaining_s=deadline - time.monotonic(),
-                    name="lcm-provider-resolution",
+                    name="trove-provider-resolution",
                 )
                 if provider is None:
                     degraded_reasons.append("embedding provider is not configured")
                 elif run_summary:
-                    query_vector = _lcm_grep_embed_query(
+                    query_vector = _trove_grep_embed_query(
                         provider, query, remaining_s=deadline - time.monotonic()
                     )
                     embedding_query_metrics.append(
-                        _lcm_embedding_query_metric(provider)
+                        _trove_embedding_query_metric(provider)
                     )
             except VoyageError as exc:
                 provider = None
@@ -4748,7 +4748,7 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
                             engine, provider, deadline=deadline
                         ),
                         remaining_s=deadline - time.monotonic(),
-                        name="lcm-chunk-provider-resolution",
+                        name="trove-chunk-provider-resolution",
                     )
                     if chunk_provider is None:
                         degraded_reasons.append(
@@ -4761,13 +4761,13 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
                     ):
                         chunk_query_vector = query_vector
                     else:
-                        chunk_query_vector = _lcm_grep_embed_query(
+                        chunk_query_vector = _trove_grep_embed_query(
                             chunk_provider,
                             query,
                             remaining_s=deadline - time.monotonic(),
                         )
                         embedding_query_metrics.append(
-                            _lcm_embedding_query_metric(chunk_provider)
+                            _trove_embedding_query_metric(chunk_provider)
                         )
                 except VoyageError as exc:
                     degraded_reasons.append(f"chunk query embedding failed: {exc}")
@@ -4781,7 +4781,7 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
             if query_vector is not None:
                 if run_summary:
                     try:
-                        hits, cov, scanned, total, summary_leads = _lcm_recall_summary_arm(
+                        hits, cov, scanned, total, summary_leads = _trove_recall_summary_arm(
                             engine,
                             query_vector=query_vector,
                             provider=provider,
@@ -4796,11 +4796,11 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
                             degraded_reasons.append("summary vectors are unavailable")
                         elif cov == "bounded":
                             degraded_reasons.append(
-                                _lcm_recall_bounded_reason("summary", scanned, total)
+                                _trove_recall_bounded_reason("summary", scanned, total)
                             )
                         elif cov == "full_approx":
                             degraded_reasons.append(
-                                _lcm_recall_approx_reason("summary")
+                                _trove_recall_approx_reason("summary")
                             )
                     except TimeoutError:
                         timed_out = True
@@ -4811,7 +4811,7 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
             if chunk_query_vector is not None:
                 if run_chunk:
                     try:
-                        hits, cov, scanned, total = _lcm_recall_chunk_arm(
+                        hits, cov, scanned, total = _trove_recall_chunk_arm(
                             engine,
                             query_vector=chunk_query_vector,
                             provider=chunk_provider,
@@ -4824,11 +4824,11 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
                             degraded_reasons.append("chunk vectors are unavailable")
                         elif cov == "bounded":
                             degraded_reasons.append(
-                                _lcm_recall_bounded_reason("chunk", scanned, total)
+                                _trove_recall_bounded_reason("chunk", scanned, total)
                             )
                         elif cov == "full_approx":
                             degraded_reasons.append(
-                                _lcm_recall_approx_reason("chunk")
+                                _trove_recall_approx_reason("chunk")
                             )
                     except TimeoutError:
                         timed_out = True
@@ -4846,7 +4846,7 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
     arm_weights = [float(configured_arm_weights.get(name, 1.0)) for name in arm_order]
     ordered = rrf_fuse(
         [arm_hits[name] for name in arm_order],
-        k=_LCM_RECALL_RRF_K,
+        k=_TROVE_RECALL_RRF_K,
         weights=arm_weights,
     )
 
@@ -4906,7 +4906,7 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
             hit["chunk_span"] = chunk_hit.get("chunk_span")
             hit["content_offset"] = chunk_hit.get("content_offset", 0)
             hit["snippet"] = chunk_hit.get("snippet") or hit.get("snippet")
-            hit["expand_hint"] = _lcm_recall_excerpt_expand_hint(hit)
+            hit["expand_hint"] = _trove_recall_excerpt_expand_hint(hit)
 
     # -- Scope-prior + recency rescoring. Applied BEFORE the rerank window is
     #    selected so an item the prior lifts into the true top-N is the one
@@ -4919,7 +4919,7 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
         hit = entry["hit"]
         rank_score = float(entry.get("rrf_score", 0.0))
         is_current = 1.0 if hit.get("session_id") in scope_session_ids else 0.0
-        recency = _lcm_recall_recency_boost(hit.get("timestamp"), now=now)
+        recency = _trove_recall_recency_boost(hit.get("timestamp"), now=now)
         entry["_final_score"] = rank_score * (1.0 + scope_bias * is_current) * recency
     ordered.sort(
         key=lambda entry: (
@@ -4931,7 +4931,7 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
 
     # -- Optional rerank stage (default OFF): a pure rank-REORDER within the top
     #    window of the post-prior order (no score splicing onto the RRF scale). --
-    ordered, rerank_status = _lcm_recall_rerank(
+    ordered, rerank_status = _trove_recall_rerank(
         provider, query, ordered, window=rerank_window, deadline=deadline, config=engine._config
     )
 
@@ -4947,27 +4947,27 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
         # time lets a released slot be reused by the next wave.
         selection_limit = limit
         expanded_limit = (
-            _LCM_RECALL_LIMIT_CAP
+            _TROVE_RECALL_LIMIT_CAP
             if delta_requested
-            else _LCM_RECALL_ANSWER_READY_EXPANDED_HIT_LIMIT
+            else _TROVE_RECALL_ANSWER_READY_EXPANDED_HIT_LIMIT
         )
         if reference_strict:
-            strict_selector = _LcmRecallStrictSelector(
+            strict_selector = _TroveRecallStrictSelector(
                 ordered,
                 engine=engine,
-                per_session_limit=_LCM_RECALL_ANSWER_READY_PER_SESSION_LIMIT,
+                per_session_limit=_TROVE_RECALL_ANSWER_READY_PER_SESSION_LIMIT,
                 expanded_limit=expanded_limit,
             )
             selected_entries = strict_selector.take(selection_limit)
             strict_rows = strict_selector.rows
         else:
-            selected_entries, diversity_dropped = _lcm_recall_diverse_entries(
+            selected_entries, diversity_dropped = _trove_recall_diverse_entries(
                 ordered,
                 limit=selection_limit,
-                per_session_limit=_LCM_RECALL_ANSWER_READY_PER_SESSION_LIMIT,
+                per_session_limit=_TROVE_RECALL_ANSWER_READY_PER_SESSION_LIMIT,
             )
             strict_rows = None
-        answer_ready_content = _lcm_recall_answer_ready_content(
+        answer_ready_content = _trove_recall_answer_ready_content(
             engine,
             selected_entries,
             query=query,
@@ -4987,7 +4987,7 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
                     exact_ref = (
                         None
                         if entry["hit"].get("kind") == "summary"
-                        else _lcm_recall_exact_ref(
+                        else _trove_recall_exact_ref(
                             entry["hit"],
                             answer_ready_content.get(_hit_identity(entry["hit"])),
                         )
@@ -5012,7 +5012,7 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
                 if not more:
                     break
                 answer_ready_content.update(
-                    _lcm_recall_answer_ready_content(
+                    _trove_recall_answer_ready_content(
                         engine,
                         more,
                         query=query,
@@ -5037,7 +5037,7 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
             "kind": hit.get("kind"),
             "session_id": hit.get("session_id"),
             "timestamp": hit.get("timestamp") or 0,
-            "snippet": (hit.get("snippet") or "")[:_LCM_RECALL_SNIPPET_CHARS],
+            "snippet": (hit.get("snippet") or "")[:_TROVE_RECALL_SNIPPET_CHARS],
             "score": round(float(entry["_final_score"]), 6),
             "expand_hint": hit.get("expand_hint"),
             "from_current_session": bool(hit.get("from_current_session")),
@@ -5060,7 +5060,7 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
             if hydrated is not None:
                 item.update(hydrated)
             if delta_requested:
-                exact_ref = _lcm_recall_exact_ref(hit, hydrated)
+                exact_ref = _trove_recall_exact_ref(hit, hydrated)
                 if exact_ref is not None:
                     item["exact_ref"] = exact_ref
             if include_occurrence_time and hit.get("kind") != "summary":
@@ -5111,7 +5111,7 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
                 continue
             item["content_offset"], item["content_returned_chars"] = span
         item_chars = len(json.dumps(item, ensure_ascii=False))
-        if hits_out and response_chars + item_chars > _LCM_RECALL_RESPONSE_CHAR_CAP:
+        if hits_out and response_chars + item_chars > _TROVE_RECALL_RESPONSE_CHAR_CAP:
             response_cap_truncated = True
             break
         response_chars += item_chars
@@ -5157,17 +5157,17 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
         response["degraded_reason"] = "; ".join(dict.fromkeys(degraded_reasons))
     if timed_out:
         response["timeout"] = True
-    if requested_limit > _LCM_RECALL_LIMIT_CAP:
+    if requested_limit > _TROVE_RECALL_LIMIT_CAP:
         response["limit_clamped_from"] = requested_limit
     if detail == "answer_ready":
         expansion = {
             "expanded_hit_count": sum("content" in hit for hit in hits_out),
-            "expanded_hit_limit": _LCM_RECALL_ANSWER_READY_EXPANDED_HIT_LIMIT,
-            "per_session_limit": _LCM_RECALL_ANSWER_READY_PER_SESSION_LIMIT,
+            "expanded_hit_limit": _TROVE_RECALL_ANSWER_READY_EXPANDED_HIT_LIMIT,
+            "per_session_limit": _TROVE_RECALL_ANSWER_READY_PER_SESSION_LIMIT,
             "diversity_dropped_count": diversity_dropped,
-            "per_hit_char_cap": _LCM_RECALL_ANSWER_READY_CONTENT_CHARS,
-            "snippet_char_cap": _LCM_RECALL_SNIPPET_CHARS,
-            "response_char_cap": _LCM_RECALL_RESPONSE_CHAR_CAP,
+            "per_hit_char_cap": _TROVE_RECALL_ANSWER_READY_CONTENT_CHARS,
+            "snippet_char_cap": _TROVE_RECALL_SNIPPET_CHARS,
+            "response_char_cap": _TROVE_RECALL_RESPONSE_CHAR_CAP,
             "response_policy": (
                 "rank-preserving session diversity, then exact-ref hydration; "
                 "whole hits only when enforcing the response cap"
@@ -5213,12 +5213,12 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
             }
 
         encoded = json.dumps(response, ensure_ascii=False)
-        if len(encoded) > _LCM_RECALL_RESPONSE_CHAR_CAP:
+        if len(encoded) > _TROVE_RECALL_RESPONSE_CHAR_CAP:
             original_query = response["query"]
             response["query"] = original_query[:4_096]
             expansion["query_truncated"] = len(response["query"]) < len(original_query)
             encoded = json.dumps(response, ensure_ascii=False)
-        while len(encoded) > _LCM_RECALL_RESPONSE_CHAR_CAP and (
+        while len(encoded) > _TROVE_RECALL_RESPONSE_CHAR_CAP and (
             response["hits"] or expansion.get("summary_leads")
         ):
             if response["hits"]:
@@ -5252,11 +5252,11 @@ def lcm_recall(args: Dict[str, Any], **kwargs) -> str:
     return json.dumps(response)
 
 
-def lcm_describe(args: Dict[str, Any], **kwargs) -> str:
+def trove_describe(args: Dict[str, Any], **kwargs) -> str:
     """Inspect a summary node's subtree or get session DAG overview."""
     engine = _require_engine(kwargs)
     if engine is None:
-        return json.dumps({"error": "LCM engine not initialized"})
+        return json.dumps({"error": "TROVE engine not initialized"})
 
     externalized_ref = str(args.get("externalized_ref") or "").strip()
     if externalized_ref:
@@ -5319,7 +5319,7 @@ def lcm_describe(args: Dict[str, Any], **kwargs) -> str:
     return json.dumps(overview)
 
 
-def lcm_expand(args: Dict[str, Any], **kwargs) -> str:
+def trove_expand(args: Dict[str, Any], **kwargs) -> str:
     """Expand a summary node, externalized payload, or raw message to its content.
 
     Mode selection (exactly one is required):
@@ -5333,7 +5333,7 @@ def lcm_expand(args: Dict[str, Any], **kwargs) -> str:
     """
     engine = _require_engine(kwargs)
     if engine is None:
-        return json.dumps({"error": "LCM engine not initialized"})
+        return json.dumps({"error": "TROVE engine not initialized"})
 
     externalized_ref = str(args.get("externalized_ref") or "").strip()
     raw_store_id_arg = args.get("store_id")
@@ -5430,7 +5430,7 @@ def lcm_expand(args: Dict[str, Any], **kwargs) -> str:
         if include_exact_ref and sliced["content_returned_chars"] > 0:
             exact_start = sliced["content_offset"]
             exact_end = exact_start + sliced["content_returned_chars"]
-            result["exact_ref"] = f"lcm:{store_id}:{exact_start}-{exact_end}"
+            result["exact_ref"] = f"trove:{store_id}:{exact_start}-{exact_end}"
         # Surface externalized-payload metadata when the row references one. Content
         # is not hydrated by default, mirroring the existing _expand_message_sources
         # default. Externalized lookup remains session-scoped (per the existing
@@ -5520,11 +5520,11 @@ def lcm_expand(args: Dict[str, Any], **kwargs) -> str:
     return json.dumps({"error": f"Unknown source_type: {node.source_type}"})
 
 
-def lcm_expand_query(args: Dict[str, Any], **kwargs) -> str:
+def trove_expand_query(args: Dict[str, Any], **kwargs) -> str:
     """Answer a question by expanding matching summaries or explicit node ids."""
     engine = _require_engine(kwargs)
     if engine is None:
-        return json.dumps({"error": "LCM engine not initialized"})
+        return json.dumps({"error": "TROVE engine not initialized"})
 
     prompt = str(args.get("prompt") or "").strip()
     if not prompt:
@@ -5751,16 +5751,16 @@ def lcm_expand_query(args: Dict[str, Any], **kwargs) -> str:
             timeout=timeout,
         )
     except TimeoutError:
-        logger.warning("LCM expand_query synthesis timed out after %.3fs", timeout)
+        logger.warning("TROVE expand_query synthesis timed out after %.3fs", timeout)
         return _degraded_payload(
-            f"lcm_expand_query synthesis timed out after {timeout:.3g}s",
+            f"trove_expand_query synthesis timed out after {timeout:.3g}s",
             include_timeout=True,
         )
 
     answer = str(answer).strip() if answer is not None else ""
     if not answer:
-        logger.warning("LCM expand_query synthesis returned an empty answer")
-        return _degraded_payload("lcm_expand_query synthesis returned an empty answer")
+        logger.warning("TROVE expand_query synthesis returned an empty answer")
+        return _degraded_payload("trove_expand_query synthesis returned an empty answer")
 
     return json.dumps(
         {
@@ -5779,11 +5779,11 @@ def lcm_expand_query(args: Dict[str, Any], **kwargs) -> str:
     )
 
 
-def _summary_quality_stats(engine: "LCMEngine", session_id: str) -> dict[str, Any]:
+def _summary_quality_stats(engine: "TROVEEngine", session_id: str) -> dict[str, Any]:
     """Return read-only summary compression quality diagnostics for one session."""
     conn = engine._dag.connection
     if conn is None:
-        raise RuntimeError("LCM DAG connection is not initialized")
+        raise RuntimeError("TROVE DAG connection is not initialized")
     rows = conn.execute(
         """
         SELECT node_id, session_id, depth, token_count, source_token_count
@@ -5855,7 +5855,7 @@ def _summary_quality_stats(engine: "LCMEngine", session_id: str) -> dict[str, An
         "tiny_large_source_nodes": tiny_large_source_nodes,
         "worst_nodes": worst_nodes,
         "recommendation": (
-            "Inspect worst_nodes with lcm_expand; tiny summaries for very large sources often indicate degraded fallback summarization."
+            "Inspect worst_nodes with trove_expand; tiny summaries for very large sources often indicate degraded fallback summarization."
             if extreme_ratio_nodes or tiny_large_source_nodes
             else "summary compression ratios are within the diagnostic thresholds"
         ),
@@ -5922,7 +5922,7 @@ def _inspect_message_metadata(row: dict[str, Any]) -> dict[str, Any]:
     return item
 
 
-def _inspect_lifecycle_state(engine: "LCMEngine", session_id: str, conversation_id: str) -> dict[str, Any] | None:
+def _inspect_lifecycle_state(engine: "TROVEEngine", session_id: str, conversation_id: str) -> dict[str, Any] | None:
     state = None
     if conversation_id:
         state = engine._lifecycle.get_by_conversation(conversation_id)
@@ -5948,7 +5948,7 @@ def _inspect_lifecycle_state(engine: "LCMEngine", session_id: str, conversation_
     }
 
 
-def _inspect_highest_compacted_source_store_id(engine: "LCMEngine", session_id: str) -> int:
+def _inspect_highest_compacted_source_store_id(engine: "TROVEEngine", session_id: str) -> int:
     highest = 0
     rows = engine._dag.connection.execute(
         """
@@ -5978,12 +5978,12 @@ def _inspect_top_level_json_string_fields_before_content(text: str) -> tuple[dic
 def _read_externalized_payload_metadata_prefix(
     path: Path,
     *,
-    max_read_bytes: int = _LCM_INSPECT_PAYLOAD_METADATA_READ_BYTES,
+    max_read_bytes: int = _TROVE_INSPECT_PAYLOAD_METADATA_READ_BYTES,
 ) -> tuple[str, bool, bool]:
     """Read bounded JSON metadata before the externalized payload body.
 
     Returns ``(prefix_text, content_string_seen, prefix_truncated)``. The content
-    string body is intentionally not consumed; ``lcm_inspect`` reports bounded
+    string body is intentionally not consumed; ``trove_inspect`` reports bounded
     metadata only and leaves full JSON/body validation to explicit expansion.
     """
     return read_externalized_payload_metadata_prefix(
@@ -5996,7 +5996,7 @@ def _validate_externalized_payload_json_tail(
     path: Path,
     metadata_prefix_text: str,
     *,
-    max_tail_bytes: int = _LCM_GREP_EXTERNALIZED_DOCUMENT_TAIL_BYTES,
+    max_tail_bytes: int = _TROVE_GREP_EXTERNALIZED_DOCUMENT_TAIL_BYTES,
 ) -> dict[str, Any] | None:
     """Validate the closing JSON structure using only a bounded tail window."""
     metadata_prefix = metadata_prefix_text.encode("utf-8")
@@ -6031,11 +6031,11 @@ def _validate_externalized_payload_json_tail(
 
 
 def _inspect_externalized_payload_metadata(
-    engine: "LCMEngine",
+    engine: "TROVEEngine",
     ref: str,
     session_id: str,
     *,
-    max_read_bytes: int = _LCM_INSPECT_PAYLOAD_METADATA_READ_BYTES,
+    max_read_bytes: int = _TROVE_INSPECT_PAYLOAD_METADATA_READ_BYTES,
     require_valid_document_tail: bool = False,
 ) -> dict[str, Any]:
     if not ref or Path(ref).name != ref:
@@ -6095,9 +6095,9 @@ def _inspect_externalized_payload_metadata(
     return metadata
 
 
-def _inspect_externalized_refs(engine: "LCMEngine", session_id: str, limit: int) -> dict[str, Any]:
+def _inspect_externalized_refs(engine: "TROVEEngine", session_id: str, limit: int) -> dict[str, Any]:
     message_total = engine._store.get_session_count(session_id)
-    rows = engine._store.load_session_page(session_id, limit=_LCM_INSPECT_REF_SCAN_MESSAGE_LIMIT)
+    rows = engine._store.load_session_page(session_id, limit=_TROVE_INSPECT_REF_SCAN_MESSAGE_LIMIT)
     scan_truncated = message_total > len(rows)
     items: list[dict[str, Any]] = []
     total_known = 0
@@ -6143,7 +6143,7 @@ def _inspect_externalized_refs(engine: "LCMEngine", session_id: str, limit: int)
     }
 
 
-def _temporal_rollups_status(engine: "LCMEngine") -> dict[str, Any]:
+def _temporal_rollups_status(engine: "TROVEEngine") -> dict[str, Any]:
     """Return the cheap, read-only temporal-rollup operator status payload."""
     enabled = bool(engine._config.temporal_rollups_enabled)
     scope = engine.current_session_id or ""
@@ -6171,7 +6171,7 @@ def _temporal_rollups_status(engine: "LCMEngine") -> dict[str, Any]:
         rows = conn.execute(
             """
             SELECT period_kind, status, COUNT(*)
-            FROM lcm_rollups INDEXED BY sqlite_autoindex_lcm_rollups_1
+            FROM trove_rollups INDEXED BY sqlite_autoindex_trove_rollups_1
             WHERE period_kind IN ('day', 'week', 'month') AND scope = ?
             GROUP BY period_kind, status
             """,
@@ -6186,7 +6186,7 @@ def _temporal_rollups_status(engine: "LCMEngine") -> dict[str, Any]:
         oldest_stale = conn.execute(
             """
             SELECT period_start
-            FROM lcm_rollups INDEXED BY sqlite_autoindex_lcm_rollups_1
+            FROM trove_rollups INDEXED BY sqlite_autoindex_trove_rollups_1
             WHERE period_kind IN ('day', 'week', 'month')
               AND scope = ? AND status = 'stale'
             ORDER BY period_start
@@ -6207,7 +6207,7 @@ def _temporal_rollups_status(engine: "LCMEngine") -> dict[str, Any]:
         cursor_rows = conn.execute(
             """
             SELECT period_kind, last_build_cursor, last_built_at
-            FROM lcm_rollup_state
+            FROM trove_rollup_state
             WHERE period_kind IN ('day', 'week', 'month') AND scope = ?
             """,
             (scope,),
@@ -6221,7 +6221,7 @@ def _temporal_rollups_status(engine: "LCMEngine") -> dict[str, Any]:
         error_row = conn.execute(
             """
             SELECT substr(error, 1, ?)
-            FROM lcm_rollups
+            FROM trove_rollups
             WHERE scope = ? AND error IS NOT NULL AND error != ''
             ORDER BY rollup_id DESC
             LIMIT 1
@@ -6234,7 +6234,7 @@ def _temporal_rollups_status(engine: "LCMEngine") -> dict[str, Any]:
             if was_truncated:
                 payload.setdefault("truncated_fields", []).append("last_error")
     except Exception as exc:  # pragma: no cover - defensive legacy-schema degradation
-        logger.debug("LCM temporal rollup status query failed", exc_info=True)
+        logger.debug("TROVE temporal rollup status query failed", exc_info=True)
         query_error, was_truncated = _bounded_operator_field(
             f"{type(exc).__name__}: {exc}"
         )
@@ -6244,20 +6244,20 @@ def _temporal_rollups_status(engine: "LCMEngine") -> dict[str, Any]:
     return payload
 
 
-def lcm_inspect(args: Dict[str, Any], **kwargs) -> str:
-    """Return a read-only metadata inventory of the current LCM session."""
+def trove_inspect(args: Dict[str, Any], **kwargs) -> str:
+    """Return a read-only metadata inventory of the current TROVE session."""
     engine = _require_engine(kwargs)
     if engine is None:
-        return json.dumps({"error": "LCM engine not initialized"})
+        return json.dumps({"error": "TROVE engine not initialized"})
 
-    raw_limit_arg = args.get("limit", _LCM_INSPECT_DEFAULT_LIMIT)
+    raw_limit_arg = args.get("limit", _TROVE_INSPECT_DEFAULT_LIMIT)
     parsed_limit, limit_error = _parse_strict_int(raw_limit_arg, "limit")
     if limit_error:
         return json.dumps({"error": limit_error})
     if parsed_limit is None or parsed_limit <= 0:
         return json.dumps({"error": "limit must be a positive integer"})
     requested_limit = parsed_limit
-    limit = min(requested_limit, _LCM_INSPECT_HARD_LIMIT_CAP)
+    limit = min(requested_limit, _TROVE_INSPECT_HARD_LIMIT_CAP)
 
     session_id = engine.current_session_id
     conversation_id = engine.current_conversation_id
@@ -6408,20 +6408,20 @@ def lcm_inspect(args: Dict[str, Any], **kwargs) -> str:
             "ignored_message_count": full_status.get("ignored_message_count", 0),
         },
     }
-    if requested_limit > _LCM_INSPECT_HARD_LIMIT_CAP:
+    if requested_limit > _TROVE_INSPECT_HARD_LIMIT_CAP:
         response["limit_clamped_from"] = requested_limit
     return _bounded_inspect_json(response)
 
 
-def lcm_status(args: Dict[str, Any], **kwargs) -> str:
-    """Quick health overview of the LCM engine for the current session."""
+def trove_status(args: Dict[str, Any], **kwargs) -> str:
+    """Quick health overview of the TROVE engine for the current session."""
     engine = _require_engine(kwargs)
     if engine is None:
-        return json.dumps({"error": "LCM engine not initialized"})
+        return json.dumps({"error": "TROVE engine not initialized"})
 
     # Read the foreground view so a side-channel session that briefly owns
     # engine._session_id (cron tick inside the gateway process, debug probe,
-    # etc.) does not divert lcm_status away from the operator's real
+    # etc.) does not divert trove_status away from the operator's real
     # conversation. Falls back to the bound id when no foreground has ever
     # been bound, so cron-only or stateless-only deployments still report
     # something usable.
@@ -6451,9 +6451,9 @@ def lcm_status(args: Dict[str, Any], **kwargs) -> str:
     ingest_reconciliation = full_status.get("ingest_reconciliation")
     config_sources = full_status.get("config_sources") or {}
     config_source_warnings = full_status.get("config_source_warnings") or []
-    ignored_config_yaml_lcm_keys = full_status.get("ignored_config_yaml_lcm_keys") or []
+    ignored_config_yaml_trove_keys = full_status.get("ignored_config_yaml_trove_keys") or []
 
-    # Filter classification for the session lcm_status is reporting on.
+    # Filter classification for the session trove_status is reporting on.
     # The engine encapsulates the foreground vs bound divergence; this tool
     # just reads the property contract.
     side_channel_active = engine.side_channel_active
@@ -6536,7 +6536,7 @@ def lcm_status(args: Dict[str, Any], **kwargs) -> str:
         },
         "config_sources": config_sources,
         "config_source_warnings": config_source_warnings,
-        "ignored_config_yaml_lcm_keys": ignored_config_yaml_lcm_keys,
+        "ignored_config_yaml_trove_keys": ignored_config_yaml_trove_keys,
         "session_filters": {
             "ignored": engine.current_session_ignored,
             "stateless": engine.current_session_stateless,
@@ -6564,11 +6564,11 @@ def lcm_status(args: Dict[str, Any], **kwargs) -> str:
     })
 
 
-def lcm_doctor(args: Dict[str, Any], **kwargs) -> str:
-    """Run diagnostics on the LCM database and configuration."""
+def trove_doctor(args: Dict[str, Any], **kwargs) -> str:
+    """Run diagnostics on the TROVE database and configuration."""
     engine = _require_engine(kwargs)
     if engine is None:
-        return json.dumps({"error": "LCM engine not initialized"})
+        return json.dumps({"error": "TROVE engine not initialized"})
 
     checks: list[dict] = []
     # Diagnose the foreground session, not whatever side-channel session
@@ -6630,8 +6630,8 @@ def lcm_doctor(args: Dict[str, Any], **kwargs) -> str:
     try:
         conn = engine._store.connection
         if conn is None:
-            raise RuntimeError("LCM store connection is not initialized")
-        schema_health = inspect_lcm_schema_health(
+            raise RuntimeError("TROVE store connection is not initialized")
+        schema_health = inspect_trove_schema_health(
             conn,
             database_path=str(engine._store.db_path),
         )
@@ -6672,7 +6672,7 @@ def lcm_doctor(args: Dict[str, Any], **kwargs) -> str:
         # A prior non-blocking background integrity scan records a persisted
         # ``fts_integrity_failed:<table>`` flag when it finds corruption
         # without rebuilding. Surface it even when this run's live check is
-        # throttled/unchecked, mirroring the /lcm doctor text path.
+        # throttled/unchecked, mirroring the /trove doctor text path.
         try:
             failed_flag = load_integrity_failed(conn, spec)
         except Exception:  # pragma: no cover - defensive
@@ -6684,7 +6684,7 @@ def lcm_doctor(args: Dict[str, Any], **kwargs) -> str:
                 "detail": {
                     "flagged_at": failed_flag.get("at"),
                     "detail": failed_flag.get("detail"),
-                    "guidance": "background integrity scan flagged this index; run `/lcm doctor repair apply`",
+                    "guidance": "background integrity scan flagged this index; run `/trove doctor repair apply`",
                 },
             })
 
@@ -6839,9 +6839,9 @@ def lcm_doctor(args: Dict[str, Any], **kwargs) -> str:
         config_warnings.append("incremental_max_depth=0 disables condensation entirely")
     for warning in getattr(c, "config_source_warnings", []) or []:
         config_warnings.append(warning)
-    for key in getattr(c, "ignored_config_yaml_lcm_keys", []) or []:
+    for key in getattr(c, "ignored_config_yaml_trove_keys", []) or []:
         config_warnings.append(
-            f"config.yaml lcm.{key} is not a supported LCM config.yaml key and was ignored; use the matching LCM_* env var if this setting is intentional"
+            f"config.yaml trove.{key} is not a supported TROVE config.yaml key and was ignored; use the matching TROVE_* env var if this setting is intentional"
         )
 
     checks.append({

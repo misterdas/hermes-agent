@@ -1,9 +1,9 @@
 """Prescreen-flip silent blackout (SPEC C7 FIX 1) regression tests.
 
-Flipping ``LCM_EMBEDDING_BINARY_PRESCREEN`` on an already-populated float32
+Flipping ``TROVE_EMBEDDING_BINARY_PRESCREEN`` on an already-populated float32
 identity used to make ``_has_binary()`` true after ONE sign-bit row, routing
 the whole identity onto the two-stage path whose INNER JOIN against
-``lcm_embedding_binary`` silently excluded every pre-flip vector while still
+``trove_embedding_binary`` silently excluded every pre-flip vector while still
 reporting ``coverage='full'``. These assert the two guarantees the fix adds:
 
   (a) flipping the flag mints a NEW identity (a fresh, backfill-trackable
@@ -17,10 +17,10 @@ reporting ``coverage='full'``. These assert the two guarantees the fix adds:
 from __future__ import annotations
 
 
-import hermes_lcm.vector_store as vector_store_module
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.dag import SummaryDAG, SummaryNode
-from hermes_lcm.vector_store import VectorStore, _pack_sign_bits
+import hermes_trove.vector_store as vector_store_module
+from hermes_trove.config import TROVEConfig
+from hermes_trove.dag import SummaryDAG, SummaryNode
+from hermes_trove.vector_store import VectorStore, _pack_sign_bits
 
 
 MODEL = "flip-model"
@@ -58,7 +58,7 @@ def test_prescreen_flip_on_populated_identity_mints_new_identity(tmp_path):
 
     # Phase 1: prescreen OFF. Populate a float32 identity with three vectors
     # (no sign-bit rows written).
-    off_config = LCMConfig(embedding_binary_prescreen=False)
+    off_config = TROVEConfig(embedding_binary_prescreen=False)
     store_off = VectorStore(db_path, config=off_config)
     original_identity = store_off.register_profile(MODEL, PROVIDER, DIM)
     node_x = _add_summary(dag, created_at=1.0)
@@ -77,7 +77,7 @@ def test_prescreen_flip_on_populated_identity_mints_new_identity(tmp_path):
     # restart). This must mint a NEW active identity -- NOT reactivate the
     # populated binary-less float32 one -- so the flag change requires a fresh,
     # backfill-trackable corpus (guarantee a).
-    on_config = LCMConfig(embedding_binary_prescreen=True)
+    on_config = TROVEConfig(embedding_binary_prescreen=True)
     store_on = VectorStore(db_path, config=on_config)
     flipped_identity = store_on.register_profile(MODEL, PROVIDER, DIM)
     assert flipped_identity != original_identity
@@ -116,7 +116,7 @@ def test_partial_binary_corpus_falls_back_to_exact_scan(tmp_path):
     """
     db_path = tmp_path / "vectors.db"
     dag = SummaryDAG(db_path)
-    config = LCMConfig(embedding_binary_prescreen=False)
+    config = TROVEConfig(embedding_binary_prescreen=False)
     store = VectorStore(db_path, config=config)
     identity = store.register_profile(MODEL, PROVIDER, DIM)
 
@@ -128,7 +128,7 @@ def test_partial_binary_corpus_falls_back_to_exact_scan(tmp_path):
     # Inject ONE sign-bit row directly, mimicking a single post-flip write into
     # the populated identity (vector-count=2, binary-count=1 -> partial).
     store.connection.execute(
-        "INSERT INTO lcm_embedding_binary(embedded_id, identity_hash, bits) "
+        "INSERT INTO trove_embedding_binary(embedded_id, identity_hash, bits) "
         "VALUES(?, ?, ?)",
         (str(node_y), identity, _pack_sign_bits([0.0, 1.0, 0.0])),
     )
@@ -154,7 +154,7 @@ def test_scan_bounds_route_a_synced_binary_identity_to_the_exact_scan(tmp_path):
     hard bound must reach every scan path and report bounded coverage."""
     db_path = tmp_path / "bounded-prescreen.db"
     dag = SummaryDAG(db_path)
-    config = LCMConfig(embedding_binary_prescreen=True)
+    config = TROVEConfig(embedding_binary_prescreen=True)
     store = VectorStore(db_path, config=config)
     store.register_profile(MODEL, PROVIDER, DIM)
     oldest = _add_summary(dag, created_at=1.0)
@@ -189,7 +189,7 @@ def test_deadline_bounds_a_synced_binary_summary_prescreen(tmp_path, monkeypatch
     dag = SummaryDAG(db_path)
     store = VectorStore(
         db_path,
-        config=LCMConfig(embedding_binary_prescreen=True),
+        config=TROVEConfig(embedding_binary_prescreen=True),
         bounded_scan_rows=1,
     )
     store.register_profile(MODEL, PROVIDER, DIM)

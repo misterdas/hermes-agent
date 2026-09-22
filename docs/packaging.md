@@ -2,14 +2,14 @@
 
 ## Current decision
 
-`hermes-lcm` intentionally remains a clone-or-symlink Hermes user plugin for now. The supported install path is:
+`hermes-trove` intentionally remains a clone-or-symlink Hermes user plugin for now. The supported install path is:
 
 ```bash
-git clone https://github.com/misterdas/hermes-lcm \
-  ~/.hermes/plugins/hermes-lcm
+git clone https://github.com/misterdas/hermes-trove \
+  ~/.hermes/plugins/hermes-trove
 ```
 
-For profile-specific installs, clone under `~/.hermes/profiles/<profile>/plugins/hermes-lcm`. For development checkouts, `scripts/install.sh` creates a profile-aware symlink into the active Hermes plugin directory and refuses to overwrite an existing checkout or unrelated symlink.
+For profile-specific installs, clone under `~/.hermes/profiles/<profile>/plugins/hermes-trove`. For development checkouts, `scripts/install.sh` creates a profile-aware symlink into the active Hermes plugin directory and refuses to overwrite an existing checkout or unrelated symlink.
 
 ## Why not pip-style packaging yet?
 
@@ -47,7 +47,7 @@ Make packaging a separate implementation lane only when one of these is true:
 2. Users need version-pinned installs without direct git checkouts.
 3. Release automation needs packaged artifacts beyond GitHub tags/releases.
 
-The narrow next step would be packaging metadata plus tests that prove a packaged install still exposes `hermes-lcm`, context engine `lcm`, and all 15 LCM tools through `hermes plugins`. Until then, clone/symlink remains the documented path.
+The narrow next step would be packaging metadata plus tests that prove a packaged install still exposes `hermes-trove`, context engine `trove`, and all 15 TROVE tools through `hermes plugins`. Until then, clone/symlink remains the documented path.
 
 ## Current install and update references
 

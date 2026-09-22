@@ -8,11 +8,11 @@ from types import SimpleNamespace
 
 import pytest
 
-import hermes_lcm.command as command_mod
-import hermes_lcm.embedding_provider as provider_mod
-from hermes_lcm.command import handle_lcm_command
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.embedding_provider import (
+import hermes_trove.command as command_mod
+import hermes_trove.embedding_provider as provider_mod
+from hermes_trove.command import handle_trove_command
+from hermes_trove.config import TROVEConfig
+from hermes_trove.embedding_provider import (
     EmbeddingCircuitBreaker,
     EmbeddingProviderError,
     EmbeddingSpendGuard,
@@ -28,7 +28,7 @@ from hermes_lcm.embedding_provider import (
     VoyageProvider,
     resolve_provider,
 )
-from hermes_lcm.vector_store import VectorStore
+from hermes_trove.vector_store import VectorStore
 
 
 def _response(status: int, payload, headers=None) -> HttpResponse:
@@ -420,7 +420,7 @@ def test_fastembed_not_warmed_never_downloads(monkeypatch, tmp_path):
     monkeypatch.setattr(provider_mod, "_load_fastembed", lambda: FakeFastembedModel)
     provider = FastembedProvider("local-model", cache_dir=tmp_path)
 
-    with pytest.raises(ProviderNotWarmedUp, match="/lcm embed warmup"):
+    with pytest.raises(ProviderNotWarmedUp, match="/trove embed warmup"):
         provider.embed_query("hello")
 
     assert FakeFastembedModel.constructions == [{
@@ -470,10 +470,10 @@ def test_fastembed_absent_dependency_is_clean(monkeypatch):
 
 
 def test_resolve_provider_strings_and_dormant_defaults(monkeypatch):
-    defaults = LCMConfig()
+    defaults = TROVEConfig()
     assert resolve_provider(defaults) is None
 
-    config = LCMConfig(
+    config = TROVEConfig(
         embedding_provider="  VOYAGEAI ",
         embedding_model="voyage-3-lite",
         embedding_query_timeout_s=1.25,
@@ -499,7 +499,7 @@ def test_resolve_provider_strings_and_dormant_defaults(monkeypatch):
 
 
 def test_resolve_provider_for_backfill_bypasses_spend_guard():
-    config = LCMConfig(embedding_provider="ollama", embedding_model="model-x")
+    config = TROVEConfig(embedding_provider="ollama", embedding_model="model-x")
 
     interactive = resolve_provider(config)
     assert interactive.spend_guard.max_calls > 0
@@ -518,7 +518,7 @@ def test_resolve_provider_for_backfill_bypasses_spend_guard():
 
 @pytest.mark.parametrize("provider_name", ["voyage", "ollama", "fastembed"])
 def test_resolve_provider_for_backfill_uses_separate_bulk_timeout(provider_name):
-    config = LCMConfig(
+    config = TROVEConfig(
         embedding_provider=provider_name,
         embedding_model="model-x",
         embedding_query_timeout_s=0.02,
@@ -546,7 +546,7 @@ def test_fastembed_backfill_is_not_bound_by_interactive_query_timeout(monkeypatc
 
     monkeypatch.setattr(provider_mod, "_load_fastembed", lambda: SlowBulkModel)
     provider = resolve_provider(
-        LCMConfig(
+        TROVEConfig(
             embedding_provider="fastembed",
             embedding_model="local-model",
             embedding_query_timeout_s=0.01,
@@ -567,7 +567,7 @@ def test_fastembed_backfill_is_not_bound_by_interactive_query_timeout(monkeypatc
 
 
 def test_embedding_config_defaults_and_environment(monkeypatch):
-    defaults = LCMConfig()
+    defaults = TROVEConfig()
     assert defaults.embedding_provider == ""
     assert defaults.embedding_model == ""
     assert defaults.ollama_base_url == "http://localhost:11434"
@@ -575,13 +575,13 @@ def test_embedding_config_defaults_and_environment(monkeypatch):
     assert defaults.embedding_backfill_timeout_s == 120.0
     assert defaults.embedding_max_batch_items == 1000
 
-    monkeypatch.setenv("LCM_EMBEDDING_PROVIDER", "ollama")
-    monkeypatch.setenv("LCM_EMBEDDING_MODEL", "model-a")
-    monkeypatch.setenv("LCM_OLLAMA_BASE_URL", "http://ollama:11434")
-    monkeypatch.setenv("LCM_EMBEDDING_QUERY_TIMEOUT_S", "4.5")
-    monkeypatch.setenv("LCM_EMBEDDING_BACKFILL_TIMEOUT_S", "45.0")
-    monkeypatch.setenv("LCM_EMBEDDING_MAX_BATCH_ITEMS", "500")
-    configured = LCMConfig.from_env()
+    monkeypatch.setenv("TROVE_EMBEDDING_PROVIDER", "ollama")
+    monkeypatch.setenv("TROVE_EMBEDDING_MODEL", "model-a")
+    monkeypatch.setenv("TROVE_OLLAMA_BASE_URL", "http://ollama:11434")
+    monkeypatch.setenv("TROVE_EMBEDDING_QUERY_TIMEOUT_S", "4.5")
+    monkeypatch.setenv("TROVE_EMBEDDING_BACKFILL_TIMEOUT_S", "45.0")
+    monkeypatch.setenv("TROVE_EMBEDDING_MAX_BATCH_ITEMS", "500")
+    configured = TROVEConfig.from_env()
     assert configured.embedding_provider == "ollama"
     assert configured.embedding_model == "model-a"
     assert configured.ollama_base_url == "http://ollama:11434"
@@ -605,7 +605,7 @@ class FakeWarmupProvider:
 
 def _command_engine(tmp_path):
     return SimpleNamespace(
-        _config=LCMConfig(
+        _config=TROVEConfig(
             database_path=str(tmp_path / "warmup.db"), embeddings_enabled=True
         ),
         _store=SimpleNamespace(db_path=tmp_path / "warmup.db"),
@@ -619,23 +619,23 @@ def test_warmup_command_probes_and_registers_profile(monkeypatch, tmp_path):
     engine._config.embedding_provider = "ollama"
     engine._config.embedding_model = "model-a"
     stale_provider = FakeWarmupProvider([9.0])
-    engine._lcm_embedding_provider_cache = (("ollama", "model-a"), stale_provider)
+    engine._trove_embedding_provider_cache = (("ollama", "model-a"), stale_provider)
 
-    result = handle_lcm_command("embed warmup", engine)
+    result = handle_trove_command("embed warmup", engine)
 
     assert "status: ready" in result
     assert "provider: ollama" in result
     assert "model: model-a" in result
     assert "dim: 3" in result
     assert provider.calls == ["warmup"]
-    assert engine._lcm_embedding_provider_cache == (
+    assert engine._trove_embedding_provider_cache == (
         ("ollama", "model-a"),
         provider,
     )
     store = VectorStore(engine._store.db_path)
     try:
         rows = store.connection.execute(
-            "SELECT provider, dim, task FROM lcm_embedding_profile "
+            "SELECT provider, dim, task FROM trove_embedding_profile "
             "WHERE model_name = ? ORDER BY task",
             ("model-a",),
         ).fetchall()
@@ -661,7 +661,7 @@ def test_warmup_command_new_dim_is_a_distinct_identity_no_clobber(monkeypatch, t
         lambda _config: FakeWarmupProvider([0.1, 0.2, 0.3]),
     )
 
-    result = handle_lcm_command("embed warmup", engine)
+    result = handle_trove_command("embed warmup", engine)
 
     assert "status: ready" in result
     assert "dim: 3" in result
@@ -669,7 +669,7 @@ def test_warmup_command_new_dim_is_a_distinct_identity_no_clobber(monkeypatch, t
     store = VectorStore(engine._store.db_path)
     try:
         rows = store.connection.execute(
-            "SELECT dim, active FROM lcm_embedding_profile "
+            "SELECT dim, active FROM trove_embedding_profile "
             "WHERE model_name = 'model-a' AND task = 'summary' ORDER BY dim"
         ).fetchall()
         assert [tuple(r) for r in rows] == [(2, 0), (3, 1)]
@@ -693,7 +693,7 @@ def test_warmup_registers_voyage_context_chunk_profile(monkeypatch, tmp_path):
     engine._config.embedding_provider = "voyage"
     engine._config.embedding_model = "voyage-3"
 
-    result = handle_lcm_command("embed warmup", engine)
+    result = handle_trove_command("embed warmup", engine)
 
     assert "status: ready" in result
     assert "chunk_model: voyage-context-4" in result
@@ -703,7 +703,7 @@ def test_warmup_registers_voyage_context_chunk_profile(monkeypatch, tmp_path):
     store = VectorStore(engine._store.db_path)
     try:
         rows = store.connection.execute(
-            "SELECT model_name, dim, task FROM lcm_embedding_profile "
+            "SELECT model_name, dim, task FROM trove_embedding_profile "
             "WHERE active = 1 ORDER BY task"
         ).fetchall()
         assert [tuple(row) for row in rows] == [
@@ -735,7 +735,7 @@ def test_warmup_command_fastembed_uses_explicit_download(monkeypatch, tmp_path):
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config: provider)
     engine = _command_engine(tmp_path)
 
-    result = handle_lcm_command("embed warmup", engine)
+    result = handle_trove_command("embed warmup", engine)
 
     assert "status: ready" in result
     assert "download: ready" in result
@@ -800,7 +800,7 @@ def test_resolve_provider_query_path_guard_is_generous_and_unthrottled():
     # Regression for #123: the query path (for_backfill=False) must NOT inherit
     # the strict 60/60s default that gutted retrieval; it gets the generous
     # configurable guard and survives a tight loop of 100+ back-to-back embeds.
-    config = LCMConfig(embedding_provider="voyage", embedding_model="voyage-4")
+    config = TROVEConfig(embedding_provider="voyage", embedding_model="voyage-4")
     provider = resolve_provider(config, for_backfill=False)
     guard = provider.spend_guard
     assert guard.max_calls == 600
@@ -816,9 +816,9 @@ def test_resolve_provider_query_path_guard_is_generous_and_unthrottled():
 
 
 def test_resolve_provider_query_guard_is_configurable():
-    # Constructor-arg surface: the LCMConfig fields thread straight into the
+    # Constructor-arg surface: the TROVEConfig fields thread straight into the
     # query-path guard so a benchmark harness can widen or disable it.
-    config = LCMConfig(
+    config = TROVEConfig(
         embedding_provider="voyage",
         embedding_model="voyage-4",
         embedding_query_spend_max_calls=5,
@@ -832,13 +832,13 @@ def test_resolve_provider_query_guard_is_configurable():
 
 
 def test_query_guard_env_override(monkeypatch):
-    # Env surface: LCM_EMBEDDING_QUERY_SPEND_* overrides the defaults.
-    monkeypatch.setenv("LCM_EMBEDDING_PROVIDER", "voyage")
-    monkeypatch.setenv("LCM_EMBEDDING_MODEL", "voyage-4")
-    monkeypatch.setenv("LCM_EMBEDDING_QUERY_SPEND_MAX_CALLS", "1200")
-    monkeypatch.setenv("LCM_EMBEDDING_QUERY_SPEND_WINDOW_SECONDS", "90")
-    monkeypatch.setenv("LCM_EMBEDDING_QUERY_SPEND_BACKOFF_SECONDS", "45")
-    config = LCMConfig.from_env()
+    # Env surface: TROVE_EMBEDDING_QUERY_SPEND_* overrides the defaults.
+    monkeypatch.setenv("TROVE_EMBEDDING_PROVIDER", "voyage")
+    monkeypatch.setenv("TROVE_EMBEDDING_MODEL", "voyage-4")
+    monkeypatch.setenv("TROVE_EMBEDDING_QUERY_SPEND_MAX_CALLS", "1200")
+    monkeypatch.setenv("TROVE_EMBEDDING_QUERY_SPEND_WINDOW_SECONDS", "90")
+    monkeypatch.setenv("TROVE_EMBEDDING_QUERY_SPEND_BACKOFF_SECONDS", "45")
+    config = TROVEConfig.from_env()
     assert config.embedding_query_spend_max_calls == 1200
     assert config.embedding_query_spend_window_seconds == 90.0
     assert config.embedding_query_spend_backoff_seconds == 45.0
@@ -849,7 +849,7 @@ def test_query_guard_env_override(monkeypatch):
 def test_resolve_provider_backfill_path_stays_exempt():
     # Backfill's bulk contract is unchanged: max_calls=0 => allows() always
     # True, record_call() a no-op, even after many calls.
-    config = LCMConfig(embedding_provider="voyage", embedding_model="voyage-4")
+    config = TROVEConfig(embedding_provider="voyage", embedding_model="voyage-4")
     provider = resolve_provider(config, for_backfill=True)
     guard = provider.spend_guard
     assert guard.max_calls == 0
@@ -1291,7 +1291,7 @@ def test_warmup_command_is_inert_when_embeddings_disabled(monkeypatch, tmp_path)
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config: provider)
     engine = _command_engine(tmp_path)
     engine._config.embeddings_enabled = False
-    result = handle_lcm_command("embed warmup", engine)
+    result = handle_trove_command("embed warmup", engine)
     assert "status: disabled" in result
     assert provider.calls == []
     assert not engine._store.db_path.exists()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic synthetic recall@k smoke evaluation for LCM retrieval modes."""
+"""Deterministic synthetic recall@k smoke evaluation for TROVE retrieval modes."""
 
 from __future__ import annotations
 
@@ -215,11 +215,11 @@ def evaluate(embedder: Embedder) -> dict[str, dict[str, dict[str, float]]]:
 
 
 def _load_live_provider() -> Embedder:
-    if os.environ.get("LCM_RECALL_EVAL_ALLOW_LIVE_PROVIDER") != "1":
+    if os.environ.get("TROVE_RECALL_EVAL_ALLOW_LIVE_PROVIDER") != "1":
         raise RuntimeError(
-            "live-provider evaluation requires LCM_RECALL_EVAL_ALLOW_LIVE_PROVIDER=1"
+            "live-provider evaluation requires TROVE_RECALL_EVAL_ALLOW_LIVE_PROVIDER=1"
         )
-    package_name = "hermes_lcm"
+    package_name = "hermes_trove"
     if package_name not in sys.modules:
         package = ModuleType(package_name)
         package.__path__ = [str(ROOT)]
@@ -238,10 +238,10 @@ def _load_live_provider() -> Embedder:
         spec.loader.exec_module(module)
     config_module = sys.modules[f"{package_name}.config"]
     provider_module = sys.modules[f"{package_name}.embedding_provider"]
-    config = config_module.LCMConfig.from_env()
+    config = config_module.TROVEConfig.from_env()
     provider = provider_module.resolve_provider(config)
     if provider is None:
-        raise RuntimeError("LCM_EMBEDDING_PROVIDER and LCM_EMBEDDING_MODEL are required")
+        raise RuntimeError("TROVE_EMBEDDING_PROVIDER and TROVE_EMBEDDING_MODEL are required")
     return provider
 
 

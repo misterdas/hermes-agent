@@ -20,7 +20,7 @@ removing providers*).
 ## Option 1 — Voyage AI (free tier)
 
 The Voyage-4 generation (`voyage-4`, `voyage-4-large`, `voyage-4-lite`) carries **200 million free
-tokens for that model group**, and signup does not require a credit card. For a personal LCM corpus
+tokens for that model group**, and signup does not require a credit card. For a personal TROVE corpus
 (thousands of summaries), that free allotment covers initial backfill and years of queries; past it,
 embedding costs $0.02/M (`voyage-4-lite`), $0.06/M (`voyage-4`), or $0.12/M (`voyage-4-large`). A
 query embeds exactly one short vector, so a semantic or hybrid query costs a fraction of a cent.
@@ -31,12 +31,12 @@ truth; the numbers above were verified 2026-07.
 
 ```bash
 export VOYAGE_API_KEY=...           # from dash.voyageai.com
-export LCM_EMBEDDINGS_ENABLED=true
-export LCM_EMBEDDING_PROVIDER=voyage
-export LCM_EMBEDDING_MODEL=voyage-4-lite   # or voyage-4 / voyage-4-large
-/lcm embed warmup                   # probes the API, registers model + dimensions
-/lcm embed backfill                 # dry run: shows counts + estimated tokens, writes nothing
-/lcm embed backfill --apply         # embeds your history in bounded batches
+export TROVE_EMBEDDINGS_ENABLED=true
+export TROVE_EMBEDDING_PROVIDER=voyage
+export TROVE_EMBEDDING_MODEL=voyage-4-lite   # or voyage-4 / voyage-4-large
+/trove embed warmup                   # probes the API, registers model + dimensions
+/trove embed backfill                 # dry run: shows counts + estimated tokens, writes nothing
+/trove embed backfill --apply         # embeds your history in bounded batches
 ```
 
 Notes: requests are batched under Voyage's caps — both the token budget and the 1000-item
@@ -59,17 +59,17 @@ external service — just a pip package.
 
 ```bash
 pip install fastembed
-export LCM_EMBEDDINGS_ENABLED=true
-export LCM_EMBEDDING_PROVIDER=fastembed
-export LCM_EMBEDDING_MODEL=BAAI/bge-small-en-v1.5   # 384-dim, compact and quick on CPU
-/lcm embed warmup     # downloads the model ONCE, explicitly (a few hundred MB incl. onnxruntime)
-/lcm embed backfill --apply
+export TROVE_EMBEDDINGS_ENABLED=true
+export TROVE_EMBEDDING_PROVIDER=fastembed
+export TROVE_EMBEDDING_MODEL=BAAI/bge-small-en-v1.5   # 384-dim, compact and quick on CPU
+/trove embed warmup     # downloads the model ONCE, explicitly (a few hundred MB incl. onnxruntime)
+/trove embed backfill --apply
 ```
 
 The model download happens **only** during `warmup` — never lazily during a query or an agent turn.
 If you skip warmup, semantic search simply stays off and the tools tell you why. Queries use the
 model's query-specific encoding (distinct from document encoding) so query/passage asymmetry is
-preserved. When `LCM_EMBEDDINGS_ENABLED=false`, `warmup` is inert: it does not resolve a provider,
+preserved. When `TROVE_EMBEDDINGS_ENABLED=false`, `warmup` is inert: it does not resolve a provider,
 download a model, create embedding tables, or create the configured database.
 
 ## Option 3 — Ollama (local daemon)
@@ -78,11 +78,11 @@ If you already run [Ollama](https://ollama.com), use its embeddings endpoint:
 
 ```bash
 ollama pull nomic-embed-text        # 768-dim; mxbai-embed-large and bge-m3 also work
-export LCM_EMBEDDINGS_ENABLED=true
-export LCM_EMBEDDING_PROVIDER=ollama
-export LCM_EMBEDDING_MODEL=nomic-embed-text
-# LCM_OLLAMA_BASE_URL defaults to http://localhost:11434
-/lcm embed warmup && /lcm embed backfill --apply
+export TROVE_EMBEDDINGS_ENABLED=true
+export TROVE_EMBEDDING_PROVIDER=ollama
+export TROVE_EMBEDDING_MODEL=nomic-embed-text
+# TROVE_OLLAMA_BASE_URL defaults to http://localhost:11434
+/trove embed warmup && /trove embed backfill --apply
 ```
 
 Ollama requests set `truncate: false`, so an input that exceeds the model's context fails loudly
@@ -90,24 +90,24 @@ rather than being silently truncated to a misleading embedding. As with Voyage, 
 timeout/network failure after transport starts is acceptance-ambiguous and is not automatically
 resent.
 
-Bulk document embedding uses `LCM_EMBEDDING_BACKFILL_TIMEOUT_S` as its
+Bulk document embedding uses `TROVE_EMBEDDING_BACKFILL_TIMEOUT_S` as its
 per-provider-operation deadline (120 seconds by default) for Voyage, Ollama,
 and fastembed. This is intentionally separate from the latency-sensitive
-`LCM_EMBEDDING_QUERY_TIMEOUT_S` (3 seconds by default), so a normal document
+`TROVE_EMBEDDING_QUERY_TIMEOUT_S` (3 seconds by default), so a normal document
 batch or local model load is not aborted by the interactive query policy. The
-optional `LCM_EMBEDDING_BACKFILL_BUDGET_S` still caps the whole apply run
+optional `TROVE_EMBEDDING_BACKFILL_BUDGET_S` still caps the whole apply run
 between batches (`0`, the default, means no whole-run cap); the lease and
 post-call ownership CAS remain authoritative independently of both timeouts.
 
 ## What you get
 
-`lcm_grep` gains two modes on top of the existing ones:
+`trove_grep` gains two modes on top of the existing ones:
 
 - `semantic` — paraphrase-tolerant vector search; local providers make this $0
 - `hybrid` — keyword ∪ semantic, fused with reciprocal-rank fusion (RRF); the best
   "have we discussed X?" mode. (Fusion is RRF only — there is no external reranker.)
 
-Semantic and hybrid requests use one absolute deadline beginning at `lcm_grep` entry. It includes
+Semantic and hybrid requests use one absolute deadline beginning at `trove_grep` entry. It includes
 provider resolution, query embedding, optional NumPy import, bounded KNN, result hydration, any FTS
 fallback, both hybrid arms, and fusion. A semantic failure can degrade to full-text with
 `degraded_to_fts`; the fallback uses separate read-only SQLite connections with progress
@@ -130,7 +130,7 @@ therefore reports bounded coverage rather than claiming universal pre-bound sour
   corpora — the top-k scan is milliseconds warm once numpy is loaded.
 - Metadata/id resolution uses a temp-table join rather than a giant `IN (...)` list, so it scales
   past the SQLite host-parameter limit that previously failed near ~32k ids (validated to 40k).
-- Without numpy, search scans the most recent `LCM_EMBEDDING_BOUNDED_SCAN_ROWS` vectors (default
+- Without numpy, search scans the most recent `TROVE_EMBEDDING_BOUNDED_SCAN_ROWS` vectors (default
   2,000) and reports `coverage: bounded`. The candidate enumeration is bounded at the SQL layer
   (`ORDER BY` recency `+ LIMIT`), so a large corpus never materializes every id in host memory.
 - With numpy, the cache is still only for that bounded candidate set and is keyed by canonical
@@ -138,8 +138,8 @@ therefore reports bounded coverage rather than claiming universal pre-bound sour
 
 ## Switching or removing providers
 
-Change provider/model → run `/lcm embed warmup` (registers the new profile as the current identity)
-→ `/lcm embed backfill --apply` (embeds under the new identity; the previous model's vectors are
+Change provider/model → run `/trove embed warmup` (registers the new profile as the current identity)
+→ `/trove embed backfill --apply` (embeds under the new identity; the previous model's vectors are
 kept separate and never mixed). Every vector is published under the exact identity that produced it
 — the identity is captured at provider-resolution time and carried through the write, so switching
 the active provider A→B mid-backfill can never rebind an A-vector onto B. If A becomes inactive
@@ -157,7 +157,7 @@ local publication fails after acceptance, those rows become `uncertain` and norm
 not bill them again. Recovery is deliberately operator-authorized:
 
 ```bash
-/lcm embed backfill --apply --retry-uncertain --limit 32
+/trove embed backfill --apply --retry-uncertain --limit 32
 ```
 
 The authorization is bound to the exact oldest uncertain rows selected by that invocation, up to
@@ -165,12 +165,12 @@ The authorization is bound to the exact oldest uncertain rows selected by that i
 markers are not cleared before discovery or dispatch, and any row not successfully published
 (including a skipped row, definitive rejection, budget stop, or lease loss) remains `uncertain` for
 another explicit decision. The command reports the uncertain count and warning because retrying may
-rebill. Disable everything with `LCM_EMBEDDINGS_ENABLED=false` — data stays, behavior reverts to
+rebill. Disable everything with `TROVE_EMBEDDINGS_ENABLED=false` — data stays, behavior reverts to
 FTS-only instantly.
 
 ## The chunk corpus — raw verbatim text, and the consent gate
 
-`/lcm embed backfill` has two corpora, selected with `--corpus`:
+`/trove embed backfill` has two corpora, selected with `--corpus`:
 
 - `summary` (default) — embeds the generated **summaries** of your history.
 - `chunks` — embeds **raw, verbatim message text**, chunked by `--policy`
@@ -187,13 +187,13 @@ Because of this, `--corpus chunks --apply` and `--corpus both --apply` **refuse*
 unless you pass an explicit acknowledgment:
 
 ```bash
-/lcm embed backfill --corpus chunks --apply --confirm-raw-text
+/trove embed backfill --corpus chunks --apply --confirm-raw-text
 ```
 
 Local providers (**fastembed**, **ollama**) never transmit text off the machine, so the gate is
 waived for them. Dry runs (no `--apply`) never send anything and never require the flag.
 
-> **Redaction caveat.** `LCM_SENSITIVE_PATTERNS_ENABLED` redaction runs at **ingest** time, so it
+> **Redaction caveat.** `TROVE_SENSITIVE_PATTERNS_ENABLED` redaction runs at **ingest** time, so it
 > only affects text stored *after* it was enabled. Turning it on does **not** retro-redact history
 > already in the store — that older raw text is still what gets sent to the provider during a chunk
 > backfill. Prefer a local provider for the chunk corpus if the history may contain secrets.

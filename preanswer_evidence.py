@@ -22,7 +22,7 @@ from .sufficiency_gate import apply_sufficiency_gate
 
 
 PREANSWER_EVIDENCE_VERSION = "preanswer-evidence-v1"
-_EXACT_REF_RE = re.compile(r"^lcm:(?P<store_id>[1-9]\d*):(?P<start>\d+)-(?P<end>\d+)$")
+_EXACT_REF_RE = re.compile(r"^trove:(?P<store_id>[1-9]\d*):(?P<start>\d+)-(?P<end>\d+)$")
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")
 _NUMBER_RE = re.compile(r"(?<![\w.])-?(?:\d+(?:,\d{3})*|\d*\.\d+)(?!\w)")
 _STOP_WORDS = frozenset(
@@ -172,7 +172,7 @@ def _base_result(
             "context_chars": 0,
         },
         "provenance": {
-            "storage": "same_lcm_db",
+            "storage": "same_trove_db",
             "provider_neutral_analysis": True,
             "final_prose_cached": False,
         },
@@ -392,7 +392,7 @@ def _render_computation(computation: Mapping[str, Any]) -> str:
     refs = [str(ref) for ref in citations] if isinstance(citations, list) else []
     result = str(computation.get("result") or "").strip()
     lines = [
-        "<lcm-preanswer-evidence>",
+        "<trove-preanswer-evidence>",
         "Validated deterministic result from exact stored evidence:",
         f"- result: {result}",
     ]
@@ -401,7 +401,7 @@ def _render_computation(computation: Mapping[str, Any]) -> str:
     lines.extend(
         [
             "Use this canonical result unchanged in the answer. Do not alter its value or unit.",
-            "</lcm-preanswer-evidence>",
+            "</trove-preanswer-evidence>",
         ]
     )
     return "\n".join(lines)
@@ -409,7 +409,7 @@ def _render_computation(computation: Mapping[str, Any]) -> str:
 
 def _render_evidence(evidence: Sequence[Mapping[str, Any]]) -> str:
     lines = [
-        "<lcm-preanswer-evidence>",
+        "<trove-preanswer-evidence>",
         "Novel exact evidence from stored conversation history:",
     ]
     for item in evidence:
@@ -419,7 +419,7 @@ def _render_evidence(evidence: Sequence[Mapping[str, Any]]) -> str:
     lines.extend(
         [
             "This is bounded evidence, not a claim that an open-world list is complete.",
-            "</lcm-preanswer-evidence>",
+            "</trove-preanswer-evidence>",
         ]
     )
     return "\n".join(lines)
@@ -507,7 +507,7 @@ def build_preanswer_evidence(
             import logging
 
             logging.getLogger(__name__).warning(
-                "LCM sufficiency gate failed open in build_preanswer_evidence",
+                "TROVE sufficiency gate failed open in build_preanswer_evidence",
                 exc_info=True,
             )
     return result

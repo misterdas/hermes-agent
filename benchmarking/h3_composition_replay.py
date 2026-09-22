@@ -56,8 +56,8 @@ _REF_RE = re.compile(r"^trajectory://[^/]+/(?P<traj>[^/]+)/state/(?P<state>\d+)$
 
 
 def _bootstrap_package(repo_root: Path) -> Any:
-    """Register the plugin dir as the ``hermes_lcm`` package (mirrors conftest)."""
-    pkg = "hermes_lcm"
+    """Register the plugin dir as the ``hermes_trove`` package (mirrors conftest)."""
+    pkg = "hermes_trove"
     if pkg in sys.modules:
         return sys.modules[pkg]
     parent = str(repo_root.parent)
@@ -130,7 +130,7 @@ def _percentile(values: list[float], pct: float) -> float:
 class ReplayContext:
     def __init__(self, run_root: Path, h1: Path, h31: Path) -> None:
         pkg = _bootstrap_package(_REPO_ROOT)
-        self._ts = sys.modules["hermes_lcm.trajectory_store"]
+        self._ts = sys.modules["hermes_trove.trajectory_store"]
         self.h1 = h1
         self.h31 = h31
         self.questions: dict[str, tuple[str, str]] = {}
@@ -140,7 +140,7 @@ class ReplayContext:
             ):
                 self.questions[item["id"]] = (domain, _question_text(item["question"]))
         self.stores = {
-            domain: self._open_store(h31 / "db-copies" / f"{domain}.lcm.db", domain)
+            domain: self._open_store(h31 / "db-copies" / f"{domain}.trove.db", domain)
             for domain in ("web", "enterprise")
         }
         self._state_id_cache: dict[tuple[str, str, int], int | None] = {}
@@ -150,7 +150,7 @@ class ReplayContext:
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         identity_json = json.loads(
             conn.execute(
-                "SELECT identity_json FROM lcm_trajectory_corpora WHERE singleton=1"
+                "SELECT identity_json FROM trove_trajectory_corpora WHERE singleton=1"
             ).fetchone()[0]
         )
         conn.close()
@@ -179,7 +179,7 @@ class ReplayContext:
         domain, _ = self.questions[qid]
         path = (
             self.h31 / "query_traces" / domain / "query_traces" / qid
-            / "hermes_lcm_semantic_telemetry.json"
+            / "hermes_trove_semantic_telemetry.json"
         )
         return _read_trace(str(path))
 
@@ -237,8 +237,8 @@ class ReplayContext:
         store = self.stores[domain]
         row = store._conn.execute(
             """
-            SELECT s.state_id FROM lcm_trajectory_states s
-            JOIN lcm_trajectory_sources src ON src.source_id = s.source_id
+            SELECT s.state_id FROM trove_trajectory_states s
+            JOIN trove_trajectory_sources src ON src.source_id = s.source_id
             WHERE src.trajectory_id = ? AND s.state_index = ?
             """,
             (traj, state_index),

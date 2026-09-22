@@ -67,7 +67,7 @@ class ProjectedQueryProvider:
         profile = connection.execute(
             """
             SELECT profile_digest, dim
-            FROM lcm_trajectory_embedding_profiles
+            FROM trove_trajectory_embedding_profiles
             WHERE active = 1
             """
         ).fetchone()
@@ -78,7 +78,7 @@ class ProjectedQueryProvider:
         rows = connection.execute(
             """
             SELECT source_id, vector
-            FROM lcm_trajectory_embeddings
+            FROM trove_trajectory_embeddings
             WHERE profile_digest = ?
             """,
             (str(profile["profile_digest"]),),
@@ -195,11 +195,11 @@ class ProjectedStateReplayContext(ReplayContext):
         super().__init__(run_root, h1, h31)
 
     def _open_store(self, db_path, domain):  # noqa: ARG002
-        real_db = self._db_dir / f"{domain}.lcm.db"
+        real_db = self._db_dir / f"{domain}.trove.db"
         connection = sqlite3.connect(f"file:{real_db}?mode=ro", uri=True)
         identity_json = json.loads(
             connection.execute(
-                "SELECT identity_json FROM lcm_trajectory_corpora WHERE singleton=1"
+                "SELECT identity_json FROM trove_trajectory_corpora WHERE singleton=1"
             ).fetchone()[0]
         )
         connection.close()

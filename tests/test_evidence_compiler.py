@@ -9,21 +9,21 @@ from types import SimpleNamespace
 
 import pytest
 
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.evidence_compiler import (
+from hermes_trove.config import TROVEConfig
+from hermes_trove.evidence_compiler import (
     EVIDENCE_COMPILER_VERSION,
     SELECTOR_SCHEMA_VERSION,
     compile_evidence,
     derive_evidence_request,
 )
-from hermes_lcm.query_view_store import QueryViewStore
-from hermes_lcm.schemas import LCM_COMPILE_EVIDENCE
-from hermes_lcm.store import MessageStore
-from hermes_lcm.tools import lcm_compile_evidence
+from hermes_trove.query_view_store import QueryViewStore
+from hermes_trove.schemas import TROVE_COMPILE_EVIDENCE
+from hermes_trove.store import MessageStore
+from hermes_trove.tools import trove_compile_evidence
 
 
 def _engine(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm.db"))
+    config = TROVEConfig(database_path=str(tmp_path / "trove.db"))
     store = MessageStore(config.database_path, ingest_protection_config=config)
     return SimpleNamespace(
         _config=config,
@@ -46,7 +46,7 @@ def _append(
         message["timestamp"] = observed_at
     store_id = engine._store.append(session_id, message)
     return {
-        "exact_ref": f"lcm:{store_id}:0-{len(content)}",
+        "exact_ref": f"trove:{store_id}:0-{len(content)}",
         "quote": content,
     }
 
@@ -715,7 +715,7 @@ def test_registered_tool_uses_the_product_compiler_path(tmp_path):
     )({})
     try:
         payload = json.loads(
-            lcm_compile_evidence(
+            trove_compile_evidence(
                 {
                     "question": "Who owns the Atlas rollout?",
                     "question_date": "2026-07-20",
@@ -732,7 +732,7 @@ def test_registered_tool_uses_the_product_compiler_path(tmp_path):
     assert payload["status"] == "compiled"
     assert payload["state"] == "answer_sufficient"
     assert payload["evidence"][0]["exact_ref"] == source["exact_ref"]
-    assert payload["provenance"]["storage"] == "same_lcm_db"
+    assert payload["provenance"]["storage"] == "same_trove_db"
     assert payload["provenance"]["final_prose_cached"] is False
 
 
@@ -743,7 +743,7 @@ def test_public_proposal_schema_does_not_require_code_derived_operation(tmp_path
     selector_request["operation"]) -- it is never a selector output, so the
     public schema must not require (or allow) callers to echo it back
     (F-PR436-4: the schema required it while the runtime rejected it)."""
-    proposal_schema = LCM_COMPILE_EVIDENCE["parameters"]["properties"]["proposal"]
+    proposal_schema = TROVE_COMPILE_EVIDENCE["parameters"]["properties"]["proposal"]
     assert "operation" not in proposal_schema["required"]
     assert "operation" not in proposal_schema["properties"]
 
@@ -765,7 +765,7 @@ def test_public_proposal_schema_does_not_require_code_derived_operation(tmp_path
     assert set(schema_compliant_proposal) == set(proposal_schema["required"])
     try:
         payload = json.loads(
-            lcm_compile_evidence(
+            trove_compile_evidence(
                 {
                     "question": "Who owns the Atlas rollout?",
                     "question_date": "2026-07-20",
@@ -806,7 +806,7 @@ def test_selective_query_view_persistence_is_same_db_and_default_off(tmp_path):
             persist_view=True,
         )
         count = query_views._conn.execute(
-            "SELECT COUNT(*) FROM lcm_query_view_versions"
+            "SELECT COUNT(*) FROM trove_query_view_versions"
         ).fetchone()[0]
     finally:
         query_views.close()
@@ -852,7 +852,7 @@ def test_persist_compiled_view_releases_lease_on_publish_failure(tmp_path, monke
         assert failed_result["persistence"]["reason_code"] == "query_view_publish_failed"
 
         row = query_views._conn.execute(
-            "SELECT status, build_nonce FROM lcm_query_views"
+            "SELECT status, build_nonce FROM trove_query_views"
         ).fetchone()
         assert row["status"] != "building"
         assert row["build_nonce"] == ""
@@ -928,7 +928,7 @@ def test_selective_persistence_rejects_generic_or_ungrounded_state(tmp_path):
             persist_view=True,
         )
         count = query_views._conn.execute(
-            "SELECT COUNT(*) FROM lcm_query_view_versions"
+            "SELECT COUNT(*) FROM trove_query_view_versions"
         ).fetchone()[0]
     finally:
         query_views.close()

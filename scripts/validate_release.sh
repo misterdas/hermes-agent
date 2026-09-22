@@ -94,7 +94,7 @@ fi
 require_python_module "pytest" "pytest validation gates"
 
 if [[ -z "$OUTPUT_DIR" ]]; then
-  OUTPUT_DIR="/tmp/hermes-lcm-release-validation-$(date -u +%Y%m%d-%H%M%S)"
+  OUTPUT_DIR="/tmp/hermes-trove-release-validation-$(date -u +%Y%m%d-%H%M%S)"
 fi
 
 if [[ -e "$OUTPUT_DIR" ]]; then
@@ -119,7 +119,7 @@ cd "$REPO_ROOT"
 branch="$(git branch --show-current 2>/dev/null || true)"
 commit="$(git rev-parse --short HEAD 2>/dev/null || true)"
 dirty_start="$(git status --short 2>/dev/null || true)"
-DIFF_CHECK_RANGE="${LCM_RELEASE_DIFF_BASE:-}"
+DIFF_CHECK_RANGE="${TROVE_RELEASE_DIFF_BASE:-}"
 if [[ -z "$DIFF_CHECK_RANGE" ]] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   if git rev-parse --verify origin/main >/dev/null 2>&1 && ! git diff --quiet origin/main...HEAD -- .; then
     DIFF_CHECK_RANGE="origin/main...HEAD"
@@ -129,7 +129,7 @@ if [[ -z "$DIFF_CHECK_RANGE" ]] && git rev-parse --is-inside-work-tree >/dev/nul
 fi
 
 cat > "$CHECKLIST" <<EOF
-# hermes-lcm release validation
+# hermes-trove release validation
 
 - generated_at_utc: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 - mode: $MODE
@@ -207,16 +207,16 @@ else
 fi
 run_gate "dependency contract" "$PYTHON_BIN" scripts/validate_dependency_contract.py --report-environment
 run_gate "python compileall" "$PYTHON_BIN" -m compileall -q .
-run_gate "script py_compile" "$PYTHON_BIN" -m py_compile scripts/backfill_externalized_tool_outputs.py scripts/import_lossless_claw.py scripts/lcm_benchmark.py scripts/lcm_stress_check.py scripts/validate_dependency_contract.py
+run_gate "script py_compile" "$PYTHON_BIN" -m py_compile scripts/backfill_externalized_tool_outputs.py scripts/import_lossless_claw.py scripts/trove_benchmark.py scripts/trove_stress_check.py scripts/validate_dependency_contract.py
 run_gate "shell syntax" bash -n scripts/install.sh scripts/update.sh scripts/validate_release.sh
-run_gate "focused pytest" run_pytest tests/test_lcm_core.py tests/test_lcm_command.py tests/test_packaging_install.py tests/test_benchmarking_cli.py tests/test_stress_release_check.py tests/test_historical_externalization_backfill.py -q
-run_gate "benchmark smoke" "$PYTHON_BIN" scripts/lcm_benchmark.py --synthetic-fixture release_validation_smoke:2:1:3 --policy benchmarks/policies/pressure_smoke.yaml --output "$OUTPUT_DIR/benchmark-smoke" --allow-external-output --json
-run_gate "stress smoke" "$PYTHON_BIN" scripts/lcm_stress_check.py --output "$OUTPUT_DIR/stress-smoke" --tier smoke --json
+run_gate "focused pytest" run_pytest tests/test_trove_core.py tests/test_trove_command.py tests/test_packaging_install.py tests/test_benchmarking_cli.py tests/test_stress_release_check.py tests/test_historical_externalization_backfill.py -q
+run_gate "benchmark smoke" "$PYTHON_BIN" scripts/trove_benchmark.py --synthetic-fixture release_validation_smoke:2:1:3 --policy benchmarks/policies/pressure_smoke.yaml --output "$OUTPUT_DIR/benchmark-smoke" --allow-external-output --json
+run_gate "stress smoke" "$PYTHON_BIN" scripts/trove_stress_check.py --output "$OUTPUT_DIR/stress-smoke" --tier smoke --json
 
 if [[ "$MODE" == "full" ]]; then
   run_gate "pytest full" run_pytest -q
   run_gate "pytest low fd" run_low_fd_pytest
-  run_gate "stress release" "$PYTHON_BIN" scripts/lcm_stress_check.py --output "$OUTPUT_DIR/stress-release" --tier release --json
+  run_gate "stress release" "$PYTHON_BIN" scripts/trove_stress_check.py --output "$OUTPUT_DIR/stress-release" --tier release --json
 fi
 
 dirty_end="$(git status --short 2>/dev/null || true)"

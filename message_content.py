@@ -1,7 +1,7 @@
 """Message content normalization helpers.
 
 Hermes/OpenAI-format messages may carry ``content`` as plain text or as
-structured content parts (for example text + image blocks). LCM persists and
+structured content parts (for example text + image blocks). TROVE persists and
 accounts for message content as text, so all write/matching/token paths should
 use deliberate normalization.
 """

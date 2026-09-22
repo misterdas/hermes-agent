@@ -18,13 +18,13 @@ from pathlib import Path
 
 import pytest
 
-from hermes_lcm.db_bootstrap import (
+from hermes_trove.db_bootstrap import (
     configure_connection,
     ensure_message_origin_columns,
 )
-from hermes_lcm.store import MessageStore
-from hermes_lcm.dag import SummaryDAG
-from hermes_lcm.lifecycle_state import LifecycleStateStore
+from hermes_trove.store import MessageStore
+from hermes_trove.dag import SummaryDAG
+from hermes_trove.lifecycle_state import LifecycleStateStore
 
 
 # --------------------------------------------------------------------------- #
@@ -57,7 +57,7 @@ class TestConfigureConnectionPragmas:
         assert val == 2, f"expected synchronous=FULL (2), got {val}"
 
     def test_busy_timeout(self, db_path: Path, monkeypatch):
-        monkeypatch.delenv("LCM_BUSY_TIMEOUT_MS", raising=False)
+        monkeypatch.delenv("TROVE_BUSY_TIMEOUT_MS", raising=False)
         conn = sqlite3.connect(str(db_path))
         configure_connection(conn)
         val = conn.execute("PRAGMA busy_timeout").fetchone()[0]
@@ -65,7 +65,7 @@ class TestConfigureConnectionPragmas:
         assert val == 30_000, f"expected busy_timeout=30000, got {val}"
 
     def test_busy_timeout_override(self, db_path: Path, monkeypatch):
-        monkeypatch.setenv("LCM_BUSY_TIMEOUT_MS", "60000")
+        monkeypatch.setenv("TROVE_BUSY_TIMEOUT_MS", "60000")
         conn = sqlite3.connect(str(db_path))
         configure_connection(conn)
         val = conn.execute("PRAGMA busy_timeout").fetchone()[0]
@@ -97,7 +97,7 @@ class TestConfigureConnectionPragmas:
 
     def test_mmap_size_override(self, db_path: Path, monkeypatch):
         target = 268_435_456 if sys.platform == "darwin" else 0
-        monkeypatch.setenv("LCM_MMAP_SIZE", str(target))
+        monkeypatch.setenv("TROVE_MMAP_SIZE", str(target))
         conn = sqlite3.connect(str(db_path))
         configure_connection(conn)
         val = conn.execute("PRAGMA mmap_size").fetchone()[0]
@@ -231,7 +231,7 @@ class TestConcurrentStartupMigration:
     """Concurrent process startup must not crash on duplicate-column ALTERs.
 
     Regression for the pre-fix race: gateway + CLI + sub-agents open independent
-    connections to one ``lcm.db`` after an upgrade and all run the column
+    connections to one ``trove.db`` after an upgrade and all run the column
     migrations; the loser hit ``sqlite3.OperationalError: duplicate column name``
     and crashed store construction. ``add_column_if_missing`` makes the ALTER
     idempotent so every process migrates successfully.
@@ -364,7 +364,7 @@ class TestSelfHealingAndFallback:
             store._conn = real_conn
 
     def test_compaction_fallback_on_database_error(self):
-        from hermes_lcm.compaction import CompactionMixin
+        from hermes_trove.compaction import CompactionMixin
 
         class DummyEngine(CompactionMixin):
             def __init__(self):
@@ -380,10 +380,10 @@ class TestSelfHealingAndFallback:
                                claimed_sanitation=False, claimed_sanitation_handoff=None):
                 raise sqlite3.DatabaseError("database disk image is malformed")
 
-            def _compress_lcm_bypassed_session(self, messages, current_tokens=None, focus_topic=None, force=False):
+            def _compress_trove_bypassed_session(self, messages, current_tokens=None, focus_topic=None, force=False):
                 return [{"role": "system", "content": "bypassed"}]
 
-            def _bypasses_lcm_context_management(self):
+            def _bypasses_trove_context_management(self):
                 return False
 
         engine = DummyEngine()

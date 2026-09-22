@@ -1,14 +1,14 @@
-"""Auxiliary / subagent session tracking for the LCM engine (WS5 Seam 5).
+"""Auxiliary / subagent session tracking for the TROVE engine (WS5 Seam 5).
 
 The ``AuxiliarySessionMixin`` holds the auxiliary-session lifecycle tracking:
 the per-thread auxiliary stack, active/lineage session-id sets, register /
 deactivate / handoff, and the host-coupled caller-frame + state.db ancestor
-detection. These methods were lifted verbatim out of ``LCMEngine`` and continue
-to run bound to the engine instance (``self`` is the ``LCMEngine``), so the
+detection. These methods were lifted verbatim out of ``TROVEEngine`` and continue
+to run bound to the engine instance (``self`` is the ``TROVEEngine``), so the
 auxiliary state (initialised in ``__init__``, cleared in
 ``_reset_profile_runtime_state``, guarded by ``_auxiliary_session_lock``) stays
 owned by the engine and resolves via ``self`` — as do the callbacks
-(``_end_host_fallback_compressor_for_session``, ``_state_db_path``). ``LCMEngine``
+(``_end_host_fallback_compressor_for_session``, ``_state_db_path``). ``TROVEEngine``
 mixes this in, so no call site and no test changes.
 """
 
@@ -654,7 +654,7 @@ class AuxiliarySessionMixin:
         parent_session_id: str,
         kwargs: Dict[str, Any],
     ) -> bool:
-        """Return True when a same-process child agent should not rebind LCM.
+        """Return True when a same-process child agent should not rebind TROVE.
 
         Detect Hermes auxiliary/background child sessions without treating real
         foreground branches as stateless. In-process auxiliary agent frames are
@@ -685,7 +685,7 @@ class AuxiliarySessionMixin:
                 return True
             if (
                 explicit_parent_id in known_auxiliary_ids
-                and self._lcm_session_last_bypassed.get(explicit_parent_id)
+                and self._trove_session_last_bypassed.get(explicit_parent_id)
             ):
                 return True
             return False
@@ -718,7 +718,7 @@ class AuxiliarySessionMixin:
             finally:
                 conn.close()
         except Exception as exc:  # pragma: no cover - defensive against host DB drift
-            logger.debug("LCM auxiliary child session probe failed: %s", exc)
+            logger.debug("TROVE auxiliary child session probe failed: %s", exc)
             return False
         if not row:
             return False
@@ -732,7 +732,7 @@ class AuxiliarySessionMixin:
         bypassed_auxiliary_ids = {
             str(auxiliary_id or "")
             for auxiliary_id in known_auxiliary_ids
-            if self._lcm_session_last_bypassed.get(str(auxiliary_id or ""))
+            if self._trove_session_last_bypassed.get(str(auxiliary_id or ""))
         }
         if child_parent_id in active_auxiliary_ids:
             return True
@@ -778,6 +778,6 @@ class AuxiliarySessionMixin:
             finally:
                 conn.close()
         except Exception as exc:  # pragma: no cover - defensive against host DB drift
-            logger.debug("LCM auxiliary ancestor probe failed: %s", exc)
+            logger.debug("TROVE auxiliary ancestor probe failed: %s", exc)
             return False
         return False

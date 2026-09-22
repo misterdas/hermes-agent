@@ -1,4 +1,4 @@
-"""Serializable types for deterministic LCM benchmark replays."""
+"""Serializable types for deterministic TROVE benchmark replays."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def _as_bool(value: Any) -> bool:
 
 
 @dataclass(frozen=True)
-class LCMPolicy:
+class TROVEPolicy:
     name: str
     context_length: int
     context_threshold: float
@@ -47,7 +47,7 @@ class LCMPolicy:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "LCMPolicy":
+    def from_dict(cls, data: Mapping[str, Any]) -> "TROVEPolicy":
         return cls(
             name=str(data["name"]),
             context_length=int(data["context_length"]),

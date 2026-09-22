@@ -1,4 +1,4 @@
-"""Slash-style /lcm command helpers for Hermes."""
+"""Slash-style /trove command helpers for Hermes."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import uuid
 from .db_bootstrap import (
     check_external_content_fts_integrity,
     external_content_fts_needs_repair,
-    inspect_lcm_schema_health,
+    inspect_trove_schema_health,
     join_background_integrity_scans,
     load_integrity_failed,
     remediate_interim_schema_stamp,
@@ -82,7 +82,7 @@ from .tokens import count_tokens
 from .vector_store import EmbeddingIdentity, EmbeddingPublishOutcome, VectorStore
 
 
-_EMBEDDING_BACKFILL_CLAIM_KEY = "lcm_embedding_backfill_claim"
+_EMBEDDING_BACKFILL_CLAIM_KEY = "trove_embedding_backfill_claim"
 _EMBEDDING_BACKFILL_CLAIM_TTL_S = 10 * 60
 _EMBEDDING_BACKFILL_BATCH_SIZE = 32
 
@@ -99,7 +99,7 @@ def _env_float(key: str, default: float) -> float:
 
 
 def _embedding_backfill_lease_ttl_s() -> float:
-    return _env_float("LCM_EMBEDDING_BACKFILL_LEASE_TTL_S", float(_EMBEDDING_BACKFILL_CLAIM_TTL_S)) or float(
+    return _env_float("TROVE_EMBEDDING_BACKFILL_LEASE_TTL_S", float(_EMBEDDING_BACKFILL_CLAIM_TTL_S)) or float(
         _EMBEDDING_BACKFILL_CLAIM_TTL_S
     )
 
@@ -107,13 +107,13 @@ def _embedding_backfill_lease_ttl_s() -> float:
 def _embedding_backfill_heartbeat_s() -> float:
     # Refresh cadence: renew the lease at most this often during a long run so a
     # live owner keeps a lease a second worker would otherwise steal as expired.
-    return _env_float("LCM_EMBEDDING_BACKFILL_HEARTBEAT_S", 60.0)
+    return _env_float("TROVE_EMBEDDING_BACKFILL_HEARTBEAT_S", 60.0)
 
 
 def _embedding_backfill_budget_s() -> float:
     # Operation-wide wall-clock budget (0 = unlimited). When exceeded the run
     # stops between batches and reports partial rather than running unbounded.
-    return _env_float("LCM_EMBEDDING_BACKFILL_BUDGET_S", 0.0)
+    return _env_float("TROVE_EMBEDDING_BACKFILL_BUDGET_S", 0.0)
 
 
 def _ensure_inflight_table(conn: sqlite3.Connection) -> None:
@@ -205,7 +205,7 @@ def _ensure_inflight_table(conn: sqlite3.Connection) -> None:
     def create_table() -> None:
         conn.execute(
             """
-            CREATE TABLE lcm_embedding_backfill_inflight (
+            CREATE TABLE trove_embedding_backfill_inflight (
                 embedded_id TEXT,
                 identity_hash TEXT,
                 lease_id TEXT,
@@ -225,7 +225,7 @@ def _ensure_inflight_table(conn: sqlite3.Connection) -> None:
         return tuple(
             (str(row[1]), str(row[2]).upper(), int(row[3]), row[4], int(row[5]))
             for row in conn.execute(
-                "PRAGMA table_info(lcm_embedding_backfill_inflight)"
+                "PRAGMA table_info(trove_embedding_backfill_inflight)"
             ).fetchall()
         )
 
@@ -238,7 +238,7 @@ def _ensure_inflight_table(conn: sqlite3.Connection) -> None:
         # a missing table and makes the loser execute a stale CREATE TABLE.
         exists = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' "
-            "AND name='lcm_embedding_backfill_inflight'"
+            "AND name='trove_embedding_backfill_inflight'"
         ).fetchone()
         if exists is None:
             create_table()
@@ -249,7 +249,7 @@ def _ensure_inflight_table(conn: sqlite3.Connection) -> None:
             required_legacy = {column[0] for column in expected_columns[:5]}
             if not required_legacy <= actual_names or not actual_names <= set(expected_by_name):
                 raise RuntimeError(
-                    "incompatible lcm_embedding_backfill_inflight columns"
+                    "incompatible trove_embedding_backfill_inflight columns"
                 )
             # Types and the composite PK are never safe to reinterpret. The
             # newer lifecycle columns are additive and can be rebuilt into the
@@ -258,7 +258,7 @@ def _ensure_inflight_table(conn: sqlite3.Connection) -> None:
                 expected = expected_by_name[str(column[0])]
                 if str(column[1]) != expected[1] or int(column[4]) != expected[4]:
                     raise RuntimeError(
-                        "incompatible lcm_embedding_backfill_inflight column "
+                        "incompatible trove_embedding_backfill_inflight column "
                         f"{column[0]}"
                     )
             table_sql = str(exists[0] or "")
@@ -267,16 +267,16 @@ def _ensure_inflight_table(conn: sqlite3.Connection) -> None:
                 and check_expressions(table_sql) == expected_checks
             )
             if not exact:
-                old_table = "lcm_embedding_backfill_inflight_legacy"
+                old_table = "trove_embedding_backfill_inflight_legacy"
                 if conn.execute(
                     "SELECT 1 FROM sqlite_master WHERE name=?", (old_table,)
                 ).fetchone() is not None:
                     raise RuntimeError(
-                        "cannot repair lcm_embedding_backfill_inflight: "
+                        "cannot repair trove_embedding_backfill_inflight: "
                         "legacy staging table already exists"
                     )
                 conn.execute(
-                    "ALTER TABLE lcm_embedding_backfill_inflight "
+                    "ALTER TABLE trove_embedding_backfill_inflight "
                     f"RENAME TO {old_table}"
                 )
                 create_table()
@@ -294,7 +294,7 @@ def _ensure_inflight_table(conn: sqlite3.Connection) -> None:
                 )
                 error_expr = "last_error" if "last_error" in actual_names else "NULL"
                 conn.execute(
-                    "INSERT INTO lcm_embedding_backfill_inflight("
+                    "INSERT INTO trove_embedding_backfill_inflight("
                     "embedded_id, identity_hash, lease_id, generation, claimed_at, "
                     "state, request_id, updated_at, last_error) "
                     "SELECT embedded_id, identity_hash, lease_id, generation, claimed_at, "
@@ -305,22 +305,22 @@ def _ensure_inflight_table(conn: sqlite3.Connection) -> None:
 
         if table_info() != expected_columns:
             raise RuntimeError(
-                "lcm_embedding_backfill_inflight schema verification failed"
+                "trove_embedding_backfill_inflight schema verification failed"
             )
         verified_sql = str(conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' "
-            "AND name='lcm_embedding_backfill_inflight'"
+            "AND name='trove_embedding_backfill_inflight'"
         ).fetchone()[0] or "")
         if check_expressions(verified_sql) != expected_checks:
             raise RuntimeError(
-                "lcm_embedding_backfill_inflight CHECK constraints are not exact"
+                "trove_embedding_backfill_inflight CHECK constraints are not exact"
             )
 
         expected_indexes = {
-            "idx_lcm_embedding_inflight_identity_state": (
+            "idx_trove_embedding_inflight_identity_state": (
                 "identity_hash", "state", "embedded_id"
             ),
-            "idx_lcm_embedding_inflight_maintenance": (
+            "idx_trove_embedding_inflight_maintenance": (
                 "identity_hash", "state", "updated_at", "embedded_id"
             ),
         }
@@ -350,7 +350,7 @@ def _ensure_inflight_table(conn: sqlite3.Connection) -> None:
                     (
                         (int(row[2]), int(row[4]))
                         for row in conn.execute(
-                            "PRAGMA index_list(lcm_embedding_backfill_inflight)"
+                            "PRAGMA index_list(trove_embedding_backfill_inflight)"
                         ).fetchall()
                         if str(row[1]) == name
                     ),
@@ -362,7 +362,7 @@ def _ensure_inflight_table(conn: sqlite3.Connection) -> None:
             if needs_create:
                 conn.execute(
                     f"CREATE INDEX {name} "
-                    f"ON lcm_embedding_backfill_inflight({', '.join(columns)})"
+                    f"ON trove_embedding_backfill_inflight({', '.join(columns)})"
                 )
             if index_shape(name) != expected_shape:
                 raise RuntimeError(f"in-flight index verification failed: {name}")
@@ -410,7 +410,7 @@ class _RollupRebuildResult:
 
 
 def _bounded_rollups_text(text: str) -> str:
-    """Apply one final bound to every ``/lcm rollups`` serialization."""
+    """Apply one final bound to every ``/trove rollups`` serialization."""
     if len(text) <= _ROLLUPS_OUTPUT_CHAR_LIMIT:
         return text
     marker = (
@@ -443,32 +443,32 @@ def _help_text(error: str | None = None) -> str:
         lines.append(error)
         lines.append("")
     lines.extend([
-        "LCM command help",
-        "- /lcm or /lcm status: show current LCM runtime/session status",
-        "- /lcm doctor: run read-only LCM health checks",
-        "- /lcm doctor clean: best-effort scan of obvious junk/noise session candidates without deleting anything",
-        "- /lcm doctor clean apply: backup-first cleanup for safe pattern-matched candidates only",
-        "- /lcm doctor clean lifecycle: read-only scan for lifecycle rows with zero messages/nodes",
-        "- /lcm doctor clean lifecycle apply: backup-first cleanup of empty lifecycle rows only",
-        "- /lcm doctor repair: read-only scan for SQLite/FTS index repair needs",
-        "- /lcm doctor repair apply: backup-first repair/rebuild of message and summary FTS indexes",
-        "- /lcm doctor repair schema-stamp: read-only scan for an interim-build schema_version stamp ahead of the actual v5 shape",
-        "- /lcm doctor repair schema-stamp apply: backup-first reset of an interim schema_version stamp back to the supported version",
-        "- /lcm doctor source: read-only scan for legacy blank-source rows",
-        "- /lcm doctor source apply: backup-first normalization of legacy blank-source rows to unknown",
-        "- /lcm doctor retention: read-only retention analysis for stored session footprint and age",
-        "- /lcm backup: create a timestamped SQLite backup before any future cleanup workflow",
-        "- /lcm rotate: preview a tail-preserving in-place compact of the active session (read-only)",
-        "- /lcm rotate apply: backup-first rotate that advances the lifecycle frontier past pre-tail raw messages",
-        "- /lcm rollups: show temporal-rollup status for the current session",
-        "- /lcm rollups rebuild <day|week|month|all> [date]: synchronously rebuild a bounded UTC target set",
-        "- /lcm assertions rebuild [--apply] [--limit N]: preview or run one bounded exact-row assertion batch",
-        "- /lcm preset show [name]: inspect shipped preset metadata and benchmark provenance",
-        "- /lcm preset suggest: preview the best shipped preset for the current engine state",
-        "- /lcm preset apply <name> --dry-run: preview env-var changes without mutating live config",
-        "- /lcm embed warmup: download/probe the configured embedding model and register its dimension",
-        "- /lcm embed backfill [--apply] [--limit N]: preview or populate missing leaf-summary embeddings",
-        "- /lcm help: show this help",
+        "TROVE command help",
+        "- /trove or /trove status: show current TROVE runtime/session status",
+        "- /trove doctor: run read-only TROVE health checks",
+        "- /trove doctor clean: best-effort scan of obvious junk/noise session candidates without deleting anything",
+        "- /trove doctor clean apply: backup-first cleanup for safe pattern-matched candidates only",
+        "- /trove doctor clean lifecycle: read-only scan for lifecycle rows with zero messages/nodes",
+        "- /trove doctor clean lifecycle apply: backup-first cleanup of empty lifecycle rows only",
+        "- /trove doctor repair: read-only scan for SQLite/FTS index repair needs",
+        "- /trove doctor repair apply: backup-first repair/rebuild of message and summary FTS indexes",
+        "- /trove doctor repair schema-stamp: read-only scan for an interim-build schema_version stamp ahead of the actual v5 shape",
+        "- /trove doctor repair schema-stamp apply: backup-first reset of an interim schema_version stamp back to the supported version",
+        "- /trove doctor source: read-only scan for legacy blank-source rows",
+        "- /trove doctor source apply: backup-first normalization of legacy blank-source rows to unknown",
+        "- /trove doctor retention: read-only retention analysis for stored session footprint and age",
+        "- /trove backup: create a timestamped SQLite backup before any future cleanup workflow",
+        "- /trove rotate: preview a tail-preserving in-place compact of the active session (read-only)",
+        "- /trove rotate apply: backup-first rotate that advances the lifecycle frontier past pre-tail raw messages",
+        "- /trove rollups: show temporal-rollup status for the current session",
+        "- /trove rollups rebuild <day|week|month|all> [date]: synchronously rebuild a bounded UTC target set",
+        "- /trove assertions rebuild [--apply] [--limit N]: preview or run one bounded exact-row assertion batch",
+        "- /trove preset show [name]: inspect shipped preset metadata and benchmark provenance",
+        "- /trove preset suggest: preview the best shipped preset for the current engine state",
+        "- /trove preset apply <name> --dry-run: preview env-var changes without mutating live config",
+        "- /trove embed warmup: download/probe the configured embedding model and register its dimension",
+        "- /trove embed backfill [--apply] [--limit N]: preview or populate missing leaf-summary embeddings",
+        "- /trove help: show this help",
     ])
     return "\n".join(lines)
 
@@ -492,7 +492,7 @@ def _status_text(engine) -> str:
     protection = status.get("ingest_protection") or sensitive_pattern_status(engine._config)
     config_sources = status.get("config_sources") or {}
     config_source_warnings = status.get("config_source_warnings") or []
-    ignored_config_yaml_lcm_keys = status.get("ignored_config_yaml_lcm_keys") or []
+    ignored_config_yaml_trove_keys = status.get("ignored_config_yaml_trove_keys") or []
 
     uninitialized = "(uninitialized)"
     unknown = "(unknown)"
@@ -505,7 +505,7 @@ def _status_text(engine) -> str:
     )
 
     lines = [
-        "LCM status",
+        "TROVE status",
         f"engine: {status.get('engine', engine.name)}",
         f"plugin_name: {runtime_identity.get('plugin_name', '(unknown)')}",
         f"plugin_version: {runtime_identity.get('plugin_version', '(unknown)')}",
@@ -586,7 +586,7 @@ def _status_text(engine) -> str:
         ])
     else:
         lines.append(
-            "note: no active Hermes session has initialized LCM in this process yet — after a fresh restart, send one normal message first if you want live per-session runtime details"
+            "note: no active Hermes session has initialized TROVE in this process yet — after a fresh restart, send one normal message first if you want live per-session runtime details"
         )
 
     if "ignore_session_patterns_source" in status:
@@ -599,10 +599,10 @@ def _status_text(engine) -> str:
         )
     if config_source_warnings:
         lines.append("config_source_warnings: " + "; ".join(config_source_warnings))
-    if ignored_config_yaml_lcm_keys:
+    if ignored_config_yaml_trove_keys:
         lines.append(
-            "ignored_config_yaml_lcm_keys: "
-            + ", ".join(f"lcm.{key}" for key in ignored_config_yaml_lcm_keys)
+            "ignored_config_yaml_trove_keys: "
+            + ", ".join(f"trove.{key}" for key in ignored_config_yaml_trove_keys)
         )
     if source_stats.get("error"):
         lines.append(f"source_lineage_error: {source_stats['error']}")
@@ -667,7 +667,7 @@ def _scan_clean_candidates(engine) -> dict[str, Any]:
 
 def _scan_retention_candidates(engine) -> dict[str, Any]:
     now = datetime.now().timestamp()
-    # SQL is scoped to the foreground session so /lcm doctor retention
+    # SQL is scoped to the foreground session so /trove doctor retention
     # reports the operator's real conversation rather than whatever side
     # channel (cron tick, debug probe) currently owns engine._session_id.
     # The "protected" flag below still keys off engine._session_id (the
@@ -783,7 +783,7 @@ def _rotate_text(engine) -> str:
     if not preview.get("ok"):
         reason = preview.get("reason", "unknown")
         lines = [
-            "LCM rotate",
+            "TROVE rotate",
             "status: refused",
             f"reason: {reason}",
         ]
@@ -795,7 +795,7 @@ def _rotate_text(engine) -> str:
 
     backup_path = engine.rotate_backup_path()
     lines = [
-        "LCM rotate",
+        "TROVE rotate",
         f"status: {'noop' if preview.get('noop') else 'preview'}",
         f"session_id: {preview['session_id']}",
         f"conversation_id: {preview['conversation_id']}",
@@ -813,8 +813,8 @@ def _rotate_text(engine) -> str:
         lines.append(f"reason: {preview.get('reason', 'no_change')}")
         lines.append("note: read-only preview — rotate apply would be a no-op for this session")
     else:
-        lines.append("note: read-only preview — use `/lcm rotate apply` to advance the frontier (backup-first)")
-        lines.append("note: pre-tail raw messages remain in the store and recoverable via lcm_load_session")
+        lines.append("note: read-only preview — use `/trove rotate apply` to advance the frontier (backup-first)")
+        lines.append("note: pre-tail raw messages remain in the store and recoverable via trove_load_session")
     return "\n".join(lines)
 
 
@@ -827,7 +827,7 @@ def _rotate_apply_text(engine) -> str:
     if not pre.get("ok"):
         reason = pre.get("reason", "unknown")
         lines = [
-            "LCM rotate apply",
+            "TROVE rotate apply",
             "status: refused",
             f"reason: {reason}",
         ]
@@ -842,7 +842,7 @@ def _rotate_apply_text(engine) -> str:
         # operators get the standard fields without a fresh backup write
         # destroying the previous known-good snapshot.
         lines = [
-            "LCM rotate apply",
+            "TROVE rotate apply",
             "status: noop",
             f"session_id: {pre['session_id']}",
             f"conversation_id: {pre['conversation_id']}",
@@ -862,7 +862,7 @@ def _rotate_apply_text(engine) -> str:
     backup = rotate_backup_database(engine)
     if not backup["ok"]:
         return "\n".join([
-            "LCM rotate apply",
+            "TROVE rotate apply",
             "status: error",
             f"database_path: {backup['db_path']}",
             f"error: backup failed: {backup['error']}",
@@ -872,7 +872,7 @@ def _rotate_apply_text(engine) -> str:
     result = engine.rotate_active_session(apply=True)
     if not result.get("ok"):
         return "\n".join([
-            "LCM rotate apply",
+            "TROVE rotate apply",
             "status: refused",
             f"reason: {result.get('reason', 'unknown')}",
             f"rotate_backup_path: {backup['backup_path']}",
@@ -882,7 +882,7 @@ def _rotate_apply_text(engine) -> str:
 
     is_noop = bool(result.get("noop"))
     lines = [
-        "LCM rotate apply",
+        "TROVE rotate apply",
         f"status: {'noop' if is_noop else 'ok'}",
         f"session_id: {result['session_id']}",
         f"conversation_id: {result['conversation_id']}",
@@ -901,7 +901,7 @@ def _rotate_apply_text(engine) -> str:
         lines.append(f"reason: {result.get('reason', 'no_change')}")
         lines.append("note: lifecycle state already at or ahead of the target frontier")
     else:
-        lines.append("note: pre-tail raw messages remain in the store and recoverable via lcm_load_session")
+        lines.append("note: pre-tail raw messages remain in the store and recoverable via trove_load_session")
         lines.append("note: rolling backup overwrites the previous rotate-latest slot")
     return "\n".join(lines)
 
@@ -954,7 +954,7 @@ def _scan_fts_repair(engine) -> dict[str, Any]:
 def _doctor_repair_text(engine) -> str:
     scan = _scan_fts_repair(engine)
     lines = [
-        "LCM doctor repair",
+        "TROVE doctor repair",
         f"status: {'repair-needed' if scan['needs_repair'] else 'ok'}",
     ]
     for label, item in scan["checks"].items():
@@ -968,7 +968,7 @@ def _doctor_repair_text(engine) -> str:
             lines.append(f"{label}_integrity_status: {item['integrity_status']}")
     lines.append("note: read-only scan only — no FTS tables were repaired")
     if scan["needs_repair"]:
-        lines.append("note: use `/lcm doctor repair apply` to create a backup and repair FTS indexes")
+        lines.append("note: use `/trove doctor repair apply` to create a backup and repair FTS indexes")
     return "\n".join(lines)
 
 
@@ -976,7 +976,7 @@ def _doctor_repair_apply_text(engine) -> str:
     backup = backup_database(engine)
     if not backup["ok"]:
         return "\n".join([
-            "LCM doctor repair apply",
+            "TROVE doctor repair apply",
             "status: error",
             f"database_path: {backup['db_path']}",
             f"error: backup failed: {backup['error']}",
@@ -995,7 +995,7 @@ def _doctor_repair_apply_text(engine) -> str:
         nodes_result = repair_external_content_fts(conn, build_nodes_fts_spec())
     except sqlite3.Error as exc:
         return "\n".join([
-            "LCM doctor repair apply",
+            "TROVE doctor repair apply",
             "status: error",
             f"database_path: {backup['db_path']}",
             f"backup_path: {backup['backup_path']}",
@@ -1005,7 +1005,7 @@ def _doctor_repair_apply_text(engine) -> str:
         ])
 
     return "\n".join([
-        "LCM doctor repair apply",
+        "TROVE doctor repair apply",
         "status: ok",
         f"database_path: {backup['db_path']}",
         f"backup_path: {backup['backup_path']}",
@@ -1044,7 +1044,7 @@ def _schema_stamp_note(plan: dict[str, Any]) -> str:
             "downgrade; restore a pre-upgrade backup (.db/-wal/-shm) instead"
         )
     return (
-        "note: use `/lcm doctor repair schema-stamp apply` to create a backup "
+        "note: use `/trove doctor repair schema-stamp apply` to create a backup "
         f"and reset the stamp to v{plan['target_version']}"
     )
 
@@ -1062,7 +1062,7 @@ def _schema_stamp_drop_lines(plan: dict[str, Any], *, applied: bool) -> list[str
 
 def _doctor_repair_schema_stamp_text(engine) -> str:
     db_path = Path(engine._store.db_path)
-    lines = ["LCM doctor repair schema-stamp"]
+    lines = ["TROVE doctor repair schema-stamp"]
     if not db_path.exists():
         return "\n".join([
             *lines,
@@ -1095,7 +1095,7 @@ def _doctor_repair_schema_stamp_text(engine) -> str:
 
 def _doctor_repair_schema_stamp_apply_text(engine) -> str:
     db_path = Path(engine._store.db_path)
-    lines = ["LCM doctor repair schema-stamp apply"]
+    lines = ["TROVE doctor repair schema-stamp apply"]
     if not db_path.exists():
         return "\n".join([
             *lines,
@@ -1179,7 +1179,7 @@ def _doctor_source_text(engine) -> str:
         plan = engine._store.get_source_normalization_plan()
     except Exception as exc:  # pragma: no cover - defensive
         return "\n".join([
-            "LCM doctor source",
+            "TROVE doctor source",
             "status: error",
             f"error: source-lineage scan failed: {exc}",
             "note: read-only scan only — no source rows were updated",
@@ -1188,7 +1188,7 @@ def _doctor_source_text(engine) -> str:
     stats = plan["stats_before"]
     would_update = int(plan["would_update_messages"])
     lines = [
-        "LCM doctor source",
+        "TROVE doctor source",
         f"status: {'normalization-needed' if would_update else 'ok'}",
         f"messages_total: {stats['messages_total']}",
         f"attributed_messages: {stats['attributed_messages']}",
@@ -1202,7 +1202,7 @@ def _doctor_source_text(engine) -> str:
     ]
     if would_update:
         lines.append(
-            "note: use `/lcm doctor source apply` to create a backup and normalize legacy blank-source rows"
+            "note: use `/trove doctor source apply` to create a backup and normalize legacy blank-source rows"
         )
     else:
         lines.append("note: no legacy blank-source rows need normalization")
@@ -1214,7 +1214,7 @@ def _doctor_source_apply_text(engine) -> str:
         plan = engine._store.get_source_normalization_plan()
     except Exception as exc:  # pragma: no cover - defensive
         return "\n".join([
-            "LCM doctor source apply",
+            "TROVE doctor source apply",
             "status: error",
             f"error: source-lineage scan failed: {exc}",
             "note: source normalization apply aborted before any rows were updated",
@@ -1223,7 +1223,7 @@ def _doctor_source_apply_text(engine) -> str:
     if int(plan["would_update_messages"]) == 0:
         stats = plan["stats_before"]
         return "\n".join([
-            "LCM doctor source apply",
+            "TROVE doctor source apply",
             "status: ok",
             f"target_source: {plan['target_source']}",
             "updated_messages: 0",
@@ -1235,7 +1235,7 @@ def _doctor_source_apply_text(engine) -> str:
     backup = backup_database(engine)
     if not backup["ok"]:
         return "\n".join([
-            "LCM doctor source apply",
+            "TROVE doctor source apply",
             "status: error",
             f"database_path: {backup['db_path']}",
             f"error: backup failed: {backup['error']}",
@@ -1246,7 +1246,7 @@ def _doctor_source_apply_text(engine) -> str:
         result = engine._store.normalize_legacy_blank_sources()
     except sqlite3.Error as exc:
         return "\n".join([
-            "LCM doctor source apply",
+            "TROVE doctor source apply",
             "status: error",
             f"database_path: {backup['db_path']}",
             f"backup_path: {backup['backup_path']}",
@@ -1258,7 +1258,7 @@ def _doctor_source_apply_text(engine) -> str:
     before = result["stats_before"]
     after = result["stats_after"]
     return "\n".join([
-        "LCM doctor source apply",
+        "TROVE doctor source apply",
         "status: ok",
         f"database_path: {backup['db_path']}",
         f"backup_path: {backup['backup_path']}",
@@ -1281,7 +1281,7 @@ def _doctor_text(engine) -> str:
 
     issues: list[str] = []
     recommended_actions: list[str] = []
-    schema_health = inspect_lcm_schema_health(store_conn, database_path=str(db_path))
+    schema_health = inspect_trove_schema_health(store_conn, database_path=str(db_path))
     schema_missing_raw = schema_health.get("missing_tables")
     schema_missing_tables = [str(name) for name in schema_missing_raw] if isinstance(schema_missing_raw, list) else []
     schema_existing_raw = schema_health.get("existing_tables")
@@ -1315,7 +1315,7 @@ def _doctor_text(engine) -> str:
         if store_fts == "fail":
             issues.append("messages_fts")
         elif store_fts == "unchecked":
-            recommended_actions.append("rerun `/lcm doctor` with read-write SQLite access if a deep messages FTS check is needed")
+            recommended_actions.append("rerun `/trove doctor` with read-write SQLite access if a deep messages FTS check is needed")
     except Exception as exc:  # pragma: no cover - defensive
         store_fts_count = f"error: {exc}"
         store_fts = f"error: {exc}"
@@ -1329,7 +1329,7 @@ def _doctor_text(engine) -> str:
         if node_fts == "fail":
             issues.append("nodes_fts")
         elif node_fts == "unchecked":
-            recommended_actions.append("rerun `/lcm doctor` with read-write SQLite access if a deep nodes FTS check is needed")
+            recommended_actions.append("rerun `/trove doctor` with read-write SQLite access if a deep nodes FTS check is needed")
     except Exception as exc:  # pragma: no cover - defensive
         node_fts_count = f"error: {exc}"
         node_fts = f"error: {exc}"
@@ -1430,7 +1430,7 @@ def _doctor_text(engine) -> str:
             debt_rows = lifecycle_conn.execute(
                 """
                 SELECT conversation_id, debt_kind, debt_size_estimate
-                FROM lcm_lifecycle_state
+                FROM trove_lifecycle_state
                 WHERE debt_kind IS NOT NULL AND debt_size_estimate > 0
                 ORDER BY updated_at DESC
                 """
@@ -1461,7 +1461,7 @@ def _doctor_text(engine) -> str:
             "schema_core_tables: missing " + ", ".join(schema_missing_tables)
         )
         recommended_actions.append(
-            "verify HERMES_HOME/LCM_DATABASE_PATH point at the database inspected by Hermes"
+            "verify HERMES_HOME/TROVE_DATABASE_PATH point at the database inspected by Hermes"
         )
     else:
         observations.append("schema_core_tables: ok")
@@ -1481,8 +1481,8 @@ def _doctor_text(engine) -> str:
         observations.append(
             f"cleanup_candidates: {len(clean_scan['candidates'])} pattern-matched junk/noise session candidate(s) detected"
         )
-        recommended_actions.append("inspect candidate sessions with `/lcm doctor clean`")
-        recommended_actions.append("create a safety snapshot first with `/lcm backup`")
+        recommended_actions.append("inspect candidate sessions with `/trove doctor clean`")
+        recommended_actions.append("create a safety snapshot first with `/trove backup`")
     else:
         observations.append("cleanup_candidates: none")
 
@@ -1545,16 +1545,16 @@ def _doctor_text(engine) -> str:
             f"empty_lifecycle_rows={lifecycle_stats.get('empty_lifecycle_rows', 0)} "
             f"message_sessions={lifecycle_stats['distinct_message_sessions']} "
             f"node_sessions={lifecycle_stats['distinct_node_sessions']} "
-            f"current_missing_in_lcm_any={lifecycle_stats['lifecycle_current_missing_in_lcm_any']} "
-            f"last_finalized_missing_in_lcm_any={lifecycle_stats['lifecycle_last_finalized_missing_in_lcm_any']} "
+            f"current_missing_in_trove_any={lifecycle_stats['lifecycle_current_missing_in_trove_any']} "
+            f"last_finalized_missing_in_trove_any={lifecycle_stats['lifecycle_last_finalized_missing_in_trove_any']} "
             f"current_missing_in_state={lifecycle_stats['lifecycle_current_missing_in_state']} "
             f"last_finalized_missing_in_state={lifecycle_stats['lifecycle_last_finalized_missing_in_state']} "
-            f"message_sessions_missing_in_state={lifecycle_stats['lcm_message_sessions_missing_in_state']} "
-            f"node_sessions_missing_in_state={lifecycle_stats['lcm_node_sessions_missing_in_state']} "
+            f"message_sessions_missing_in_state={lifecycle_stats['trove_message_sessions_missing_in_state']} "
+            f"node_sessions_missing_in_state={lifecycle_stats['trove_node_sessions_missing_in_state']} "
             f"message_sessions_without_lifecycle_current={lifecycle_stats['message_sessions_without_lifecycle_current']} "
             f"message_sessions_without_lifecycle_reference={lifecycle_stats['message_sessions_without_lifecycle_reference']} "
             f"node_sessions_without_lifecycle_reference={lifecycle_stats['node_sessions_without_lifecycle_reference']} "
-            f"state_sessions_missing_in_lcm_any={lifecycle_stats['state_sessions_missing_in_lcm_any']}"
+            f"state_sessions_missing_in_trove_any={lifecycle_stats['state_sessions_missing_in_trove_any']}"
         )
         if lifecycle_stats.get("state_db_error"):
             observations.append(f"lifecycle_fragmentation_state_db_error: {lifecycle_stats['state_db_error']}")
@@ -1591,13 +1591,13 @@ def _doctor_text(engine) -> str:
         )
     elif protection["enabled"]:
         observations.append("sensitive_pattern_handling: enabled but no active known patterns are configured")
-        recommended_actions.append("set LCM_SENSITIVE_PATTERNS to one or more known names, or disable sensitive handling")
+        recommended_actions.append("set TROVE_SENSITIVE_PATTERNS to one or more known names, or disable sensitive handling")
     else:
         observations.append("sensitive_pattern_handling: disabled")
     if protection["unknown_patterns"]:
         issues.append("sensitive_pattern_config")
         recommended_actions.append(
-            "remove unknown LCM_SENSITIVE_PATTERNS entries or replace them with supported names"
+            "remove unknown TROVE_SENSITIVE_PATTERNS entries or replace them with supported names"
         )
 
     if store_fts_failed_flag:
@@ -1606,7 +1606,7 @@ def _doctor_text(engine) -> str:
             f"(detail: {store_fts_failed_flag['detail'] or 'unknown'})"
         )
         recommended_actions.append(
-            "run `/lcm doctor repair`, then `/lcm backup` and `/lcm doctor repair apply` to rebuild messages_fts"
+            "run `/trove doctor repair`, then `/trove backup` and `/trove doctor repair apply` to rebuild messages_fts"
         )
     if node_fts_failed_flag:
         observations.append(
@@ -1614,7 +1614,7 @@ def _doctor_text(engine) -> str:
             f"(detail: {node_fts_failed_flag['detail'] or 'unknown'})"
         )
         recommended_actions.append(
-            "run `/lcm doctor repair`, then `/lcm backup` and `/lcm doctor repair apply` to rebuild nodes_fts"
+            "run `/trove doctor repair`, then `/trove backup` and `/trove doctor repair apply` to rebuild nodes_fts"
         )
 
     triage_checks: list[dict[str, Any]] = []
@@ -1676,7 +1676,7 @@ def _doctor_text(engine) -> str:
         "action-recommended" if recommended_actions else "ok"
     )
     lines = [
-        "LCM doctor",
+        "TROVE doctor",
         f"status: {doctor_status}",
         f"plugin_name: {runtime_identity.get('plugin_name', '(unknown)')}",
         f"plugin_version: {runtime_identity.get('plugin_version', '(unknown)')}",
@@ -1758,7 +1758,7 @@ def _doctor_clean_text(engine) -> str:
     scan = _scan_clean_candidates(engine)
     if scan["error"]:
         return "\n".join([
-            "LCM doctor clean",
+            "TROVE doctor clean",
             "status: error",
             f"error: {scan['error']}",
             "note: read-only scan only — no rows were deleted",
@@ -1766,7 +1766,7 @@ def _doctor_clean_text(engine) -> str:
 
     candidates = scan["candidates"]
     lines = [
-        "LCM doctor clean",
+        "TROVE doctor clean",
         f"status: {'candidates-found' if candidates else 'ok'}",
         f"candidate_sessions: {len(candidates)}",
         f"ignored_pattern_matches: {scan['ignored_count']}",
@@ -1791,7 +1791,7 @@ def _doctor_clean_text(engine) -> str:
         lines.append(f"... {len(candidates) - 20} more candidate session(s) omitted")
     lines.append("note: best-effort stored-session scan only — platform-only matches may not be reconstructable from the SQLite state")
     lines.append("note: read-only scan only — no rows were deleted")
-    lines.append("note: use `/lcm doctor clean apply` only after a backup-first review of these safe candidates")
+    lines.append("note: use `/trove doctor clean apply` only after a backup-first review of these safe candidates")
     return "\n".join(lines)
 
 
@@ -1799,7 +1799,7 @@ def _doctor_retention_text(engine) -> str:
     scan = _scan_retention_candidates(engine)
     if scan["error"]:
         return "\n".join([
-            "LCM doctor retention",
+            "TROVE doctor retention",
             "status: error",
             f"error: {scan['error']}",
             "note: read-only analysis only — no rows were deleted",
@@ -1807,7 +1807,7 @@ def _doctor_retention_text(engine) -> str:
 
     sessions = scan["sessions"]
     lines = [
-        "LCM doctor retention",
+        "TROVE doctor retention",
         f"status: {'analysis-ready' if sessions else 'ok'}",
         f"sessions_analyzed: {scan['sessions_analyzed']}",
         f"stale_sessions_30d: {scan['stale_sessions_30d']}",
@@ -1836,14 +1836,14 @@ def _doctor_retention_text(engine) -> str:
     lines.append("note: retention analysis is scoped to the active session only")
     lines.append("note: stale sessions are listed before fresh ones; within each bucket, candidates are sorted by footprint (tokens/nodes/messages), with protected current-session entries listed after non-protected ones")
     lines.append("note: read-only analysis only — no rows were deleted")
-    lines.append("note: if you prune later, create a safety snapshot first with `/lcm backup`")
+    lines.append("note: if you prune later, create a safety snapshot first with `/trove backup`")
     return "\n".join(lines)
 
 
 def _delete_clean_candidates_atomically(engine, session_ids: set[str]) -> dict[str, int]:
     """Delete cleanup candidates in one SQLite transaction.
 
-    All LCM tables live in the same SQLite database, but the store, DAG, and
+    All TROVE tables live in the same SQLite database, but the store, DAG, and
     lifecycle helpers use separate connections and commit internally. Cleanup
     apply is destructive, so do the coordinated deletes on one connection to
     avoid half-cleaned state if a later table delete fails.
@@ -1901,7 +1901,7 @@ def _delete_clean_candidates_atomically(engine, session_ids: set[str]) -> dict[s
             if callable(purge):
                 purge(deleted_ids, connection=conn)
 
-        lifecycle_scope = "temp_lcm_delete_lifecycle_scope"
+        lifecycle_scope = "temp_trove_delete_lifecycle_scope"
         conn.execute(
             f"CREATE TEMP TABLE IF NOT EXISTS {lifecycle_scope}("
             "conversation_id TEXT PRIMARY KEY) WITHOUT ROWID"
@@ -1910,15 +1910,15 @@ def _delete_clean_candidates_atomically(engine, session_ids: set[str]) -> dict[s
         conn.execute(
             f"INSERT OR IGNORE INTO {lifecycle_scope}(conversation_id) "
             f"SELECT state.conversation_id FROM {scope_table} AS scope "
-            "JOIN lcm_lifecycle_state AS state "
-            "INDEXED BY idx_lcm_lifecycle_current_session "
+            "JOIN trove_lifecycle_state AS state "
+            "INDEXED BY idx_trove_lifecycle_current_session "
             "ON state.current_session_id = scope.session_id"
         )
         conn.execute(
             f"INSERT OR IGNORE INTO {lifecycle_scope}(conversation_id) "
             f"SELECT state.conversation_id FROM {scope_table} AS scope "
-            "JOIN lcm_lifecycle_state AS state "
-            "INDEXED BY idx_lcm_lifecycle_last_finalized_session "
+            "JOIN trove_lifecycle_state AS state "
+            "INDEXED BY idx_trove_lifecycle_last_finalized_session "
             "ON state.last_finalized_session_id = scope.session_id"
         )
 
@@ -1941,7 +1941,7 @@ def _delete_clean_candidates_atomically(engine, session_ids: set[str]) -> dict[s
         lifecycle_deleted = 0
         while True:
             rows = conn.execute(
-                f"SELECT state.conversation_id FROM lcm_lifecycle_state AS state "
+                f"SELECT state.conversation_id FROM trove_lifecycle_state AS state "
                 f"JOIN {lifecycle_scope} AS scoped ON {deletable_where} "
                 "ORDER BY state.conversation_id LIMIT 256",
                 (protected, protected, protected, protected),
@@ -1951,7 +1951,7 @@ def _delete_clean_candidates_atomically(engine, session_ids: set[str]) -> dict[s
             conversation_ids = [str(row[0]) for row in rows]
             placeholders = ",".join("?" for _ in conversation_ids)
             cur = conn.execute(
-                f"DELETE FROM lcm_lifecycle_state "
+                f"DELETE FROM trove_lifecycle_state "
                 f"WHERE conversation_id IN ({placeholders})",
                 conversation_ids,
             )
@@ -1973,17 +1973,17 @@ def _delete_clean_candidates_atomically(engine, session_ids: set[str]) -> dict[s
 def _doctor_clean_apply_text(engine) -> str:
     if not getattr(getattr(engine, "_config", None), "doctor_clean_apply_enabled", False):
         return "\n".join([
-            "LCM doctor clean apply",
+            "TROVE doctor clean apply",
             "status: denied",
             "error: destructive cleanup is disabled by default",
-            "note: set LCM_DOCTOR_CLEAN_APPLY_ENABLED=true only in trusted operator environments",
+            "note: set TROVE_DOCTOR_CLEAN_APPLY_ENABLED=true only in trusted operator environments",
             "note: no rows were deleted",
         ])
 
     scan = _scan_clean_candidates(engine)
     if scan["error"]:
         return "\n".join([
-            "LCM doctor clean apply",
+            "TROVE doctor clean apply",
             "status: error",
             f"error: {scan['error']}",
             "note: cleanup apply aborted before any rows were deleted",
@@ -1992,7 +1992,7 @@ def _doctor_clean_apply_text(engine) -> str:
     candidates = scan["candidates"]
     if not candidates:
         return "\n".join([
-            "LCM doctor clean apply",
+            "TROVE doctor clean apply",
             "status: ok",
             "candidate_sessions: 0",
             "result: no safe cleanup candidates detected",
@@ -2002,7 +2002,7 @@ def _doctor_clean_apply_text(engine) -> str:
     backup = backup_database(engine)
     if not backup["ok"]:
         return "\n".join([
-            "LCM doctor clean apply",
+            "TROVE doctor clean apply",
             "status: error",
             f"database_path: {backup['db_path']}",
             f"error: backup failed: {backup['error']}",
@@ -2014,7 +2014,7 @@ def _doctor_clean_apply_text(engine) -> str:
         deleted = _delete_clean_candidates_atomically(engine, session_ids)
     except sqlite3.Error as exc:
         return "\n".join([
-            "LCM doctor clean apply",
+            "TROVE doctor clean apply",
             "status: error",
             f"database_path: {backup['db_path']}",
             f"backup_path: {backup['backup_path']}",
@@ -2024,7 +2024,7 @@ def _doctor_clean_apply_text(engine) -> str:
         ])
 
     return "\n".join([
-        "LCM doctor clean apply",
+        "TROVE doctor clean apply",
         "status: ok",
         f"database_path: {backup['db_path']}",
         f"backup_path: {backup['backup_path']}",
@@ -2053,7 +2053,7 @@ def _doctor_clean_lifecycle_text(engine) -> str:
     empty_current = 0
     empty_finalized = 0
     empty_protected = 0
-    rows = conn.execute("SELECT * FROM lcm_lifecycle_state").fetchall()
+    rows = conn.execute("SELECT * FROM trove_lifecycle_state").fetchall()
     for row in rows:
         cur = str(row["current_session_id"] or "")
         fin = str(row["last_finalized_session_id"] or "")
@@ -2072,7 +2072,7 @@ def _doctor_clean_lifecycle_text(engine) -> str:
     total_empty = empty_current + empty_finalized
     if total_empty == 0:
         return "\n".join([
-            "LCM doctor clean lifecycle",
+            "TROVE doctor clean lifecycle",
             "status: ok",
             f"lifecycle_rows: {count}",
             "empty_rows: 0",
@@ -2080,7 +2080,7 @@ def _doctor_clean_lifecycle_text(engine) -> str:
         ])
 
     return "\n".join([
-        "LCM doctor clean lifecycle",
+        "TROVE doctor clean lifecycle",
         "status: candidates-found",
         f"lifecycle_rows: {count}",
         f"empty_rows: {total_empty}",
@@ -2089,24 +2089,24 @@ def _doctor_clean_lifecycle_text(engine) -> str:
         f"  empty_protected: {empty_protected}",
         "note: read-only scan — no rows were deleted",
         "note: empty rows reference sessions with zero messages and zero nodes",
-        "note: use `/lcm doctor clean lifecycle apply` to delete empty rows",
+        "note: use `/trove doctor clean lifecycle apply` to delete empty rows",
     ])
 
 
 def _doctor_clean_lifecycle_apply_text(engine) -> str:
     if not getattr(getattr(engine, "_config", None), "doctor_clean_apply_enabled", False):
         return "\n".join([
-            "LCM doctor clean lifecycle apply",
+            "TROVE doctor clean lifecycle apply",
             "status: denied",
             "error: destructive cleanup is disabled by default",
-            "note: set LCM_DOCTOR_CLEAN_APPLY_ENABLED=true only in trusted operator environments",
+            "note: set TROVE_DOCTOR_CLEAN_APPLY_ENABLED=true only in trusted operator environments",
             "note: no rows were deleted",
         ])
 
     backup = backup_database(engine)
     if not backup["ok"]:
         return "\n".join([
-            "LCM doctor clean lifecycle apply",
+            "TROVE doctor clean lifecycle apply",
             "status: error",
             "error: failed to create backup before destructive cleanup",
             f"database_path: {backup['db_path']}",
@@ -2124,7 +2124,7 @@ def _doctor_clean_lifecycle_apply_text(engine) -> str:
         )
     except Exception as exc:
         return "\n".join([
-            "LCM doctor clean lifecycle apply",
+            "TROVE doctor clean lifecycle apply",
             "status: error",
             "error: failed to prune empty sessions",
             f"backup_path: {backup['backup_path']}",
@@ -2134,7 +2134,7 @@ def _doctor_clean_lifecycle_apply_text(engine) -> str:
 
     after = engine._lifecycle.row_count()
     return "\n".join([
-        "LCM doctor clean lifecycle apply",
+        "TROVE doctor clean lifecycle apply",
         "status: ok",
         f"lifecycle_rows_before: {before}",
         f"lifecycle_rows_deleted: {deleted}",
@@ -2149,14 +2149,14 @@ def _backup_text(engine) -> str:
     backup = backup_database(engine)
     if not backup["ok"]:
         return "\n".join([
-            "LCM backup",
+            "TROVE backup",
             "status: error",
             f"database_path: {backup['db_path']}",
             f"error: {backup['error']}",
         ])
 
     return "\n".join([
-        "LCM backup",
+        "TROVE backup",
         "status: ok",
         f"database_path: {backup['db_path']}",
         f"backup_path: {backup['backup_path']}",
@@ -2168,7 +2168,7 @@ def _backup_text(engine) -> str:
 def _unknown_preset_text(name: str) -> str:
     available = ", ".join(preset.name for preset in shipped_presets()) or "(none)"
     return "\n".join([
-        "LCM preset",
+        "TROVE preset",
         "status: error",
         f"error: unknown preset {name}",
         f"available_presets: {available}",
@@ -2177,7 +2177,7 @@ def _unknown_preset_text(name: str) -> str:
 
 def _preset_show_text(tokens: list[str], engine) -> str:
     if len(tokens) > 1:
-        return _help_text("`/lcm preset show` accepts at most one preset name.")
+        return _help_text("`/trove preset show` accepts at most one preset name.")
     preset = get_preset(tokens[0] if tokens else None)
     if preset is None:
         return _unknown_preset_text(tokens[0])
@@ -2186,7 +2186,7 @@ def _preset_show_text(tokens: list[str], engine) -> str:
     fixture_suite = ", ".join(str(item) for item in provenance.get("fixture_suite") or []) or "(unknown)"
     applies_to = ", ".join(preset.applies_to) if preset.applies_to else "(unspecified)"
     lines = [
-        "LCM preset show",
+        "TROVE preset show",
         f"preset: {preset.name}",
         f"family: {preset.family}",
         f"description: {preset.description}",
@@ -2204,7 +2204,7 @@ def _preset_show_text(tokens: list[str], engine) -> str:
         lines.append(f"- {item}")
     lines.extend([
         f"unsupported_runtime_fields: {unsupported_runtime_fields_text(preset)}",
-        "operator_config_precedence: explicit preset-managed LCM_* overrides win",
+        "operator_config_precedence: explicit preset-managed TROVE_* overrides win",
         "runtime_mutation: no",
         f"notes: {preset.notes}",
     ])
@@ -2213,7 +2213,7 @@ def _preset_show_text(tokens: list[str], engine) -> str:
 
 def _preset_suggest_text(engine) -> str:
     preset, reason = suggest_preset_for_engine(engine)
-    lines = ["LCM preset suggest"]
+    lines = ["TROVE preset suggest"]
     if preset is None:
         lines.extend([
             "suggested_preset: (none)",
@@ -2259,25 +2259,25 @@ def _preset_suggest_text(engine) -> str:
 
 def _preset_apply_text(tokens: list[str], engine) -> str:
     if not tokens:
-        return _help_text("`/lcm preset apply` requires a preset name and `--dry-run`.")
+        return _help_text("`/trove preset apply` requires a preset name and `--dry-run`.")
     dry_run = "--dry-run" in tokens
     selected = [token for token in tokens if token != "--dry-run"]
     if len(selected) != 1:
-        return _help_text("`/lcm preset apply` accepts exactly one preset name and optional `--dry-run`.")
+        return _help_text("`/trove preset apply` accepts exactly one preset name and optional `--dry-run`.")
     preset_name = selected[0]
     preset = get_preset(preset_name)
     if preset is None:
         return _unknown_preset_text(preset_name)
     if not dry_run:
         return "\n".join([
-            "LCM preset apply",
+            "TROVE preset apply",
             "status: denied",
             "error: preset apply is preview-only for now; pass --dry-run",
             "note: no live config was changed",
         ])
 
     lines = [
-        "LCM preset apply",
+        "TROVE preset apply",
         "status: dry-run",
         f"preset: {preset.name}",
         "would_set:",
@@ -2291,7 +2291,7 @@ def _preset_apply_text(tokens: list[str], engine) -> str:
         lines.append(f"- {item}")
     lines.extend([
         f"unsupported_runtime_fields: {unsupported_runtime_fields_text(preset)}",
-        "operator_config_precedence: explicit preset-managed LCM_* overrides win",
+        "operator_config_precedence: explicit preset-managed TROVE_* overrides win",
         "note: no live config was changed",
     ])
     return "\n".join(lines)
@@ -2299,18 +2299,18 @@ def _preset_apply_text(tokens: list[str], engine) -> str:
 
 def _preset_text(tokens: list[str], engine) -> str:
     if not tokens:
-        return _help_text("`/lcm preset` requires `show`, `suggest`, or `apply`.")
+        return _help_text("`/trove preset` requires `show`, `suggest`, or `apply`.")
     subcommand = tokens[0].lower()
     rest = tokens[1:]
     if subcommand == "show":
         return _preset_show_text(rest, engine)
     if subcommand == "suggest":
         if rest:
-            return _help_text("`/lcm preset suggest` does not accept extra arguments.")
+            return _help_text("`/trove preset suggest` does not accept extra arguments.")
         return _preset_suggest_text(engine)
     if subcommand == "apply":
         return _preset_apply_text(rest, engine)
-    return _help_text("`/lcm preset` supports `show`, `suggest`, and `apply`.")
+    return _help_text("`/trove preset` supports `show`, `suggest`, and `apply`.")
 
 
 def _rollups_status_text(engine) -> str:
@@ -2320,7 +2320,7 @@ def _rollups_status_text(engine) -> str:
 
     status = _temporal_rollups_status(engine)
     lines = [
-        "LCM temporal rollups",
+        "TROVE temporal rollups",
         f"enabled: {_fmt_bool(status['enabled'])}",
         f"scope: {status['scope'] or '(unbound)'}",
         "period | ready | stale | building | failed",
@@ -2348,7 +2348,7 @@ def _rollups_status_text(engine) -> str:
         lines.append("truncated: true")
         lines.append("truncated_fields: " + ", ".join(status["truncated_fields"]))
     if not status["enabled"]:
-        lines.append("note: temporal rollups are disabled; set LCM_TEMPORAL_ROLLUPS_ENABLED=true and restart Hermes to enable them")
+        lines.append("note: temporal rollups are disabled; set TROVE_TEMPORAL_ROLLUPS_ENABLED=true and restart Hermes to enable them")
     return "\n".join(lines)
 
 
@@ -2390,28 +2390,28 @@ def _classify_rollup_build_outcome(
 def _rollups_rebuild_text(tokens: list[str], engine) -> str:
     if not engine._config.temporal_rollups_enabled:
         return "\n".join([
-            "LCM temporal rollup rebuild",
+            "TROVE temporal rollup rebuild",
             "status: disabled",
             "error: temporal rollups are disabled",
-            "note: set LCM_TEMPORAL_ROLLUPS_ENABLED=true and restart Hermes before rebuilding",
+            "note: set TROVE_TEMPORAL_ROLLUPS_ENABLED=true and restart Hermes before rebuilding",
         ])
     if not engine.current_session_id:
         return "\n".join([
-            "LCM temporal rollup rebuild",
+            "TROVE temporal rollup rebuild",
             "status: refused",
             "error: no active session",
         ])
     if not tokens or len(tokens) > 2:
-        return _help_text("`/lcm rollups rebuild` requires <day|week|month|all> and accepts one optional YYYY-MM-DD date.")
+        return _help_text("`/trove rollups rebuild` requires <day|week|month|all> and accepts one optional YYYY-MM-DD date.")
 
     kind = tokens[0].lower()
     if kind not in {"day", "week", "month", "all"}:
-        return _help_text("`/lcm rollups rebuild` period must be one of: day, week, month, all.")
+        return _help_text("`/trove rollups rebuild` period must be one of: day, week, month, all.")
     if len(tokens) == 2:
         try:
             target_date = date.fromisoformat(tokens[1])
         except ValueError:
-            return _help_text("`/lcm rollups rebuild` date must be a valid YYYY-MM-DD UTC date.")
+            return _help_text("`/trove rollups rebuild` date must be a valid YYYY-MM-DD UTC date.")
     else:
         target_date = datetime.now(timezone.utc).date()
 
@@ -2421,7 +2421,7 @@ def _rollups_rebuild_text(tokens: list[str], engine) -> str:
     lease_key = engine.try_acquire_rollup_operator_lease(scope)
     if lease_key is None:
         return "\n".join([
-            "LCM temporal rollup rebuild",
+            "TROVE temporal rollup rebuild",
             "status: busy",
             "error: background temporal rollup maintenance is active for this session",
             "note: retry after the current maintenance pass completes",
@@ -2488,7 +2488,7 @@ def _rollups_rebuild_text(tokens: list[str], engine) -> str:
             )
     except Exception as exc:  # pragma: no cover - defensive operator surface
         return "\n".join([
-            "LCM temporal rollup rebuild",
+            "TROVE temporal rollup rebuild",
             "status: error",
             f"error: {type(exc).__name__}: {exc}",
         ])
@@ -2507,7 +2507,7 @@ def _rollups_rebuild_text(tokens: list[str], engine) -> str:
     )
     top_status = "partial" if attempted_incomplete else "complete"
     lines = [
-        "LCM temporal rollup rebuild",
+        "TROVE temporal rollup rebuild",
         f"status: {top_status}",
         f"scope: {scope}",
         f"requested: {kind}",
@@ -2532,7 +2532,7 @@ def _rollups_text(tokens: list[str], engine) -> str:
     elif tokens[0].lower() == "rebuild":
         result = _rollups_rebuild_text(tokens[1:], engine)
     else:
-        result = _help_text("`/lcm rollups` accepts only `rebuild <day|week|month|all> [date]`.")
+        result = _help_text("`/trove rollups` accepts only `rebuild <day|week|month|all> [date]`.")
     return _bounded_rollups_text(result)
 
 
@@ -2574,10 +2574,10 @@ def _parse_assertion_rebuild_args(tokens: list[str]) -> tuple[bool, int] | str:
 def _assertions_rebuild_text(tokens: list[str], engine) -> str:
     if not bool(getattr(engine._config, "assertions_enabled", False)):
         return "\n".join([
-            "LCM assertion rebuild",
+            "TROVE assertion rebuild",
             "status: disabled",
             "error: V4 assertions are disabled",
-            "note: set LCM_ASSERTIONS_ENABLED=true and restart Hermes before planning a rebuild",
+            "note: set TROVE_ASSERTIONS_ENABLED=true and restart Hermes before planning a rebuild",
         ])
     parsed = _parse_assertion_rebuild_args(tokens)
     if isinstance(parsed, str):
@@ -2587,14 +2587,14 @@ def _assertions_rebuild_text(tokens: list[str], engine) -> str:
     assertions = getattr(engine, "_assertions", None)
     if assertions is None:
         return "\n".join([
-            "LCM assertion rebuild",
+            "TROVE assertion rebuild",
             "status: unavailable",
             "error: the enabled assertion store is not bound",
         ])
     extractor = getattr(engine, "_assertion_extractor", None)
     if apply and not callable(extractor):
         return "\n".join([
-            "LCM assertion rebuild",
+            "TROVE assertion rebuild",
             "status: refused",
             "mode: apply",
             "error: no structured assertion extractor is configured",
@@ -2615,13 +2615,13 @@ def _assertions_rebuild_text(tokens: list[str], engine) -> str:
         )
     except AssertionSchemaUnavailableError as exc:
         return "\n".join([
-            "LCM assertion rebuild",
+            "TROVE assertion rebuild",
             "status: unavailable",
             f"error: {exc}",
         ])
     except Exception as exc:  # pragma: no cover - defensive operator surface
         return "\n".join([
-            "LCM assertion rebuild",
+            "TROVE assertion rebuild",
             "status: error",
             f"error: {type(exc).__name__}: {exc}",
         ])
@@ -2631,7 +2631,7 @@ def _assertions_rebuild_text(tokens: list[str], engine) -> str:
 
     status = "complete" if result.failed_count == 0 and result.stale_or_missing_count == 0 else "partial"
     lines = [
-        "LCM assertion rebuild",
+        "TROVE assertion rebuild",
         f"status: {status}",
         f"mode: {result.mode}",
         f"extraction_version: {result.extraction_version}",
@@ -2661,7 +2661,7 @@ def _assertions_text(tokens: list[str], engine) -> str:
     if tokens and tokens[0].lower() == "rebuild":
         return _assertions_rebuild_text(tokens[1:], engine)
     return _help_text(
-        "`/lcm assertions` requires `rebuild [--apply] [--limit N]`"
+        "`/trove assertions` requires `rebuild [--apply] [--limit N]`"
     )
 
 
@@ -2700,17 +2700,17 @@ def _embedding_warmup_text(engine) -> str:
     try:
         if not bool(getattr(engine._config, "embeddings_enabled", False)):
             return (
-                "LCM embedding warmup\n"
+                "TROVE embedding warmup\n"
                 "status: disabled\n"
-                "error: embeddings are disabled; set LCM_EMBEDDINGS_ENABLED=true"
+                "error: embeddings are disabled; set TROVE_EMBEDDINGS_ENABLED=true"
             )
         provider = resolve_provider(engine._config)
         if provider is None:
             return (
-                "LCM embedding warmup\n"
+                "TROVE embedding warmup\n"
                 "status: error\n"
                 "error: embedding provider is not configured; set "
-                "LCM_EMBEDDING_PROVIDER and LCM_EMBEDDING_MODEL"
+                "TROVE_EMBEDDING_PROVIDER and TROVE_EMBEDDING_MODEL"
             )
 
         if provider.provider_id == FastembedProvider.provider_id:
@@ -2772,7 +2772,7 @@ def _embedding_warmup_text(engine) -> str:
         # Semantic search caches provider instances by configured provider and
         # model. Replace any pre-warmup instance (which may have an open
         # breaker) with the provider that just completed warmup successfully.
-        engine._lcm_embedding_provider_cache = (
+        engine._trove_embedding_provider_cache = (
             (
                 str(getattr(engine._config, "embedding_provider", "") or "")
                 .strip()
@@ -2782,7 +2782,7 @@ def _embedding_warmup_text(engine) -> str:
             provider,
         )
         return "\n".join([
-            "LCM embedding warmup",
+            "TROVE embedding warmup",
             "status: ready",
             progress,
             f"provider: {provider.provider_id}",
@@ -2796,7 +2796,7 @@ def _embedding_warmup_text(engine) -> str:
         ])
     except Exception as exc:
         return "\n".join([
-            "LCM embedding warmup",
+            "TROVE embedding warmup",
             "status: error",
             f"error: {exc}",
         ])
@@ -2816,7 +2816,7 @@ def _embedding_current_profile(conn: sqlite3.Connection) -> sqlite3.Row | None:
             """
             SELECT identity_hash, model_name, provider, revision, dim, dtype,
                    byteorder, task, registered_at
-            FROM lcm_embedding_profile
+            FROM trove_embedding_profile
             WHERE active = 1 AND archived_at IS NULL AND task = 'summary'
             ORDER BY registered_at DESC, identity_hash DESC
             LIMIT 1
@@ -2839,12 +2839,12 @@ def _embedding_pending_rows(
     # authorization can return it to discovery.
     inflight_exists = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' "
-        "AND name='lcm_embedding_backfill_inflight'"
+        "AND name='trove_embedding_backfill_inflight'"
     ).fetchone() is not None
     inflight_clause = (
         """
         AND NOT EXISTS (
-            SELECT 1 FROM lcm_embedding_backfill_inflight AS f
+            SELECT 1 FROM trove_embedding_backfill_inflight AS f
             WHERE f.embedded_id = CAST(n.node_id AS TEXT)
               AND f.identity_hash = ?
         )
@@ -2856,7 +2856,7 @@ def _embedding_pending_rows(
         n.depth = 0
         AND NOT EXISTS (
             SELECT 1
-            FROM lcm_embedding_meta AS m
+            FROM trove_embedding_meta AS m
             WHERE m.embedded_id = CAST(n.node_id AS TEXT)
               AND m.embedded_kind = 'summary'
               AND m.identity_hash = ?
@@ -2894,7 +2894,7 @@ def _embedding_authorized_uncertain_rows(
         AND n.depth = 0
         AND NOT EXISTS (
             SELECT 1
-            FROM lcm_embedding_meta AS m
+            FROM trove_embedding_meta AS m
             WHERE m.embedded_id = f.embedded_id
               AND m.embedded_kind = 'summary'
               AND m.identity_hash = f.identity_hash
@@ -2903,7 +2903,7 @@ def _embedding_authorized_uncertain_rows(
     total = int(
         conn.execute(
             "SELECT COUNT(*) "
-            "FROM lcm_embedding_backfill_inflight AS f "
+            "FROM trove_embedding_backfill_inflight AS f "
             "JOIN summary_nodes AS n ON n.node_id = CAST(f.embedded_id AS INTEGER) "
             f"WHERE {where}",
             (identity_hash,),
@@ -2911,7 +2911,7 @@ def _embedding_authorized_uncertain_rows(
     )
     rows = conn.execute(
         "SELECT n.node_id, n.summary "
-        "FROM lcm_embedding_backfill_inflight AS f "
+        "FROM trove_embedding_backfill_inflight AS f "
         "JOIN summary_nodes AS n ON n.node_id = CAST(f.embedded_id AS INTEGER) "
         f"WHERE {where} "
         "ORDER BY f.updated_at, f.embedded_id LIMIT ?",
@@ -3175,29 +3175,29 @@ def _prepare_inflight_for_lease(
         # a replaced row can never be mistaken for the staged predecessor.
         conn.execute(
             "CREATE TEMP TABLE IF NOT EXISTS "
-            "lcm_embedding_backfill_predecessor_batch("
+            "trove_embedding_backfill_predecessor_batch("
             "source_rowid INTEGER PRIMARY KEY, embedded_id TEXT, "
             "identity_hash TEXT, lease_id TEXT, generation INTEGER, "
             "state TEXT, request_id TEXT, sort_updated_at REAL)"
         )
         conn.execute(
-            "DELETE FROM lcm_embedding_backfill_predecessor_batch"
+            "DELETE FROM trove_embedding_backfill_predecessor_batch"
         )
         state_limits = [
             ("claimed", maintenance_limit),
             ("dispatched", maintenance_limit),
         ]
         for state, state_limit in state_limits:
-            # idx_lcm_embedding_inflight_maintenance serves the complete
+            # idx_trove_embedding_inflight_maintenance serves the complete
             # identity/state/order prefix, so each predecessor class is both
             # SQL-limited and index-bounded rather than corpus-sorted.
             conn.execute(
-                "INSERT INTO lcm_embedding_backfill_predecessor_batch("
+                "INSERT INTO trove_embedding_backfill_predecessor_batch("
                 "source_rowid, embedded_id, identity_hash, lease_id, generation, "
                 "state, request_id, sort_updated_at) "
                 "SELECT rowid, embedded_id, identity_hash, lease_id, generation, "
                 "state, request_id, updated_at "
-                "FROM lcm_embedding_backfill_inflight "
+                "FROM trove_embedding_backfill_inflight "
                 "WHERE identity_hash = ? AND state = ? "
                 "AND (lease_id IS NOT ? OR generation IS NOT ?) "
                 "ORDER BY updated_at, embedded_id LIMIT ?",
@@ -3210,33 +3210,33 @@ def _prepare_inflight_for_lease(
                 ),
             )
         conn.execute(
-            "DELETE FROM lcm_embedding_backfill_inflight "
+            "DELETE FROM trove_embedding_backfill_inflight "
             "WHERE rowid IN (SELECT source_rowid "
-            "FROM lcm_embedding_backfill_predecessor_batch "
+            "FROM trove_embedding_backfill_predecessor_batch "
             "WHERE state = 'claimed') AND state = 'claimed' AND EXISTS ("
-            "SELECT 1 FROM lcm_embedding_backfill_predecessor_batch staged "
-            "WHERE staged.source_rowid = lcm_embedding_backfill_inflight.rowid "
-            "AND staged.embedded_id IS lcm_embedding_backfill_inflight.embedded_id "
-            "AND staged.identity_hash IS lcm_embedding_backfill_inflight.identity_hash "
-            "AND staged.lease_id IS lcm_embedding_backfill_inflight.lease_id "
-            "AND staged.generation IS lcm_embedding_backfill_inflight.generation "
-            "AND staged.request_id IS lcm_embedding_backfill_inflight.request_id "
+            "SELECT 1 FROM trove_embedding_backfill_predecessor_batch staged "
+            "WHERE staged.source_rowid = trove_embedding_backfill_inflight.rowid "
+            "AND staged.embedded_id IS trove_embedding_backfill_inflight.embedded_id "
+            "AND staged.identity_hash IS trove_embedding_backfill_inflight.identity_hash "
+            "AND staged.lease_id IS trove_embedding_backfill_inflight.lease_id "
+            "AND staged.generation IS trove_embedding_backfill_inflight.generation "
+            "AND staged.request_id IS trove_embedding_backfill_inflight.request_id "
             "AND staged.state = 'claimed')"
         )
         conn.execute(
-            "UPDATE lcm_embedding_backfill_inflight "
+            "UPDATE trove_embedding_backfill_inflight "
             "SET state = 'uncertain', updated_at = ?, "
             "last_error = COALESCE(last_error, 'prior lease ended after dispatch') "
             "WHERE rowid IN (SELECT source_rowid "
-            "FROM lcm_embedding_backfill_predecessor_batch "
+            "FROM trove_embedding_backfill_predecessor_batch "
             "WHERE state = 'dispatched') AND state = 'dispatched' AND EXISTS ("
-            "SELECT 1 FROM lcm_embedding_backfill_predecessor_batch staged "
-            "WHERE staged.source_rowid = lcm_embedding_backfill_inflight.rowid "
-            "AND staged.embedded_id IS lcm_embedding_backfill_inflight.embedded_id "
-            "AND staged.identity_hash IS lcm_embedding_backfill_inflight.identity_hash "
-            "AND staged.lease_id IS lcm_embedding_backfill_inflight.lease_id "
-            "AND staged.generation IS lcm_embedding_backfill_inflight.generation "
-            "AND staged.request_id IS lcm_embedding_backfill_inflight.request_id "
+            "SELECT 1 FROM trove_embedding_backfill_predecessor_batch staged "
+            "WHERE staged.source_rowid = trove_embedding_backfill_inflight.rowid "
+            "AND staged.embedded_id IS trove_embedding_backfill_inflight.embedded_id "
+            "AND staged.identity_hash IS trove_embedding_backfill_inflight.identity_hash "
+            "AND staged.lease_id IS trove_embedding_backfill_inflight.lease_id "
+            "AND staged.generation IS trove_embedding_backfill_inflight.generation "
+            "AND staged.request_id IS trove_embedding_backfill_inflight.request_id "
             "AND staged.state = 'dispatched')",
             (time.time(),),
         )
@@ -3281,7 +3281,7 @@ def _mark_inflight(
                 # dispatch therefore cannot turn an authorized retry into an
                 # ordinary automatically-discoverable row.
                 cur = conn.execute(
-                    "UPDATE lcm_embedding_backfill_inflight "
+                    "UPDATE trove_embedding_backfill_inflight "
                     "SET lease_id=?, generation=?, claimed_at=?, request_id=NULL, "
                     "updated_at=? WHERE embedded_id=? AND identity_hash=? "
                     "AND state='uncertain'",
@@ -3301,7 +3301,7 @@ def _mark_inflight(
                 continue
 
             cur = conn.execute(
-                "INSERT OR IGNORE INTO lcm_embedding_backfill_inflight("
+                "INSERT OR IGNORE INTO trove_embedding_backfill_inflight("
                 "embedded_id, identity_hash, lease_id, generation, claimed_at, "
                 "state, request_id, updated_at, last_error) "
                 "VALUES(?, ?, ?, ?, ?, 'claimed', NULL, ?, NULL)",
@@ -3354,7 +3354,7 @@ def _mark_dispatched(
             embedded_id = str(raw_embedded_id)
             prior_state = "uncertain" if embedded_id in authorized else "claimed"
             cur = conn.execute(
-                "UPDATE lcm_embedding_backfill_inflight "
+                "UPDATE trove_embedding_backfill_inflight "
                 "SET state='dispatched', request_id=?, updated_at=? "
                 "WHERE embedded_id=? AND identity_hash=? AND lease_id=? "
                 "AND generation=? AND state=? AND request_id IS NULL",
@@ -3414,7 +3414,7 @@ def _owned_inflight_transition(
                 pass
             elif embedded_id in authorized:
                 conn.execute(
-                    "UPDATE lcm_embedding_backfill_inflight "
+                    "UPDATE trove_embedding_backfill_inflight "
                     "SET state='uncertain', request_id=NULL, updated_at=?, "
                     "last_error=? WHERE embedded_id=? AND identity_hash=? "
                     "AND lease_id=? AND generation=? AND request_id=? "
@@ -3431,7 +3431,7 @@ def _owned_inflight_transition(
                 )
             elif request_id is None:
                 conn.execute(
-                    "DELETE FROM lcm_embedding_backfill_inflight "
+                    "DELETE FROM trove_embedding_backfill_inflight "
                     "WHERE embedded_id=? AND identity_hash=? AND lease_id=? "
                     "AND generation=? AND state='claimed'",
                     (
@@ -3443,7 +3443,7 @@ def _owned_inflight_transition(
                 )
             else:
                 conn.execute(
-                    "DELETE FROM lcm_embedding_backfill_inflight "
+                    "DELETE FROM trove_embedding_backfill_inflight "
                     "WHERE embedded_id=? AND identity_hash=? AND lease_id=? "
                     "AND generation=? AND request_id=? AND state='dispatched'",
                     (
@@ -3457,7 +3457,7 @@ def _owned_inflight_transition(
         elif retryable:
             for authorized_id in authorized:
                 conn.execute(
-                    "UPDATE lcm_embedding_backfill_inflight "
+                    "UPDATE trove_embedding_backfill_inflight "
                     "SET state='uncertain', request_id=NULL, updated_at=?, "
                     "last_error=? WHERE embedded_id=? AND identity_hash=? "
                     "AND lease_id=? AND generation=? AND request_id=? "
@@ -3475,7 +3475,7 @@ def _owned_inflight_transition(
             if authorized:
                 placeholders = ",".join("?" for _ in authorized)
                 conn.execute(
-                    "DELETE FROM lcm_embedding_backfill_inflight "
+                    "DELETE FROM trove_embedding_backfill_inflight "
                     "WHERE identity_hash=? AND lease_id=? AND generation=? "
                     f"AND request_id=? AND state='dispatched' "
                     f"AND embedded_id NOT IN ({placeholders})",
@@ -3489,7 +3489,7 @@ def _owned_inflight_transition(
                 )
             else:
                 conn.execute(
-                    "DELETE FROM lcm_embedding_backfill_inflight "
+                    "DELETE FROM trove_embedding_backfill_inflight "
                     "WHERE identity_hash=? AND lease_id=? AND generation=? "
                     "AND request_id=? AND state='dispatched'",
                     (
@@ -3501,7 +3501,7 @@ def _owned_inflight_transition(
                 )
         else:
             conn.execute(
-                "UPDATE lcm_embedding_backfill_inflight "
+                "UPDATE trove_embedding_backfill_inflight "
                 "SET state='uncertain', updated_at=?, last_error=? "
                 "WHERE identity_hash=? AND lease_id=? AND generation=? "
                 "AND request_id=? AND state='dispatched'",
@@ -3580,7 +3580,7 @@ def _embedding_backfill_options(
             index += 2
             continue
         return (
-            "`/lcm embed backfill` accepts only `--apply`, `--retry-uncertain`, "
+            "`/trove embed backfill` accepts only `--apply`, `--retry-uncertain`, "
             "`--confirm-raw-text`, `--limit N`, `--corpus summary|chunks|both`, "
             "`--policy conversational|heads|full`, and `--dtype float32|int8`."
         )
@@ -3621,7 +3621,7 @@ def _embedding_backfill_report(
     policy: str | None = None,
     include_next_hint: bool = True,
 ) -> str:
-    header = "LCM embedding backfill" if corpus is None else f"LCM {corpus} backfill"
+    header = "TROVE embedding backfill" if corpus is None else f"TROVE {corpus} backfill"
     lines = [header, f"mode: {mode}"]
     if corpus is not None:
         lines.append(f"corpus: {corpus}")
@@ -3672,9 +3672,9 @@ def _embedding_backfill_report(
         # the whole run, so the per-corpus reports suppress their own (F6).
         if include_next_hint:
             apply_hint = (
-                "/lcm embed backfill --apply"
+                "/trove embed backfill --apply"
                 if corpus is None
-                else f"/lcm embed backfill --corpus {corpus} --apply"
+                else f"/trove embed backfill --corpus {corpus} --apply"
             )
             lines.append(f"next: run `{apply_hint}` to populate embeddings")
     return "\n".join(lines)
@@ -3753,7 +3753,7 @@ def _embedding_backfill_text(tokens: list[str], engine) -> str:
             # One coherent next-hint matching the actual `--corpus both` invocation,
             # instead of the two contradictory per-corpus hints (F6).
             combined += (
-                "\n\nnext: run `/lcm embed backfill --corpus both --apply` to "
+                "\n\nnext: run `/trove embed backfill --corpus both --apply` to "
                 "populate both corpora (add `--confirm-raw-text` to authorize the "
                 "chunk corpus on a cloud provider)"
             )
@@ -3773,10 +3773,10 @@ def _embedding_backfill_summary_text(
 
     if not bool(getattr(engine._config, "embeddings_enabled", False)):
         return "\n".join([
-            "LCM embedding backfill",
+            "TROVE embedding backfill",
             f"mode: {mode}",
             "status: refused",
-            "error: embeddings are disabled; set LCM_EMBEDDINGS_ENABLED=true, then run `/lcm embed warmup`",
+            "error: embeddings are disabled; set TROVE_EMBEDDINGS_ENABLED=true, then run `/trove embed warmup`",
         ])
 
     db_path = engine._store.db_path
@@ -3786,19 +3786,19 @@ def _embedding_backfill_summary_text(
         read_conn = _embedding_read_connection(db_path)
     except sqlite3.Error as exc:
         return "\n".join([
-            "LCM embedding backfill",
+            "TROVE embedding backfill",
             f"mode: {mode}",
             "status: refused",
-            f"error: embedding database is unavailable ({exc}); run `/lcm embed warmup` first",
+            f"error: embedding database is unavailable ({exc}); run `/trove embed warmup` first",
         ])
     try:
         profile = _embedding_current_profile(read_conn)
         if profile is None:
             return "\n".join([
-                "LCM embedding backfill",
+                "TROVE embedding backfill",
                 f"mode: {mode}",
                 "status: refused",
-                "error: no current embedding profile is registered; run `/lcm embed warmup` first",
+                "error: no current embedding profile is registered; run `/trove embed warmup` first",
             ])
         identity = str(profile["identity_hash"])
         model = str(profile["model_name"])
@@ -3806,18 +3806,18 @@ def _embedding_backfill_summary_text(
         profile_dtype = str(profile["dtype"] or "float32")
         if expected_dtype is not None and expected_dtype != profile_dtype:
             return "\n".join([
-                "LCM embedding backfill",
+                "TROVE embedding backfill",
                 f"mode: {mode}",
                 "status: refused",
                 f"error: --dtype {expected_dtype} does not match the registered "
-                f"summary profile dtype ({profile_dtype}); re-run `/lcm embed warmup` "
-                f"with LCM_EMBEDDING_STORAGE_DTYPE={expected_dtype} to register that identity",
+                f"summary profile dtype ({profile_dtype}); re-run `/trove embed warmup` "
+                f"with TROVE_EMBEDDING_STORAGE_DTYPE={expected_dtype} to register that identity",
             ])
         if not apply:
             pending, rows = _embedding_pending_rows(read_conn, identity, limit)
     except sqlite3.Error as exc:
         return "\n".join([
-            "LCM embedding backfill",
+            "TROVE embedding backfill",
             f"mode: {mode}",
             "status: error",
             f"error: could not discover pending summaries ({exc})",
@@ -3892,7 +3892,7 @@ def _embedding_backfill_summary_text(
         )
         if lease is None:
             return "\n".join([
-                "LCM embedding backfill",
+                "TROVE embedding backfill",
                 "mode: apply",
                 "status: refused",
                 "error: another embedding backfill holds the lease; retry after it exits or after the lease TTL expires",
@@ -3902,7 +3902,7 @@ def _embedding_backfill_summary_text(
         if captured_identity.identity_hash != identity:
             raise ValueError(
                 "active embedding identity changed before backfill dispatch; "
-                "run `/lcm embed warmup` and retry"
+                "run `/trove embed warmup` and retry"
             )
         # A risky retry invocation is an exact, exclusive authorization for
         # the bounded uncertain rows selected here. Ordinary pending work is
@@ -3928,12 +3928,12 @@ def _embedding_backfill_summary_text(
         # 60/min guard mid-way and stalls.
         provider = resolve_provider(engine._config, for_backfill=True)
         if provider is None:
-            error = "embedding provider is not configured; run `/lcm embed warmup`"
+            error = "embedding provider is not configured; run `/trove embed warmup`"
         elif (
             provider.model_id != model
             or str(provider.provider_id).lower() != provider_name.lower()
         ):
-            error = "configured provider does not match the current profile; run `/lcm embed warmup`"
+            error = "configured provider does not match the current profile; run `/trove embed warmup`"
         else:
             for offset in range(0, len(documents), _EMBEDDING_BACKFILL_BATCH_SIZE):
                 # Renew the heartbeat lease; if it was stolen (TTL lapsed and a
@@ -4255,11 +4255,11 @@ def _embedding_backfill_remaining(
             remaining, _ = _embedding_pending_rows(check_conn, identity_hash, 1)
             try:
                 in_flight = int(check_conn.execute(
-                    "SELECT COUNT(*) FROM lcm_embedding_backfill_inflight WHERE identity_hash = ?",
+                    "SELECT COUNT(*) FROM trove_embedding_backfill_inflight WHERE identity_hash = ?",
                     (identity_hash,),
                 ).fetchone()[0])
                 uncertain = int(check_conn.execute(
-                    "SELECT COUNT(*) FROM lcm_embedding_backfill_inflight "
+                    "SELECT COUNT(*) FROM trove_embedding_backfill_inflight "
                     "WHERE identity_hash = ? AND state IN ('dispatched', 'uncertain')",
                     (identity_hash,),
                 ).fetchone()[0])
@@ -4293,7 +4293,7 @@ def _chunk_current_profile(conn: sqlite3.Connection) -> sqlite3.Row | None:
             """
             SELECT identity_hash, model_name, provider, revision, dim, dtype,
                    byteorder, task, registered_at
-            FROM lcm_embedding_profile
+            FROM trove_embedding_profile
             WHERE active = 1 AND archived_at IS NULL AND task = 'chunk'
             ORDER BY registered_at DESC, identity_hash DESC
             LIMIT 1
@@ -4309,14 +4309,14 @@ def _chunk_embedded_ids(conn: sqlite3.Connection, identity_hash: str | None) -> 
     if not identity_hash:
         return set()
     exists = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='lcm_chunk_meta'"
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='trove_chunk_meta'"
     ).fetchone()
     if exists is None:
         return set()
     return {
         str(row[0])
         for row in conn.execute(
-            "SELECT chunk_id FROM lcm_chunk_meta WHERE identity_hash = ?",
+            "SELECT chunk_id FROM trove_chunk_meta WHERE identity_hash = ?",
             (identity_hash,),
         ).fetchall()
     }
@@ -4327,14 +4327,14 @@ def _chunk_inflight_ids(conn: sqlite3.Connection, identity_hash: str | None) -> 
         return set()
     exists = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' "
-        "AND name='lcm_embedding_backfill_inflight'"
+        "AND name='trove_embedding_backfill_inflight'"
     ).fetchone()
     if exists is None:
         return set()
     return {
         str(row[0])
         for row in conn.execute(
-            "SELECT embedded_id FROM lcm_embedding_backfill_inflight "
+            "SELECT embedded_id FROM trove_embedding_backfill_inflight "
             "WHERE identity_hash = ?",
             (identity_hash,),
         ).fetchall()
@@ -4368,7 +4368,7 @@ def _chunk_pending_rows(
             if chunk_id in already or chunk_id in inflight:
                 continue
             # Write-seam guard: a degenerate/zero span is non-embeddable and would
-            # persist an empty snippet + bogus lcm_expand offset (F3).
+            # persist an empty snippet + bogus trove_expand offset (F3).
             if chunk.char_end <= chunk.char_start:
                 continue
             total += 1
@@ -4421,11 +4421,11 @@ def _chunk_authorized_uncertain_rows(
     rows = conn.execute(
         """
         SELECT f.embedded_id
-        FROM lcm_embedding_backfill_inflight AS f
+        FROM trove_embedding_backfill_inflight AS f
         WHERE f.identity_hash = ?
           AND f.state = 'uncertain'
           AND NOT EXISTS (
-              SELECT 1 FROM lcm_chunk_meta AS m
+              SELECT 1 FROM trove_chunk_meta AS m
               WHERE m.chunk_id = f.embedded_id
                 AND m.identity_hash = f.identity_hash
           )
@@ -4443,7 +4443,7 @@ def _chunk_authorized_uncertain_rows(
             continue
         text, tokens, char_start, char_end = rebuilt
         # Write-seam guard: never persist a degenerate/zero span — it yields an
-        # empty verbatim snippet and a bogus lcm_expand offset (F3).
+        # empty verbatim snippet and a bogus trove_expand offset (F3).
         if char_end <= char_start:
             continue
         store_id_str, index_str = chunk_id.split(":", 1)
@@ -4471,12 +4471,12 @@ def _chunk_backfill_remaining(
             if identity_hash:
                 try:
                     in_flight = int(check_conn.execute(
-                        "SELECT COUNT(*) FROM lcm_embedding_backfill_inflight "
+                        "SELECT COUNT(*) FROM trove_embedding_backfill_inflight "
                         "WHERE identity_hash = ?",
                         (identity_hash,),
                     ).fetchone()[0])
                     uncertain = int(check_conn.execute(
-                        "SELECT COUNT(*) FROM lcm_embedding_backfill_inflight "
+                        "SELECT COUNT(*) FROM trove_embedding_backfill_inflight "
                         "WHERE identity_hash = ? AND state IN ('dispatched', 'uncertain')",
                         (identity_hash,),
                     ).fetchone()[0])
@@ -4517,7 +4517,7 @@ def _chunk_backfill_text(
 
     def _refused(message: str) -> str:
         return "\n".join([
-            "LCM chunk backfill",
+            "TROVE chunk backfill",
             f"mode: {mode}",
             "corpus: chunks",
             f"policy: {policy}",
@@ -4527,8 +4527,8 @@ def _chunk_backfill_text(
 
     if not bool(getattr(engine._config, "embeddings_enabled", False)):
         return _refused(
-            "embeddings are disabled; set LCM_EMBEDDINGS_ENABLED=true, then run "
-            "`/lcm embed warmup`"
+            "embeddings are disabled; set TROVE_EMBEDDINGS_ENABLED=true, then run "
+            "`/trove embed warmup`"
         )
 
     db_path = engine._store.db_path
@@ -4564,8 +4564,8 @@ def _chunk_backfill_text(
         ):
             return _refused(
                 f"--dtype {expected_dtype} does not match the registered chunk "
-                f"profile dtype ({profile_dtype}); re-run `/lcm embed warmup` with "
-                f"LCM_EMBEDDING_STORAGE_DTYPE={expected_dtype} to register that identity"
+                f"profile dtype ({profile_dtype}); re-run `/trove embed warmup` with "
+                f"TROVE_EMBEDDING_STORAGE_DTYPE={expected_dtype} to register that identity"
             )
         if not apply:
             pending, rows, _ = _chunk_pending_rows(read_conn, identity, policy, limit)
@@ -4639,7 +4639,7 @@ def _chunk_backfill_text(
             f"tool-result and error/traceback content that the summary corpus "
             f"never exposes — to the '{provider_name}' cloud embedding provider. "
             f"Re-run with `--confirm-raw-text` to acknowledge this, or switch to a "
-            f"local provider (fastembed/ollama). Note: LCM_SENSITIVE_PATTERNS_ENABLED "
+            f"local provider (fastembed/ollama). Note: TROVE_SENSITIVE_PATTERNS_ENABLED "
             f"redaction runs at INGEST, so text already stored is not "
             f"retro-redacted before being sent."
         )
@@ -4707,12 +4707,12 @@ def _chunk_backfill_text(
         )
         provider = resolve_provider(chunk_provider_config, for_backfill=True)
         if provider is None:
-            error = "embedding provider is not configured; run `/lcm embed warmup`"
+            error = "embedding provider is not configured; run `/trove embed warmup`"
         elif (
             provider.model_id != model
             or str(provider.provider_id).lower() != provider_name.lower()
         ):
-            error = "configured provider does not match the chunk profile; run `/lcm embed warmup`"
+            error = "configured provider does not match the chunk profile; run `/trove embed warmup`"
         else:
             for offset in range(0, len(documents), _EMBEDDING_BACKFILL_BATCH_SIZE):
                 if not lease.renew():
@@ -4991,7 +4991,7 @@ def _embedding_backfill_status(
     return "partial"
 
 
-def handle_lcm_command(raw_args: str | None, engine) -> str:
+def handle_trove_command(raw_args: str | None, engine) -> str:
     tokens = [part.strip() for part in (raw_args or "").strip().split() if part.strip()]
     if not tokens:
         return _status_text(engine)
@@ -5001,7 +5001,7 @@ def handle_lcm_command(raw_args: str | None, engine) -> str:
 
     if head == "status":
         if rest:
-            return _help_text("`/lcm status` does not accept extra arguments.")
+            return _help_text("`/trove status` does not accept extra arguments.")
         return _status_text(engine)
 
     if head == "doctor":
@@ -5034,11 +5034,11 @@ def handle_lcm_command(raw_args: str | None, engine) -> str:
             return _doctor_repair_schema_stamp_apply_text(engine)
         if len(rest) == 2 and rest[0].lower() == "source" and rest[1].lower() == "apply":
             return _doctor_source_apply_text(engine)
-        return _help_text("`/lcm doctor` currently supports `clean`, `clean apply`, `clean lifecycle`, `clean lifecycle apply`, `repair`, `repair apply`, `repair schema-stamp`, `repair schema-stamp apply`, `source`, `source apply`, and `retention` as extra subcommands.")
+        return _help_text("`/trove doctor` currently supports `clean`, `clean apply`, `clean lifecycle`, `clean lifecycle apply`, `repair`, `repair apply`, `repair schema-stamp`, `repair schema-stamp apply`, `source`, `source apply`, and `retention` as extra subcommands.")
 
     if head == "backup":
         if rest:
-            return _help_text("`/lcm backup` does not accept extra arguments.")
+            return _help_text("`/trove backup` does not accept extra arguments.")
         return _backup_text(engine)
 
     if head == "rotate":
@@ -5046,7 +5046,7 @@ def handle_lcm_command(raw_args: str | None, engine) -> str:
             return _rotate_text(engine)
         if len(rest) == 1 and rest[0].lower() == "apply":
             return _rotate_apply_text(engine)
-        return _help_text("`/lcm rotate` accepts an optional `apply` subcommand.")
+        return _help_text("`/trove rotate` accepts an optional `apply` subcommand.")
 
     if head == "rollups":
         return _rollups_text(rest, engine)
@@ -5062,7 +5062,7 @@ def handle_lcm_command(raw_args: str | None, engine) -> str:
             return _embedding_warmup_text(engine)
         if rest and rest[0].lower() == "backfill":
             return _embedding_backfill_text(rest[1:], engine)
-        return _help_text("`/lcm embed` requires the `warmup` or `backfill` subcommand.")
+        return _help_text("`/trove embed` requires the `warmup` or `backfill` subcommand.")
 
     if head == "help":
         return _help_text()

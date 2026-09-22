@@ -10,7 +10,7 @@ import types
 def ensure_agent_context_engine_importable() -> None:
     """Provide the minimal Hermes ContextEngine API when Hermes Agent is absent.
 
-    Release benchmark and stress scripts exercise hermes-lcm directly from a
+    Release benchmark and stress scripts exercise hermes-trove directly from a
     plugin checkout. They only need the ContextEngine base class for inheritance;
     they do not need a full Hermes Agent install or live plugin host.
     """

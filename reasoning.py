@@ -939,7 +939,7 @@ def _ground_one(
                 return None, "source occurrence was after the question-date boundary"
 
     return GroundedEvidence(
-        citation=f"lcm:{store_id}:{span_start}-{span_end}",
+        citation=f"trove:{store_id}:{span_start}-{span_end}",
         store_id=store_id,
         span_start=span_start,
         span_end=span_end,
@@ -1545,12 +1545,12 @@ def verify_final_answer(candidate: Any, trace: ComputationTrace) -> Verification
     if len(text) > 4_000:
         return VerificationDecision("fallback", "candidate answer exceeds verifier bound")
     expected_citations = {f"[{citation}]" for citation in trace.citations}
-    actual_citations = set(re.findall(r"\[lcm:\d+:\d+-\d+\]", text))
+    actual_citations = set(re.findall(r"\[trove:\d+:\d+-\d+\]", text))
     if actual_citations != expected_citations:
         return VerificationDecision("fallback", "candidate citations do not match exact operands")
     if text == trace.answer:
         return VerificationDecision("verified")
-    without_citations = re.sub(r"\s*\[lcm:\d+:\d+-\d+\]", "", text).strip()
+    without_citations = re.sub(r"\s*\[trove:\d+:\d+-\d+\]", "", text).strip()
     if re.search(r"\b(?:no|not|never)\b|n['’]t\b", without_citations, re.IGNORECASE):
         return VerificationDecision("fallback", "candidate negates the verified result")
     if trace.result.casefold() not in without_citations.casefold():

@@ -6,10 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
-import hermes_lcm.command as command_mod
-from hermes_lcm.command import handle_lcm_command
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.vector_store import VectorStore
+import hermes_trove.command as command_mod
+from hermes_trove.command import handle_trove_command
+from hermes_trove.config import TROVEConfig
+from hermes_trove.vector_store import VectorStore
 
 
 class FakeProvider:
@@ -32,14 +32,14 @@ class FakeProvider:
 def deterministic_token_count(monkeypatch):
     # len-based token count keeps chunk-size math simple and deterministic.
     monkeypatch.setattr(command_mod, "count_tokens", lambda text: len(str(text)))
-    import hermes_lcm.chunking as chunking
+    import hermes_trove.chunking as chunking
     monkeypatch.setattr(chunking, "count_tokens", lambda text: len(str(text)))
 
 
 def _engine(tmp_path, *, enabled: bool = True):
     tmp_path.mkdir(parents=True, exist_ok=True)
     db_path = tmp_path / "backfill.db"
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(db_path),
         embeddings_enabled=enabled,
         embedding_provider="ollama",
@@ -81,14 +81,14 @@ def _chunk_meta_ids(engine) -> list[str]:
     conn = sqlite3.connect(engine._store.db_path)
     try:
         exists = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='lcm_chunk_meta'"
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='trove_chunk_meta'"
         ).fetchone()
         if exists is None:
             return []
         return [
             str(row[0])
             for row in conn.execute(
-                "SELECT chunk_id FROM lcm_chunk_meta ORDER BY chunk_id"
+                "SELECT chunk_id FROM trove_chunk_meta ORDER BY chunk_id"
             ).fetchall()
         ]
     finally:
@@ -136,7 +136,7 @@ def test_chunk_crash_on_commit_labels_local_error_and_counts_failed(monkeypatch,
                 self._conn = real
 
     monkeypatch.setattr(command_mod, "VectorStore", CrashStore)
-    out = handle_lcm_command("embed backfill --corpus chunks --apply", engine)
+    out = handle_trove_command("embed backfill --corpus chunks --apply", engine)
 
     # Nothing half-published; the crash is labeled a local storage failure and
     # every dispatched chunk row is counted as failed (not under-counted).
@@ -149,7 +149,7 @@ def test_chunk_crash_on_commit_labels_local_error_and_counts_failed(monkeypatch,
 
 class TestChunkRetryUncertainSpans:
     def test_rebuild_chunk_document_returns_real_span(self, tmp_path):
-        from hermes_lcm.chunking import chunk_message
+        from hermes_trove.chunking import chunk_message
 
         engine = _engine(tmp_path)
         content = "some substantial user output token " * 40
@@ -171,7 +171,7 @@ class TestChunkRetryUncertainSpans:
         assert char_end > char_start
 
     def test_authorized_uncertain_rows_persist_real_span_not_zero(self, tmp_path):
-        from hermes_lcm.chunking import chunk_message
+        from hermes_trove.chunking import chunk_message
 
         engine = _engine(tmp_path)
         content = "another long verbatim user payload body " * 30
@@ -184,13 +184,13 @@ class TestChunkRetryUncertainSpans:
 
         conn = sqlite3.connect(engine._store.db_path)
         try:
-            from hermes_lcm import db_bootstrap
+            from hermes_trove import db_bootstrap
 
             db_bootstrap.ensure_embedding_tables(conn)
             db_bootstrap.ensure_chunk_tables(conn)
             conn.execute(
                 """
-                CREATE TABLE IF NOT EXISTS lcm_embedding_backfill_inflight (
+                CREATE TABLE IF NOT EXISTS trove_embedding_backfill_inflight (
                     embedded_id TEXT, identity_hash TEXT, state TEXT,
                     updated_at REAL,
                     PRIMARY KEY(embedded_id, identity_hash)
@@ -198,7 +198,7 @@ class TestChunkRetryUncertainSpans:
                 """
             )
             conn.execute(
-                "INSERT INTO lcm_embedding_backfill_inflight"
+                "INSERT INTO trove_embedding_backfill_inflight"
                 "(embedded_id, identity_hash, state, updated_at) VALUES(?, ?, 'uncertain', 1.0)",
                 (expected.chunk_id, identity),
             )
@@ -223,8 +223,8 @@ class TestChunkRetryUncertainSpans:
         into a singleton group and defeat C2 contextualization. The retry path
         must stably re-sort documents by (store_id, chunk_index) so each message's
         chunks stay contiguous and group into one contextualization document."""
-        from hermes_lcm.chunking import chunk_message, group_by_store_id
-        from hermes_lcm import db_bootstrap
+        from hermes_trove.chunking import chunk_message, group_by_store_id
+        from hermes_trove import db_bootstrap
 
         engine = _engine(tmp_path)
         # Many sentence boundaries so each message splits into several ~600-token
@@ -251,7 +251,7 @@ class TestChunkRetryUncertainSpans:
             db_bootstrap.ensure_chunk_tables(conn)
             conn.execute(
                 """
-                CREATE TABLE IF NOT EXISTS lcm_embedding_backfill_inflight (
+                CREATE TABLE IF NOT EXISTS trove_embedding_backfill_inflight (
                     embedded_id TEXT, identity_hash TEXT, state TEXT,
                     updated_at REAL,
                     PRIMARY KEY(embedded_id, identity_hash)
@@ -267,7 +267,7 @@ class TestChunkRetryUncertainSpans:
                     interleaved.append(chunks_2[i].chunk_id)
             for ordinal, chunk_id in enumerate(interleaved):
                 conn.execute(
-                    "INSERT INTO lcm_embedding_backfill_inflight"
+                    "INSERT INTO trove_embedding_backfill_inflight"
                     "(embedded_id, identity_hash, state, updated_at) "
                     "VALUES(?, ?, 'uncertain', ?)",
                     (chunk_id, identity, float(ordinal)),
@@ -297,7 +297,7 @@ class TestChunkRawTextConsentGate:
     def _voyage_engine(self, tmp_path):
         tmp_path.mkdir(parents=True, exist_ok=True)
         db_path = tmp_path / "backfill.db"
-        config = LCMConfig(
+        config = TROVEConfig(
             database_path=str(db_path),
             embeddings_enabled=True,
             embedding_provider="voyage",
@@ -317,7 +317,7 @@ class TestChunkRawTextConsentGate:
         provider = FakeProvider()
         monkeypatch.setattr(command_mod, "resolve_provider", lambda _c, **_k: provider)
 
-        out = handle_lcm_command("embed backfill --corpus chunks --apply", engine)
+        out = handle_trove_command("embed backfill --corpus chunks --apply", engine)
 
         assert "status: refused" in out
         assert "RAW, VERBATIM" in out
@@ -335,7 +335,7 @@ class TestChunkRawTextConsentGate:
         provider.model_id = "voyage-3"
         monkeypatch.setattr(command_mod, "resolve_provider", lambda _c, **_k: provider)
 
-        out = handle_lcm_command(
+        out = handle_trove_command(
             "embed backfill --corpus chunks --apply --confirm-raw-text", engine
         )
 
@@ -348,14 +348,14 @@ class TestChunkRawTextConsentGate:
         provider = FakeProvider()
         monkeypatch.setattr(command_mod, "resolve_provider", lambda _c, **_k: provider)
 
-        out = handle_lcm_command("embed backfill --corpus chunks --apply", engine)
+        out = handle_trove_command("embed backfill --corpus chunks --apply", engine)
 
         assert "status: refused" not in out
         assert _chunk_meta_ids(engine)
 
     def test_confirm_flag_rejected_for_summary_corpus(self, tmp_path):
         engine = _engine(tmp_path)
-        out = handle_lcm_command("embed backfill --confirm-raw-text", engine)
+        out = handle_trove_command("embed backfill --confirm-raw-text", engine)
         assert "only applies to the chunk corpus" in out
 
 
@@ -366,14 +366,14 @@ class TestBothCorpusNextHint:
         provider = FakeProvider()
         monkeypatch.setattr(command_mod, "resolve_provider", lambda _c, **_k: provider)
 
-        out = handle_lcm_command("embed backfill --corpus both", engine)
+        out = handle_trove_command("embed backfill --corpus both", engine)
 
         # Exactly one next-hint, and it names the actual `--corpus both` command.
         assert out.count("next: run") == 1
-        assert "next: run `/lcm embed backfill --corpus both --apply`" in out
+        assert "next: run `/trove embed backfill --corpus both --apply`" in out
         # The two contradictory per-corpus hints are gone.
-        assert "run `/lcm embed backfill --apply`" not in out
-        assert "run `/lcm embed backfill --corpus chunks --apply`" not in out
+        assert "run `/trove embed backfill --apply`" not in out
+        assert "run `/trove embed backfill --corpus chunks --apply`" not in out
         assert provider.calls == []
 
 
@@ -385,7 +385,7 @@ class TestChunkDryRun:
         monkeypatch.setattr(command_mod, "resolve_provider", lambda _c, **_k: provider)
         before = engine._store.db_path.read_bytes()
 
-        result = handle_lcm_command("embed backfill --corpus chunks", engine)
+        result = handle_trove_command("embed backfill --corpus chunks", engine)
 
         assert "corpus: chunks" in result
         assert "policy: conversational" in result
@@ -398,7 +398,7 @@ class TestChunkDryRun:
     def test_estimates_without_registered_profile(self, tmp_path):
         engine = _engine(tmp_path)
         _seed_messages(engine, _user_msgs(2), register=False)
-        result = handle_lcm_command("embed backfill --corpus chunks", engine)
+        result = handle_trove_command("embed backfill --corpus chunks", engine)
         assert "status: dry-run" in result
         assert "pending: 2" in result
 
@@ -410,7 +410,7 @@ class TestChunkDryRun:
         engine._config.embedding_provider = "voyage"
         engine._config.embedding_model = "voyage-context-3"
         _seed_messages(engine, _user_msgs(1), register=False)
-        result = handle_lcm_command("embed backfill --corpus chunks", engine)
+        result = handle_trove_command("embed backfill --corpus chunks", engine)
         assert "model: voyage-context-3" in result
 
     def test_dry_run_display_maps_plain_voyage_to_context_default(self, tmp_path):
@@ -420,22 +420,22 @@ class TestChunkDryRun:
         engine._config.embedding_provider = "voyage"
         engine._config.embedding_model = "voyage-3"
         _seed_messages(engine, _user_msgs(1), register=False)
-        result = handle_lcm_command("embed backfill --corpus chunks", engine)
+        result = handle_trove_command("embed backfill --corpus chunks", engine)
         assert "model: voyage-context-4" in result
 
     def test_policy_heads_includes_tool_heads(self, tmp_path):
         engine = _engine(tmp_path)
         rows = _user_msgs(1) + [(2, "sess-a", "history", "tool", "t" * 60, 2.0)]
         _seed_messages(engine, rows)
-        conv = handle_lcm_command("embed backfill --corpus chunks --policy conversational", engine)
-        heads = handle_lcm_command("embed backfill --corpus chunks --policy heads", engine)
+        conv = handle_trove_command("embed backfill --corpus chunks --policy conversational", engine)
+        heads = handle_trove_command("embed backfill --corpus chunks --policy heads", engine)
         assert "pending: 1" in conv  # tool skipped under conversational
         assert "pending: 2" in heads  # tool head added under heads
 
     def test_disabled_is_refused(self, tmp_path):
         engine = _engine(tmp_path, enabled=False)
         _seed_messages(engine, _user_msgs(1), register=False)
-        result = handle_lcm_command("embed backfill --corpus chunks", engine)
+        result = handle_trove_command("embed backfill --corpus chunks", engine)
         assert "status: refused" in result
 
     def test_context_estimate_uses_grouped_caps_not_flat_27k(self):
@@ -443,7 +443,7 @@ class TestChunkDryRun:
         chunk only above the 32K per-chunk context cap (NOT the flat 27K per-doc
         cap), and counts requests via the context planner -- so the cost/consent
         preview matches the grouped apply path."""
-        from hermes_lcm.embedding_provider import _VOYAGE_CONTEXT_MAX_CHUNK_TOKENS
+        from hermes_trove.embedding_provider import _VOYAGE_CONTEXT_MAX_CHUNK_TOKENS
 
         # message 1: two small chunks; message 2: one 30K chunk (27K<t<=32K -> now
         # BILLABLE, was wrongly excluded by the old 27K cap) + one 40K chunk
@@ -474,11 +474,11 @@ class TestChunkApply:
         provider = FakeProvider()
         monkeypatch.setattr(command_mod, "resolve_provider", lambda _c, **_k: provider)
 
-        first = handle_lcm_command("embed backfill --corpus chunks --apply", engine)
+        first = handle_trove_command("embed backfill --corpus chunks --apply", engine)
         assert "embedded: 3" in first
         assert _chunk_meta_ids(engine) == ["1:0", "2:0", "3:0"]
 
-        second = handle_lcm_command("embed backfill --corpus chunks --apply", engine)
+        second = handle_trove_command("embed backfill --corpus chunks --apply", engine)
         assert "pending: 0" in second
         assert "embedded: 0" in second
         assert _chunk_meta_ids(engine) == ["1:0", "2:0", "3:0"]
@@ -490,7 +490,7 @@ class TestChunkApply:
         provider = FakeProvider()
         monkeypatch.setattr(command_mod, "resolve_provider", lambda _c, **_k: provider)
 
-        result = handle_lcm_command("embed backfill --corpus chunks --apply", engine)
+        result = handle_trove_command("embed backfill --corpus chunks --apply", engine)
 
         assert "status: complete" in result
         assert _chunk_meta_ids(engine) == ["1:0"]
@@ -508,7 +508,7 @@ class TestChunkApply:
         provider.embed_documents = skip_middle
         monkeypatch.setattr(command_mod, "resolve_provider", lambda _c, **_k: provider)
 
-        result = handle_lcm_command("embed backfill --corpus chunks --apply", engine)
+        result = handle_trove_command("embed backfill --corpus chunks --apply", engine)
 
         assert "status: partial" in result
         assert "skipped_overcap: 1" in result
@@ -527,10 +527,10 @@ class TestChunkApply:
             conn = store.connection
             command_mod._ensure_inflight_table(conn)
             identity = str(conn.execute(
-                "SELECT identity_hash FROM lcm_embedding_profile WHERE task='chunk' AND active=1"
+                "SELECT identity_hash FROM trove_embedding_profile WHERE task='chunk' AND active=1"
             ).fetchone()[0])
             conn.execute(
-                "INSERT INTO lcm_embedding_backfill_inflight("
+                "INSERT INTO trove_embedding_backfill_inflight("
                 "embedded_id, identity_hash, lease_id, generation, claimed_at, "
                 "state, request_id, updated_at, last_error) "
                 "VALUES('1:0', ?, 'prior', 1, 1, 'uncertain', 'prior-req', 1, 'unknown')",
@@ -541,13 +541,13 @@ class TestChunkApply:
             store.close()
 
         # Ordinary apply must NOT auto-retry the uncertain chunk.
-        ordinary = handle_lcm_command("embed backfill --corpus chunks --apply", engine)
+        ordinary = handle_trove_command("embed backfill --corpus chunks --apply", engine)
         assert "1:0" not in _chunk_meta_ids(engine)
         assert "2:0" in _chunk_meta_ids(engine)
         assert "embedded: 1" in ordinary
 
         # Explicit authorization re-embeds only the uncertain chunk.
-        retry = handle_lcm_command(
+        retry = handle_trove_command(
             "embed backfill --corpus chunks --apply --retry-uncertain", engine
         )
         assert "1:0" in _chunk_meta_ids(engine)
@@ -570,7 +570,7 @@ class _ContextFakeTransport:
                 for i in range(len(group))
             ]
             data.append({"index": outer, "data": inner})
-        from hermes_lcm.embedding_provider import HttpResponse
+        from hermes_trove.embedding_provider import HttpResponse
 
         return HttpResponse(
             status=200, headers={},
@@ -590,7 +590,7 @@ class TestChunkContextualizedGrouping:
     def _voyage_context_engine(self, tmp_path):
         tmp_path.mkdir(parents=True, exist_ok=True)
         db_path = tmp_path / "backfill.db"
-        config = LCMConfig(
+        config = TROVEConfig(
             database_path=str(db_path),
             embeddings_enabled=True,
             embedding_provider="voyage",
@@ -611,7 +611,7 @@ class TestChunkContextualizedGrouping:
         return engine
 
     def test_message_chunks_grouped_into_one_inputs_list(self, monkeypatch, tmp_path):
-        import hermes_lcm.embedding_provider as provider_mod
+        import hermes_trove.embedding_provider as provider_mod
 
         monkeypatch.setenv("VOYAGE_API_KEY", "test-key")
         engine = self._voyage_context_engine(tmp_path)
@@ -621,7 +621,7 @@ class TestChunkContextualizedGrouping:
         )
         monkeypatch.setattr(command_mod, "resolve_provider", lambda _c, **_k: provider)
 
-        out = handle_lcm_command(
+        out = handle_trove_command(
             "embed backfill --corpus chunks --apply --confirm-raw-text", engine
         )
 
@@ -641,13 +641,13 @@ class TestChunkContextualizedGrouping:
         """FIX 4: the dry-run 'estimated_batches' equals the number of context
         requests the grouped apply path actually dispatches, so the preview
         matches apply's request shape."""
-        import hermes_lcm.embedding_provider as provider_mod
+        import hermes_trove.embedding_provider as provider_mod
 
         monkeypatch.setenv("VOYAGE_API_KEY", "test-key")
         engine = self._voyage_context_engine(tmp_path)
 
         # Dry-run first (no writes): capture the estimated request count.
-        dry = handle_lcm_command("embed backfill --corpus chunks", engine)
+        dry = handle_trove_command("embed backfill --corpus chunks", engine)
         estimated_batches = int(
             next(
                 line.split(":", 1)[1].strip()
@@ -661,7 +661,7 @@ class TestChunkContextualizedGrouping:
         transport = _ContextFakeTransport()
         provider = provider_mod.VoyageProvider("voyage-context-3", transport=transport)
         monkeypatch.setattr(command_mod, "resolve_provider", lambda _c, **_k: provider)
-        out = handle_lcm_command(
+        out = handle_trove_command(
             "embed backfill --corpus chunks --apply --confirm-raw-text", engine
         )
         assert "status: refused" not in out

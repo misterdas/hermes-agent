@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.selective_compiler import (
+from hermes_trove.config import TROVEConfig
+from hermes_trove.selective_compiler import (
     SELECTIVE_SELECTOR_VERSION,
     compile_selective_evidence,
     prepare_selective_compiler,
 )
-from hermes_lcm.store import MessageStore
+from hermes_trove.store import MessageStore
 
 
 def _engine(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm.db"))
+    config = TROVEConfig(database_path=str(tmp_path / "trove.db"))
     store = MessageStore(config.database_path, ingest_protection_config=config)
     return SimpleNamespace(
         _config=config,
@@ -30,7 +30,7 @@ def _evidence(engine, content, *, session="s", observed_at=None):
         message["timestamp"] = observed_at
     store_id = engine._store.append(session, message)
     return {
-        "exact_ref": f"lcm:{store_id}:0-{len(content)}",
+        "exact_ref": f"trove:{store_id}:0-{len(content)}",
         "quote": content,
     }
 
@@ -243,12 +243,12 @@ def test_historical_cutoff_excludes_future_handles_before_selector_prompt():
         "What was the total cost of the two purchases?",
         baseline_refs=[
             {
-                "exact_ref": f"lcm:1:0-{len(past)}",
+                "exact_ref": f"trove:1:0-{len(past)}",
                 "quote": past,
                 "date": "2024-01-01",
             },
             {
-                "exact_ref": f"lcm:2:0-{len(future)}",
+                "exact_ref": f"trove:2:0-{len(future)}",
                 "quote": future,
                 "date": "2026-01-01",
             },
@@ -258,7 +258,7 @@ def test_historical_cutoff_excludes_future_handles_before_selector_prompt():
 
     assert prepared["status"] == "selector_required"
     assert [item["exact_ref"] for item in prepared["compiler_refs"]] == [
-        f"lcm:1:0-{len(past)}"
+        f"trove:1:0-{len(past)}"
     ]
     assert future not in prepared["prompt"]
 

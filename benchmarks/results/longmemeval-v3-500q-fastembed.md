@@ -34,8 +34,8 @@ Unchanged from v2 (session-level path is untouched by v3).
 | single-session-user | 0.81 | 0.98 | 0.80 | 0.81 | 0.33 |
 | temporal | 0.84 | 0.91 | 0.69 | 0.84 | 0.14 |
 
-## Production arm: lcm_recall (50q fastembed)
-A 50-question subset scoring the actual `tools.lcm_recall` tool end-to-end (weighted
+## Production arm: trove_recall (50q fastembed)
+A 50-question subset scoring the actual `tools.trove_recall` tool end-to-end (weighted
 RRF over FTS/summary/chunk, the scope/recency prior, chunk-vs-FTS dedup, `include`
 filtering) rather than a harness-reimplemented arm:
 
@@ -59,6 +59,6 @@ top-1 picks.
   far smaller than the real-archive scale they target. See the operator guide's
   [vector storage scale options](../../docs/operator-guide.md#vector-storage-scale-options-v3)
   for the C1 real-data bench (92,997-chunk archive) these options were built for.
-- PRODUCTION ARM: `lcm_recall`'s 50q result (R@5 0.98, R@10 1.00) tracks
+- PRODUCTION ARM: `trove_recall`'s 50q result (R@5 0.98, R@10 1.00) tracks
   `chunk_vectors`' session-level strength; R@1 0.42 is the recency-prior/FTS-noise
   cost of scoring the real tool end-to-end rather than a bare vector arm.

@@ -7,7 +7,7 @@
 ## Validation
 - [ ] Focused validation: `<command>` -> `<result>`
 - [ ] Default validation:
-  - [ ] `pytest tests/test_lcm_core.py tests/test_lcm_engine.py tests/test_packaging_install.py -q`
+  - [ ] `pytest tests/test_trove_core.py tests/test_trove_engine.py tests/test_packaging_install.py -q`
   - [ ] `pytest -q`
   - [ ] `bash -lc 'ulimit -n 1024 && pytest -q'`
   - [ ] `python -m compileall -q .`

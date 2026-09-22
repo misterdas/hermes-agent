@@ -1,4 +1,4 @@
-"""Report output helpers for deterministic LCM benchmark runs."""
+"""Report output helpers for deterministic TROVE benchmark runs."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Any, Iterable, Mapping
 
-from .types import LCMPolicy, ReplayMetrics
+from .types import TROVEPolicy, ReplayMetrics
 
 BENCHMARK_VERSION = "2"
 FRESH_TAIL_PRESSURE_THRESHOLD = 0.30
@@ -196,7 +196,7 @@ def write_summary(path: str | Path, metrics: Iterable[ReplayMetrics]) -> dict[st
     return summary
 
 
-def _policy_settings(policies: Iterable[LCMPolicy]) -> dict[str, dict[str, object]]:
+def _policy_settings(policies: Iterable[TROVEPolicy]) -> dict[str, dict[str, object]]:
     settings: dict[str, dict[str, object]] = {}
     for policy in policies:
         data = policy.to_dict()
@@ -208,7 +208,7 @@ def _policy_settings(policies: Iterable[LCMPolicy]) -> dict[str, dict[str, objec
 def build_community_export(
     summary: Mapping[str, Any],
     *,
-    policies: Iterable[LCMPolicy],
+    policies: Iterable[TROVEPolicy],
     provider: str = "",
     model: str = "",
 ) -> dict[str, object]:
@@ -241,7 +241,7 @@ def write_community_export(
     path: str | Path,
     summary: Mapping[str, Any],
     *,
-    policies: Iterable[LCMPolicy],
+    policies: Iterable[TROVEPolicy],
     provider: str = "",
     model: str = "",
 ) -> dict[str, object]:

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from hermes_lcm.assertion_store import (
+from hermes_trove.assertion_store import (
     AssertionCandidate,
     AssertionPublicationConflictError,
     AssertionRelationCandidate,
@@ -18,9 +18,9 @@ from hermes_lcm.assertion_store import (
     AssertionSourceStaleError,
     AssertionStore,
 )
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.dag import SummaryDAG
-from hermes_lcm.db_bootstrap import (
+from hermes_trove.config import TROVEConfig
+from hermes_trove.dag import SummaryDAG
+from hermes_trove.db_bootstrap import (
     ASSERTION_MIGRATION_STEP,
     SCHEMA_VERSION,
     VERSION_MISMATCH_GENUINELY_NEWER,
@@ -29,13 +29,13 @@ from hermes_lcm.db_bootstrap import (
     remediate_interim_schema_stamp,
     verify_assertion_schema,
 )
-from hermes_lcm.maintenance import (
+from hermes_trove.maintenance import (
     backup_database,
     flush_engine_connections,
     rotate_backup_database,
 )
-from hermes_lcm.lifecycle_state import LifecycleStateStore
-from hermes_lcm.store import MessageStore
+from hermes_trove.lifecycle_state import LifecycleStateStore
+from hermes_trove.store import MessageStore
 
 
 def _candidate(
@@ -67,7 +67,7 @@ def _candidate(
 
 @pytest.fixture
 def assertion_db(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     messages = MessageStore(db_path)
     assertions = AssertionStore(db_path)
     try:
@@ -82,18 +82,18 @@ def _assertion_objects(conn: sqlite3.Connection) -> set[str]:
         str(row[0])
         for row in conn.execute(
             "SELECT name FROM sqlite_master "
-            "WHERE name LIKE 'lcm_assertion%' ORDER BY name"
+            "WHERE name LIKE 'trove_assertion%' ORDER BY name"
         )
     }
 
 
 def test_feature_defaults_off_and_does_not_materialize_schema(tmp_path, monkeypatch):
-    monkeypatch.delenv("LCM_ASSERTIONS_ENABLED", raising=False)
+    monkeypatch.delenv("TROVE_ASSERTIONS_ENABLED", raising=False)
     db_path = tmp_path / "disabled.db"
     messages = MessageStore(db_path)
     try:
-        assert LCMConfig().assertions_enabled is False
-        assert LCMConfig.from_env().assertions_enabled is False
+        assert TROVEConfig().assertions_enabled is False
+        assert TROVEConfig.from_env().assertions_enabled is False
         assert _assertion_objects(messages._conn) == set()
         assert int(
             messages._conn.execute(
@@ -103,8 +103,8 @@ def test_feature_defaults_off_and_does_not_materialize_schema(tmp_path, monkeypa
     finally:
         messages.close()
 
-    monkeypatch.setenv("LCM_ASSERTIONS_ENABLED", "true")
-    assert LCMConfig.from_env().assertions_enabled is True
+    monkeypatch.setenv("TROVE_ASSERTIONS_ENABLED", "true")
+    assert TROVEConfig.from_env().assertions_enabled is True
 
 
 def test_read_only_open_without_schema_fails_without_mutation(tmp_path):
@@ -141,14 +141,14 @@ def test_lazy_schema_marker_and_legacy_migration_stay_on_core_v5(tmp_path):
             ).fetchone()[0]
         ) == SCHEMA_VERSION
         assert assertions.connection.execute(
-            "SELECT COUNT(*) FROM lcm_migration_state WHERE step_name = ?",
+            "SELECT COUNT(*) FROM trove_migration_state WHERE step_name = ?",
             (ASSERTION_MIGRATION_STEP,),
         ).fetchone()[0] == 1
 
         second = AssertionStore(db_path)
         second.close()
         assert assertions.connection.execute(
-            "SELECT COUNT(*) FROM lcm_migration_state WHERE step_name = ?",
+            "SELECT COUNT(*) FROM trove_migration_state WHERE step_name = ?",
             (ASSERTION_MIGRATION_STEP,),
         ).fetchone()[0] == 1
     finally:
@@ -162,27 +162,27 @@ def test_schema_verifier_rejects_constraint_and_trigger_drift(tmp_path):
     assertions = AssertionStore(db_path)
     try:
         table_info = assertions.connection.execute(
-            "PRAGMA table_info(lcm_assertions)"
+            "PRAGMA table_info(trove_assertions)"
         ).fetchall()
-        assertions.connection.execute("DROP TABLE lcm_assertions")
+        assertions.connection.execute("DROP TABLE trove_assertions")
         columns = ", ".join(
             f'"{row[1]}" {row[2] or "TEXT"}' for row in table_info
         )
-        assertions.connection.execute(f"CREATE TABLE lcm_assertions({columns})")
-        assertions.connection.execute("DROP TRIGGER lcm_assertion_message_update")
+        assertions.connection.execute(f"CREATE TABLE trove_assertions({columns})")
+        assertions.connection.execute("DROP TRIGGER trove_assertion_message_update")
         assertions.connection.execute(
             """
-            CREATE TRIGGER lcm_assertion_message_update
+            CREATE TRIGGER trove_assertion_message_update
             AFTER UPDATE OF content ON messages BEGIN SELECT 1; END
             """
         )
-        assertions.connection.execute("CREATE TABLE lcm_assertion_future_state(value TEXT)")
+        assertions.connection.execute("CREATE TABLE trove_assertion_future_state(value TEXT)")
 
         findings = verify_assertion_schema(assertions.connection)
 
-        assert "malformed table:lcm_assertions" in findings
-        assert "malformed trigger:lcm_assertion_message_update" in findings
-        assert "unexpected-table:lcm_assertion_future_state" in findings
+        assert "malformed table:trove_assertions" in findings
+        assert "malformed trigger:trove_assertion_message_update" in findings
+        assert "unexpected-table:trove_assertion_future_state" in findings
     finally:
         assertions.close()
         messages.close()
@@ -206,7 +206,7 @@ def test_schema_stamp_remediation_keeps_valid_family_and_drops_malformed_family(
     assert classify_version_mismatch(valid_assertions.connection) == VERSION_MISMATCH_INTERIM_STAMP
     result = remediate_interim_schema_stamp(valid_assertions.connection, apply=True)
     assert result["applied"] is True
-    assert "lcm_assertions" in _assertion_objects(valid_assertions.connection)
+    assert "trove_assertions" in _assertion_objects(valid_assertions.connection)
     valid_assertions.close()
     valid_messages.close()
 
@@ -217,7 +217,7 @@ def test_schema_stamp_remediation_keeps_valid_family_and_drops_malformed_family(
     malformed_dag.close()
     malformed_lifecycle.close()
     malformed_assertions = AssertionStore(malformed_path)
-    malformed_assertions.connection.execute("DROP TRIGGER lcm_assertion_message_update")
+    malformed_assertions.connection.execute("DROP TRIGGER trove_assertion_message_update")
     malformed_assertions.connection.execute(
         "UPDATE metadata SET value = ? WHERE key = 'schema_version'",
         (str(SCHEMA_VERSION + 1),),
@@ -250,10 +250,10 @@ def test_schema_stamp_remediation_refuses_same_name_future_assertion_shape(tmp_p
         assertions.publish_source(
             assertions.snapshot_source(store_id), [_candidate(content, "tea")]
         )
-        assertions.connection.execute("DROP TRIGGER lcm_assertion_message_update")
+        assertions.connection.execute("DROP TRIGGER trove_assertion_message_update")
         assertions.connection.execute(
             """
-            CREATE TRIGGER lcm_assertion_message_update
+            CREATE TRIGGER trove_assertion_message_update
             AFTER UPDATE OF content ON messages
             BEGIN
                 SELECT 1;
@@ -267,7 +267,7 @@ def test_schema_stamp_remediation_refuses_same_name_future_assertion_shape(tmp_p
         assertions.connection.commit()
 
         findings = verify_assertion_schema(assertions.connection)
-        assert "malformed trigger:lcm_assertion_message_update" in findings
+        assert "malformed trigger:trove_assertion_message_update" in findings
         assert (
             classify_version_mismatch(assertions.connection)
             == VERSION_MISMATCH_GENUINELY_NEWER
@@ -281,7 +281,7 @@ def test_schema_stamp_remediation_refuses_same_name_future_assertion_shape(tmp_p
         assert result["applied"] is False
         assert _assertion_objects(assertions.connection) == objects_before
         assert assertions.connection.execute(
-            "SELECT COUNT(*) FROM lcm_assertions"
+            "SELECT COUNT(*) FROM trove_assertions"
         ).fetchone()[0] == 1
     finally:
         assertions.close()
@@ -306,7 +306,7 @@ def test_concurrent_lazy_initialization_is_idempotent(tmp_path):
     assert results == [[], []]
     with sqlite3.connect(db_path) as conn:
         assert conn.execute(
-            "SELECT COUNT(*) FROM lcm_migration_state WHERE step_name = ?",
+            "SELECT COUNT(*) FROM trove_migration_state WHERE step_name = ?",
             (ASSERTION_MIGRATION_STEP,),
         ).fetchone()[0] == 1
 
@@ -382,10 +382,10 @@ def test_invalid_candidate_batch_is_atomic(assertion_db):
         assertions.publish_source(snapshot, [valid, invalid])
 
     assert assertions.connection.execute(
-        "SELECT COUNT(*) FROM lcm_assertion_sources"
+        "SELECT COUNT(*) FROM trove_assertion_sources"
     ).fetchone()[0] == 0
     assert assertions.connection.execute(
-        "SELECT COUNT(*) FROM lcm_assertions"
+        "SELECT COUNT(*) FROM trove_assertions"
     ).fetchone()[0] == 0
 
     with pytest.raises(ValueError, match="duplicate assertion candidates"):
@@ -486,7 +486,7 @@ def test_relation_query_fails_closed_on_untriggered_source_tamper(assertion_db):
         to_assertion_id=assertions.assertion_id_for(snapshot, tea),
     )
     assertions.publish_source(snapshot, [tea, coffee], relations=[relation])
-    messages._conn.execute("DROP TRIGGER lcm_assertion_message_update")
+    messages._conn.execute("DROP TRIGGER trove_assertion_message_update")
     messages._conn.execute(
         "UPDATE messages SET content = 'Water is preferred.' WHERE store_id = ?",
         (store_id,),
@@ -547,7 +547,7 @@ def test_source_invalidation_is_transactional_and_metadata_updates_do_not_invali
         "UPDATE messages SET content = 'changed' WHERE store_id = ?", (store_id,)
     )
     assert messages._conn.execute(
-        "SELECT invalidation_reason FROM lcm_assertion_sources "
+        "SELECT invalidation_reason FROM trove_assertion_sources "
         "WHERE source_store_id = ? AND invalidated_at IS NOT NULL",
         (store_id,),
     ).fetchone()[0] == "source_updated"
@@ -582,7 +582,7 @@ def test_query_fails_closed_if_trigger_is_removed_and_source_is_tampered(asserti
     assertions.publish_source(
         assertions.snapshot_source(store_id), [_candidate(content, "tea")]
     )
-    messages._conn.execute("DROP TRIGGER lcm_assertion_message_update")
+    messages._conn.execute("DROP TRIGGER trove_assertion_message_update")
     messages._conn.execute(
         "UPDATE messages SET content = 'I prefer coffee.' WHERE store_id = ?", (store_id,)
     )
@@ -714,11 +714,11 @@ def test_maintenance_flush_waits_for_atomic_assertion_publication(
     assert "missing or invalidated" in str(publish_errors[0])
     assert flush_errors == []
     assert assertions.connection.execute(
-        "SELECT COUNT(*) FROM lcm_assertion_sources"
+        "SELECT COUNT(*) FROM trove_assertion_sources"
     ).fetchone()[0] == 0
     assert assertions.connection.execute(
-        "SELECT COUNT(*) FROM lcm_assertions"
+        "SELECT COUNT(*) FROM trove_assertions"
     ).fetchone()[0] == 0
     assert assertions.connection.execute(
-        "SELECT COUNT(*) FROM lcm_assertion_relations"
+        "SELECT COUNT(*) FROM trove_assertion_relations"
     ).fetchone()[0] == 0

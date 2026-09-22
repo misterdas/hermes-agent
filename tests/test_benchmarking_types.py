@@ -3,11 +3,11 @@
 import json
 
 from benchmarking.policies import builtin_policies, load_policy
-from benchmarking.types import Canary, LCMPolicy, ReplayFixture, ReplayMetrics, SummaryFailureMode
+from benchmarking.types import Canary, TROVEPolicy, ReplayFixture, ReplayMetrics, SummaryFailureMode
 
 
 def test_policy_round_trips_through_json_mapping():
-    policy = LCMPolicy(
+    policy = TROVEPolicy(
         name="codex_gpt_272k",
         context_length=272_000,
         context_threshold=0.75,
@@ -17,7 +17,7 @@ def test_policy_round_trips_through_json_mapping():
         notes="dry-run candidate",
     )
 
-    restored = LCMPolicy.from_dict(json.loads(json.dumps(policy.to_dict())))
+    restored = TROVEPolicy.from_dict(json.loads(json.dumps(policy.to_dict())))
 
     assert restored == policy
 

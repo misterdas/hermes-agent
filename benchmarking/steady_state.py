@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from .replay import _ensure_hermes_lcm_package
+from .replay import _ensure_hermes_trove_package
 
 
 DEFAULT_HISTORY_SIZES = (200, 1000, 4000)
@@ -77,15 +77,15 @@ DEFAULT_CASES: tuple[SteadyStateCase, ...] = (
 
 
 def _build_engine(case: SteadyStateCase, run_dir: Path):
-    _ensure_hermes_lcm_package()
-    from hermes_lcm.config import LCMConfig
-    from hermes_lcm.engine import LCMEngine
+    _ensure_hermes_trove_package()
+    from hermes_trove.config import TROVEConfig
+    from hermes_trove.engine import TROVEEngine
 
-    db_path = run_dir / f"steady_{case.name}.lcm.db"
+    db_path = run_dir / f"steady_{case.name}.trove.db"
     hermes_home = run_dir / f"hermes-home-{case.name}"
     hermes_home.mkdir(parents=True, exist_ok=True)
 
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(db_path),
         # A large fresh tail + very high context length keep both the preflight
         # threshold and force-overflow recovery from ever firing.
@@ -99,7 +99,7 @@ def _build_engine(case: SteadyStateCase, run_dir: Path):
         setattr(config, "sensitive_patterns_enabled", True)
         setattr(config, "sensitive_patterns", list(case.sensitive_patterns))
 
-    engine = LCMEngine(config=config, hermes_home=str(hermes_home))
+    engine = TROVEEngine(config=config, hermes_home=str(hermes_home))
     engine.on_session_start(
         f"steady-{case.name}",
         platform="benchmark",
@@ -224,8 +224,8 @@ def _ignore_message_filtering_active(case: SteadyStateCase) -> bool:
 
     if not case.ignore_message_patterns:
         return True
-    _ensure_hermes_lcm_package()
-    from hermes_lcm.message_patterns import compile_message_patterns
+    _ensure_hermes_trove_package()
+    from hermes_trove.message_patterns import compile_message_patterns
 
     return bool(compile_message_patterns(case.ignore_message_patterns))
 

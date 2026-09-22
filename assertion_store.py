@@ -1,7 +1,7 @@
-"""Rebuildable, provenance-linked V4 assertions over immutable LCM messages.
+"""Rebuildable, provenance-linked V4 assertions over immutable TROVE messages.
 
 The assertion family is logically separate but physically colocated in the
-profile's existing ``lcm.db``. Raw ``messages`` remain authoritative. This
+profile's existing ``trove.db``. Raw ``messages`` remain authoritative. This
 module deliberately contains no extractor, provider, embedding, or benchmark
 logic: callers may plan bounded work, publish already-derived candidates with a
 late source-hash compare-and-swap, and query only source-valid assertions.
@@ -285,7 +285,7 @@ class AssertionStore:
                     + "; ".join(findings)
                 )
         marker = self._conn.execute(
-            "SELECT 1 FROM lcm_migration_state WHERE step_name = ?",
+            "SELECT 1 FROM trove_migration_state WHERE step_name = ?",
             (ASSERTION_MIGRATION_STEP,),
         ).fetchone()
         if marker is None:
@@ -367,7 +367,7 @@ class AssertionStore:
         return self._conn.execute(
             """
             SELECT 1
-            FROM lcm_assertion_sources
+            FROM trove_assertion_sources
             WHERE source_store_id = ? AND extraction_version = ?
               AND source_content_sha256 = ? AND invalidated_at IS NULL
             """,
@@ -386,7 +386,7 @@ class AssertionStore:
         if not 1 <= bounded_limit <= _MAX_BATCH_SOURCES:
             raise ValueError(f"limit must be between 1 and {_MAX_BATCH_SOURCES}")
         join = (
-            "LEFT JOIN lcm_assertion_sources AS s "
+            "LEFT JOIN trove_assertion_sources AS s "
             "ON s.source_store_id = m.store_id "
             "AND s.extraction_version = ? "
             "AND s.invalidated_at IS NULL"
@@ -610,7 +610,7 @@ class AssertionStore:
                 existing = self._conn.execute(
                     """
                     SELECT source_content_sha256, candidate_digest, assertion_count, relation_count
-                    FROM lcm_assertion_sources
+                    FROM trove_assertion_sources
                     WHERE source_store_id = ? AND extraction_version = ?
                       AND invalidated_at IS NULL
                     """,
@@ -641,7 +641,7 @@ class AssertionStore:
                 historical = self._conn.execute(
                     """
                     SELECT candidate_digest, assertion_count, relation_count
-                    FROM lcm_assertion_sources
+                    FROM trove_assertion_sources
                     WHERE source_store_id = ? AND extraction_version = ?
                       AND source_content_sha256 = ? AND invalidated_at IS NOT NULL
                     """,
@@ -659,7 +659,7 @@ class AssertionStore:
                         )
                     self._conn.execute(
                         """
-                        UPDATE lcm_assertion_sources
+                        UPDATE trove_assertion_sources
                            SET source_session_id = ?, source_role = ?, source_name = ?,
                                source_timestamp = ?, processed_at = ?, invalidated_at = NULL,
                                invalidation_reason = NULL
@@ -690,7 +690,7 @@ class AssertionStore:
 
                 self._conn.execute(
                     """
-                    INSERT INTO lcm_assertion_sources(
+                    INSERT INTO trove_assertion_sources(
                         source_store_id, extraction_version, source_content_sha256,
                         source_session_id, source_role, source_name, source_timestamp,
                         candidate_digest, assertion_count, relation_count, processed_at
@@ -713,7 +713,7 @@ class AssertionStore:
                 for row in assertion_rows:
                     self._conn.execute(
                         """
-                        INSERT INTO lcm_assertions(
+                        INSERT INTO trove_assertions(
                             assertion_id, source_store_id, extraction_version,
                             source_content_sha256, subject_key, predicate_key,
                             object_json, value_text, kind, polarity, strength,
@@ -739,8 +739,8 @@ class AssertionStore:
                         active_endpoint = self._conn.execute(
                             """
                             SELECT 1
-                            FROM lcm_assertions AS a
-                            JOIN lcm_assertion_sources AS s
+                            FROM trove_assertions AS a
+                            JOIN trove_assertion_sources AS s
                               ON s.source_store_id = a.source_store_id
                              AND s.extraction_version = a.extraction_version
                              AND s.source_content_sha256 = a.source_content_sha256
@@ -755,7 +755,7 @@ class AssertionStore:
                             )
                     self._conn.execute(
                         """
-                        INSERT INTO lcm_assertion_relations(
+                        INSERT INTO trove_assertion_relations(
                             relation_id, source_store_id, extraction_version,
                             source_content_sha256, from_assertion_id, relation_type,
                             to_assertion_id, source_span_start, source_span_end,
@@ -874,8 +874,8 @@ class AssertionStore:
                    s.source_timestamp, s.invalidated_at, s.invalidation_reason,
                    m.content AS current_source_content,
                    m.session_id AS current_source_session_id
-            FROM lcm_assertions AS a
-            JOIN lcm_assertion_sources AS s
+            FROM trove_assertions AS a
+            JOIN trove_assertion_sources AS s
               ON s.source_store_id = a.source_store_id
              AND s.extraction_version = a.extraction_version
              AND s.source_content_sha256 = a.source_content_sha256
@@ -994,24 +994,24 @@ class AssertionStore:
                    to_assertion.source_span_end AS to_source_span_end,
                    to_assertion.source_quote AS to_source_quote,
                    to_message.content AS current_to_source_content
-            FROM lcm_assertion_relations AS r
-            JOIN lcm_assertion_sources AS s
+            FROM trove_assertion_relations AS r
+            JOIN trove_assertion_sources AS s
               ON s.source_store_id = r.source_store_id
              AND s.extraction_version = r.extraction_version
              AND s.source_content_sha256 = r.source_content_sha256
             LEFT JOIN messages AS relation_message
               ON relation_message.store_id = r.source_store_id
-            JOIN lcm_assertions AS from_assertion
+            JOIN trove_assertions AS from_assertion
               ON from_assertion.assertion_id = r.from_assertion_id
-            JOIN lcm_assertion_sources AS from_source
+            JOIN trove_assertion_sources AS from_source
               ON from_source.source_store_id = from_assertion.source_store_id
              AND from_source.extraction_version = from_assertion.extraction_version
              AND from_source.source_content_sha256 = from_assertion.source_content_sha256
             LEFT JOIN messages AS from_message
               ON from_message.store_id = from_assertion.source_store_id
-            JOIN lcm_assertions AS to_assertion
+            JOIN trove_assertions AS to_assertion
               ON to_assertion.assertion_id = r.to_assertion_id
-            JOIN lcm_assertion_sources AS to_source
+            JOIN trove_assertion_sources AS to_source
               ON to_source.source_store_id = to_assertion.source_store_id
              AND to_source.extraction_version = to_assertion.extraction_version
              AND to_source.source_content_sha256 = to_assertion.source_content_sha256
@@ -1082,7 +1082,7 @@ class AssertionStore:
             try:
                 cursor = self._conn.execute(
                     """
-                    UPDATE lcm_assertion_sources
+                    UPDATE trove_assertion_sources
                        SET invalidated_at = ?, invalidation_reason = ?
                      WHERE source_store_id = ? AND invalidated_at IS NULL
                     """,
@@ -1104,21 +1104,21 @@ class AssertionStore:
             try:
                 counts = {
                     "sources": int(self._conn.execute(
-                        "SELECT COUNT(*) FROM lcm_assertion_sources WHERE extraction_version = ?",
+                        "SELECT COUNT(*) FROM trove_assertion_sources WHERE extraction_version = ?",
                         (version,),
                     ).fetchone()[0]),
                     "assertions": int(self._conn.execute(
-                        "SELECT COUNT(*) FROM lcm_assertions WHERE extraction_version = ?",
+                        "SELECT COUNT(*) FROM trove_assertions WHERE extraction_version = ?",
                         (version,),
                     ).fetchone()[0]),
                     "relations": int(self._conn.execute(
-                        "SELECT COUNT(*) FROM lcm_assertion_relations WHERE extraction_version = ?",
+                        "SELECT COUNT(*) FROM trove_assertion_relations WHERE extraction_version = ?",
                         (version,),
                     ).fetchone()[0]),
                 }
                 # The receipt-delete trigger removes owned assertion/relation rows.
                 self._conn.execute(
-                    "DELETE FROM lcm_assertion_sources WHERE extraction_version = ?",
+                    "DELETE FROM trove_assertion_sources WHERE extraction_version = ?",
                     (version,),
                 )
                 self._conn.execute("COMMIT")

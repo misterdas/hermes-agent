@@ -26,19 +26,19 @@ from pathlib import Path
 import pytest
 
 
-if "hermes_lcm" not in sys.modules:
-    package = types.ModuleType("hermes_lcm")
+if "hermes_trove" not in sys.modules:
+    package = types.ModuleType("hermes_trove")
     package.__path__ = [str(Path(__file__).resolve().parents[1])]
-    package.__package__ = "hermes_lcm"
-    sys.modules["hermes_lcm"] = package
+    package.__package__ = "hermes_trove"
+    sys.modules["hermes_trove"] = package
 
-from hermes_lcm import command, db_bootstrap
-from hermes_lcm.db_bootstrap import (
+from hermes_trove import command, db_bootstrap
+from hermes_trove.db_bootstrap import (
     ExternalContentFtsSpec,
     ensure_external_content_fts,
 )
 
-INTERVAL_ENV = "LCM_FTS_INTEGRITY_CHECK_INTERVAL_HOURS"
+INTERVAL_ENV = "TROVE_FTS_INTEGRITY_CHECK_INTERVAL_HOURS"
 MARKER_KEY = "fts_integrity_checked_at:messages_fts"
 
 
@@ -72,8 +72,8 @@ def _spawn_message_store_worker(db_path, start_barrier, repair_barrier, queue, w
     store = None
     try:
         start_barrier.wait(timeout=30)
-        from hermes_lcm import db_bootstrap as worker_db_bootstrap
-        from hermes_lcm.store import MessageStore
+        from hermes_trove import db_bootstrap as worker_db_bootstrap
+        from hermes_trove.store import MessageStore
 
         original_structural_check = worker_db_bootstrap._fts_needs_rebuild_structural
         synchronized = False
@@ -169,7 +169,7 @@ if __name__ == "__main__" and sys.argv[1:2] == ["--spawn-fts-bootstrap"]:
 
 def test_spawned_message_store_startup_serializes_fresh_fts_repair(tmp_path):
     """Independent constructors accept one winner's complete FTS state."""
-    from hermes_lcm.store import MessageStore, build_message_fts_spec
+    from hermes_trove.store import MessageStore, build_message_fts_spec
 
     workers = 6
     db_path = str(tmp_path / "spawn-fresh-fts.db")
@@ -216,7 +216,7 @@ def test_trigger_disappearing_on_fast_path_reenters_repair_ownership(
     tmp_path, monkeypatch
 ):
     """Trigger DDL observed after the healthy precheck runs only under ownership."""
-    from hermes_lcm.store import MessageStore, build_message_fts_spec
+    from hermes_trove.store import MessageStore, build_message_fts_spec
 
     db_path = str(tmp_path / "trigger-race.db")
     store = MessageStore(db_path)
@@ -338,7 +338,7 @@ def _marker(conn):
 def test_existing_index_without_marker_runs_check_and_records_marker(tmp_path, monkeypatch, integrity_calls):
     # Kill-switch off pins the synchronous throttle decision this test asserts;
     # the async dispatch is covered separately below.
-    monkeypatch.setenv("LCM_FTS_INTEGRITY_BACKGROUND", "false")
+    monkeypatch.setenv("TROVE_FTS_INTEGRITY_BACKGROUND", "false")
     conn = _make_conn(tmp_path)
     ensure_external_content_fts(conn, _spec())  # builds index (rebuild path)
     # Simulate an existing DB upgraded to the throttling version: no marker yet.
@@ -366,7 +366,7 @@ def test_fresh_marker_skips_integrity_check(tmp_path, monkeypatch, integrity_cal
 
 def test_expired_marker_reruns_integrity_check(tmp_path, monkeypatch, integrity_calls):
     monkeypatch.setenv(INTERVAL_ENV, "24")
-    monkeypatch.setenv("LCM_FTS_INTEGRITY_BACKGROUND", "false")
+    monkeypatch.setenv("TROVE_FTS_INTEGRITY_BACKGROUND", "false")
     conn = _make_conn(tmp_path)
     ensure_external_content_fts(conn, _spec())
     # Age the marker well past the 24h interval.
@@ -384,7 +384,7 @@ def test_expired_marker_reruns_integrity_check(tmp_path, monkeypatch, integrity_
 
 def test_interval_zero_checks_every_init(tmp_path, monkeypatch, integrity_calls):
     monkeypatch.setenv(INTERVAL_ENV, "0")
-    monkeypatch.setenv("LCM_FTS_INTEGRITY_BACKGROUND", "false")
+    monkeypatch.setenv("TROVE_FTS_INTEGRITY_BACKGROUND", "false")
     conn = _make_conn(tmp_path)
     ensure_external_content_fts(conn, _spec())  # build
     integrity_calls.clear()
@@ -446,7 +446,7 @@ def test_external_content_desync_detected_via_docsize(tmp_path):
 
 
 def test_explicit_repair_fixes_same_count_corruption_despite_fresh_marker(tmp_path, monkeypatch):
-    """`/lcm doctor repair apply` must deep-check/repair regardless of throttle.
+    """`/trove doctor repair apply` must deep-check/repair regardless of throttle.
 
     Regression for review on PR #236: the startup throttle must not leak into
     the explicit repair path. Same-row-count stale drift passes structural
@@ -478,8 +478,8 @@ def test_explicit_repair_clears_stuck_integrity_failed_flag(tmp_path, monkeypatc
     """A successful repair clears a prior background-scan corruption flag (F1).
 
     Regression for F1: `repair_external_content_fts` never cleared
-    `fts_integrity_failed:<table>`, so after `/lcm doctor repair apply` succeeded
-    `/lcm doctor` kept reporting issues-found forever and the next self-healing
+    `fts_integrity_failed:<table>`, so after `/trove doctor repair apply` succeeded
+    `/trove doctor` kept reporting issues-found forever and the next self-healing
     scan was pushed out a full interval.
     """
     monkeypatch.setenv(INTERVAL_ENV, "24")
@@ -505,7 +505,7 @@ def test_explicit_repair_clears_stuck_integrity_failed_flag(tmp_path, monkeypatc
 
 def test_explicit_repair_rebuilds_same_count_corruption_with_missing_triggers(tmp_path):
     """Explicit repair must fix index drift even while recreating triggers."""
-    from hermes_lcm.store import build_message_fts_spec
+    from hermes_trove.store import build_message_fts_spec
 
     conn = _make_conn(tmp_path)
     spec = build_message_fts_spec()
@@ -560,10 +560,10 @@ def test_due_startup_repair_rebuilds_same_count_drift_with_one_missing_trigger(
     tmp_path, monkeypatch
 ):
     """A missing trigger must not suppress a due synchronous deep check."""
-    from hermes_lcm.store import MessageStore, build_message_fts_spec
+    from hermes_trove.store import MessageStore, build_message_fts_spec
 
     monkeypatch.setenv(INTERVAL_ENV, "24")
-    monkeypatch.setenv("LCM_FTS_INTEGRITY_BACKGROUND", "false")
+    monkeypatch.setenv("TROVE_FTS_INTEGRITY_BACKGROUND", "false")
     db_path = str(tmp_path / "due-trigger-drift.db")
     store = MessageStore(db_path)
     try:
@@ -855,11 +855,11 @@ def test_fts_repair_failure_rolls_back_savepoint_not_caller_transaction(
 
 def test_doctor_repair_apply_joins_background_scans_first(tmp_path, monkeypatch):
     """Explicit repair joins in-flight background scans before repairing (F3)."""
-    from hermes_lcm.config import LCMConfig
-    from hermes_lcm.engine import LCMEngine
+    from hermes_trove.config import TROVEConfig
+    from hermes_trove.engine import TROVEEngine
 
-    engine = LCMEngine(
-        config=LCMConfig(database_path=str(tmp_path / "lcm.db")),
+    engine = TROVEEngine(
+        config=TROVEConfig(database_path=str(tmp_path / "trove.db")),
         hermes_home=str(tmp_path / "home"),
     )
     order: list[str] = []
@@ -912,7 +912,7 @@ def test_due_marker_runs_deep_check_in_background_and_stamps_marker(tmp_path, mo
     runs on a daemon thread and stamps the throttle marker on clean completion.
     """
     monkeypatch.setenv(INTERVAL_ENV, "24")
-    monkeypatch.delenv("LCM_FTS_INTEGRITY_BACKGROUND", raising=False)  # default: on
+    monkeypatch.delenv("TROVE_FTS_INTEGRITY_BACKGROUND", raising=False)  # default: on
     conn = _make_conn(tmp_path)
     spec = _spec()
     ensure_external_content_fts(conn, spec)  # build + fresh marker (no deep check)
@@ -952,7 +952,7 @@ def test_due_marker_runs_deep_check_in_background_and_stamps_marker(tmp_path, mo
 def test_background_scan_flags_corruption_without_rebuilding(tmp_path, monkeypatch):
     """SPEC E (b): corruption found in the background writes a flag, no rebuild."""
     monkeypatch.setenv(INTERVAL_ENV, "24")
-    monkeypatch.delenv("LCM_FTS_INTEGRITY_BACKGROUND", raising=False)
+    monkeypatch.delenv("TROVE_FTS_INTEGRITY_BACKGROUND", raising=False)
     conn = _make_conn(tmp_path)
     spec = _spec()
     ensure_external_content_fts(conn, spec)  # build + fresh marker
@@ -991,7 +991,7 @@ def test_dispatch_stamps_scan_started_before_thread_runs(tmp_path, monkeypatch):
     own stamp must see the claim and not launch a duplicate deep scan.
     """
     monkeypatch.setenv(INTERVAL_ENV, "24")
-    monkeypatch.delenv("LCM_FTS_INTEGRITY_BACKGROUND", raising=False)
+    monkeypatch.delenv("TROVE_FTS_INTEGRITY_BACKGROUND", raising=False)
     conn = _make_conn(tmp_path)
     spec = _spec()
     ensure_external_content_fts(conn, spec)
@@ -1022,9 +1022,9 @@ def test_dispatch_stamps_scan_started_before_thread_runs(tmp_path, monkeypatch):
 
 
 def test_kill_switch_false_runs_synchronously_without_a_thread(tmp_path, monkeypatch, integrity_calls):
-    """SPEC E (c): LCM_FTS_INTEGRITY_BACKGROUND=false = exact old synchronous path."""
+    """SPEC E (c): TROVE_FTS_INTEGRITY_BACKGROUND=false = exact old synchronous path."""
     monkeypatch.setenv(INTERVAL_ENV, "24")
-    monkeypatch.setenv("LCM_FTS_INTEGRITY_BACKGROUND", "false")
+    monkeypatch.setenv("TROVE_FTS_INTEGRITY_BACKGROUND", "false")
     conn = _make_conn(tmp_path)
     spec = _spec()
     ensure_external_content_fts(conn, spec)  # build + fresh marker
@@ -1041,7 +1041,7 @@ def test_kill_switch_false_runs_synchronously_without_a_thread(tmp_path, monkeyp
 def test_only_one_background_scan_per_table_at_a_time(tmp_path, monkeypatch):
     """SPEC E (d): a second dispatch while a scan is in flight does not spawn another."""
     monkeypatch.setenv(INTERVAL_ENV, "24")
-    monkeypatch.delenv("LCM_FTS_INTEGRITY_BACKGROUND", raising=False)
+    monkeypatch.delenv("TROVE_FTS_INTEGRITY_BACKGROUND", raising=False)
     conn = _make_conn(tmp_path)
     spec = _spec()
     ensure_external_content_fts(conn, spec)  # build + fresh marker
@@ -1075,7 +1075,7 @@ def test_only_one_background_scan_per_table_at_a_time(tmp_path, monkeypatch):
 def test_stale_scan_stamp_does_not_wedge_future_dispatch(tmp_path, monkeypatch):
     """A crashed scan (stale started-stamp, no live thread) must not block re-dispatch."""
     monkeypatch.setenv(INTERVAL_ENV, "24")
-    monkeypatch.delenv("LCM_FTS_INTEGRITY_BACKGROUND", raising=False)
+    monkeypatch.delenv("TROVE_FTS_INTEGRITY_BACKGROUND", raising=False)
     conn = _make_conn(tmp_path)
     spec = _spec()
     ensure_external_content_fts(conn, spec)
@@ -1114,7 +1114,7 @@ def test_check_disk_space_uses_portable_fallback_when_statvfs_is_unavailable(mon
         raising=False,
     )
 
-    assert db_bootstrap._check_disk_space(str(tmp_path / "lcm.db")) is True
+    assert db_bootstrap._check_disk_space(str(tmp_path / "trove.db")) is True
 
 
 def test_run_versioned_migrations_refuses_newer_schema_before_migration_state_ddl(tmp_path):
@@ -1142,7 +1142,7 @@ def test_run_versioned_migrations_refuses_newer_schema_before_migration_state_dd
 
 
 def test_run_versioned_migrations_refuses_newer_schema(tmp_path):
-    from hermes_lcm.db_bootstrap import (
+    from hermes_trove.db_bootstrap import (
         SchemaVersionTooNewError,
         ensure_metadata_table,
         run_versioned_migrations,
@@ -1162,7 +1162,7 @@ def test_run_versioned_migrations_refuses_newer_schema(tmp_path):
 
 
 def test_run_versioned_migrations_accepts_current_schema(tmp_path):
-    from hermes_lcm.db_bootstrap import run_versioned_migrations, get_schema_version, SCHEMA_VERSION
+    from hermes_trove.db_bootstrap import run_versioned_migrations, get_schema_version, SCHEMA_VERSION
 
     conn = sqlite3.connect(tmp_path / "fresh.db")
     try:
@@ -1173,7 +1173,7 @@ def test_run_versioned_migrations_accepts_current_schema(tmp_path):
 
 
 def test_message_store_refuses_newer_schema_before_startup_ddl(tmp_path):
-    from hermes_lcm.store import MessageStore
+    from hermes_trove.store import MessageStore
 
     db_path = tmp_path / "newer-message.db"
     _make_future_schema_db(db_path)
@@ -1187,7 +1187,7 @@ def test_message_store_refuses_newer_schema_before_startup_ddl(tmp_path):
 
 
 def test_summary_dag_refuses_newer_schema_before_startup_ddl(tmp_path):
-    from hermes_lcm.dag import SummaryDAG
+    from hermes_trove.dag import SummaryDAG
 
     db_path = tmp_path / "newer-dag.db"
     _make_future_schema_db(db_path)
@@ -1201,7 +1201,7 @@ def test_summary_dag_refuses_newer_schema_before_startup_ddl(tmp_path):
 
 
 def test_lifecycle_state_store_refuses_newer_schema_before_writable_pragmas_or_ddl(tmp_path):
-    from hermes_lcm.lifecycle_state import LifecycleStateStore
+    from hermes_trove.lifecycle_state import LifecycleStateStore
 
     db_path = tmp_path / "newer-lifecycle.db"
     _make_future_schema_db(db_path)
@@ -1214,8 +1214,8 @@ def test_lifecycle_state_store_refuses_newer_schema_before_writable_pragmas_or_d
     assert _table_names(db_path) == {"metadata"}
 
 def test_message_store_refuses_newer_schema_before_configuring_connection(tmp_path, monkeypatch):
-    from hermes_lcm.store import MessageStore
-    import hermes_lcm.store as store_module
+    from hermes_trove.store import MessageStore
+    import hermes_trove.store as store_module
 
     db_path = tmp_path / "newer-before-pragmas.db"
     conn = sqlite3.connect(str(db_path))

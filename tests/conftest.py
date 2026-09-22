@@ -1,4 +1,4 @@
-"""Test configuration for hermes-lcm plugin tests.
+"""Test configuration for hermes-trove plugin tests.
 
 Patches the plugin modules so they can be imported both as a package
 (relative imports during plugin loading) and directly during testing.
@@ -15,18 +15,18 @@ def isolate_test_hermes_home(tmp_path_factory):
     """Ensure running tests never touches or pollutes the host ~/.hermes database."""
     temp_home = tmp_path_factory.mktemp("hermes_test_home")
     old_home = os.environ.get("HERMES_HOME")
-    old_db = os.environ.get("LCM_DATABASE_PATH")
+    old_db = os.environ.get("TROVE_DATABASE_PATH")
     os.environ["HERMES_HOME"] = str(temp_home)
-    os.environ["LCM_DATABASE_PATH"] = str(temp_home / "lcm.db")
+    os.environ["TROVE_DATABASE_PATH"] = str(temp_home / "trove.db")
     yield temp_home
     if old_home is not None:
         os.environ["HERMES_HOME"] = old_home
     else:
         os.environ.pop("HERMES_HOME", None)
     if old_db is not None:
-        os.environ["LCM_DATABASE_PATH"] = old_db
+        os.environ["TROVE_DATABASE_PATH"] = old_db
     else:
-        os.environ.pop("LCM_DATABASE_PATH", None)
+        os.environ.pop("TROVE_DATABASE_PATH", None)
 
 
 # Make the repo root importable (for agent.context_engine etc.)
@@ -36,7 +36,7 @@ if repo_root not in sys.path:
 
 # Register the plugin directory as a proper package
 plugin_dir = Path(__file__).resolve().parent.parent
-pkg_name = "hermes_lcm"
+pkg_name = "hermes_trove"
 
 if pkg_name not in sys.modules:
     spec = importlib.util.spec_from_file_location(

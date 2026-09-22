@@ -1,6 +1,6 @@
 """Fixture tests for SPEC F — proactive memory injection at assembly.
 
-Exercises the real lcm_recall pipeline (seeded cross-session summary + vectors)
+Exercises the real trove_recall pipeline (seeded cross-session summary + vectors)
 through the engine's ``_build_proactive_recall_message`` and its placement in
 ``_assemble_context``: injection appears when a relevant cross-session memory
 exists; respects the budget/floor/dedupe; is inert (byte-identical assembly)
@@ -15,17 +15,17 @@ from types import ModuleType
 
 import pytest
 
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.dag import SummaryNode
-from hermes_lcm.extraction import strip_injected_context_blocks
-from hermes_lcm import tools as lcm_tools
-from hermes_lcm.vector_store import VectorStore
+from hermes_trove.config import TROVEConfig
+from hermes_trove.dag import SummaryNode
+from hermes_trove.extraction import strip_injected_context_blocks
+from hermes_trove import tools as trove_tools
+from hermes_trove.vector_store import VectorStore
 
 
-def _import_lcm_engine():
+def _import_trove_engine():
     try:
-        from hermes_lcm.engine import LCMEngine
-        return LCMEngine
+        from hermes_trove.engine import TROVEEngine
+        return TROVEEngine
     except ModuleNotFoundError as exc:
         if exc.name not in {"agent", "agent.context_engine"}:
             raise
@@ -43,12 +43,12 @@ def _import_lcm_engine():
         setattr(context_engine_module, "ContextEngine", ContextEngine)
         sys.modules["agent.context_engine"] = context_engine_module
         setattr(agent_module, "context_engine", context_engine_module)
-        sys.modules.pop("hermes_lcm.engine", None)
-        from hermes_lcm.engine import LCMEngine
-        return LCMEngine
+        sys.modules.pop("hermes_trove.engine", None)
+        from hermes_trove.engine import TROVEEngine
+        return TROVEEngine
 
 
-LCMEngine = _import_lcm_engine()
+TROVEEngine = _import_trove_engine()
 
 CURRENT = "sess-current"
 QUERY = "kanban dashboard sprint plan"
@@ -66,9 +66,9 @@ class MockProvider:
         return list(self.vector)
 
 
-def _make_engine(tmp_path: Path, **overrides) -> "LCMEngine":
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+def _make_engine(tmp_path: Path, **overrides) -> "TROVEEngine":
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=overrides.pop("fresh_tail_count", 2),
         embeddings_enabled=overrides.pop("embeddings_enabled", True),
         embedding_provider="mock",
@@ -77,7 +77,7 @@ def _make_engine(tmp_path: Path, **overrides) -> "LCMEngine":
         proactive_recall_enabled=overrides.pop("proactive_recall_enabled", True),
         **overrides,
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     engine.on_session_start(CURRENT, platform="discord", conversation_id="c:1")
     return engine
 
@@ -114,7 +114,7 @@ def _seed_summary_vectors(engine, rows, *, provider="mock"):
 @pytest.fixture
 def provider(monkeypatch):
     p = MockProvider()
-    monkeypatch.setattr(lcm_tools, "resolve_provider", lambda _config: p)
+    monkeypatch.setattr(trove_tools, "resolve_provider", lambda _config: p)
     return p
 
 
@@ -228,7 +228,7 @@ def test_budget_zero_is_inert(tmp_path, provider):
 
 
 def test_block_respects_token_budget(tmp_path, provider):
-    from hermes_lcm.tokens import count_message_tokens
+    from hermes_trove.tokens import count_message_tokens
 
     engine = _make_engine(tmp_path, proactive_recall_budget_tokens=120)
     # Three distinct cross-session hits all match the query vector.
@@ -255,7 +255,7 @@ def test_timeout_injects_nothing(tmp_path, monkeypatch, provider):
     engine = _make_engine(tmp_path)
     _seed_cross_session_hit(engine)
     monkeypatch.setattr(
-        lcm_tools, "lcm_recall",
+        trove_tools, "trove_recall",
         lambda *a, **k: '{"timeout": true, "hits": []}',
     )
 
@@ -270,7 +270,7 @@ def test_recall_exception_injects_nothing(tmp_path, monkeypatch, provider):
     def _boom(*a, **k):
         raise RuntimeError("recall exploded")
 
-    monkeypatch.setattr(lcm_tools, "lcm_recall", _boom)
+    monkeypatch.setattr(trove_tools, "trove_recall", _boom)
 
     assert engine._build_proactive_recall_message(_tail(), "user", set()) is None
     assert engine._proactive_recall_skipped_count == 1

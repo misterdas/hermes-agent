@@ -8,16 +8,16 @@ from types import SimpleNamespace
 
 import pytest
 
-import hermes_lcm.command as command_mod
-from hermes_lcm.command import handle_lcm_command
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.dag import SummaryDAG, SummaryNode
-from hermes_lcm.embedding_provider import (
+import hermes_trove.command as command_mod
+from hermes_trove.command import handle_trove_command
+from hermes_trove.config import TROVEConfig
+from hermes_trove.dag import SummaryDAG, SummaryNode
+from hermes_trove.embedding_provider import (
     EmbeddedDocumentBatch,
     ProviderPreDispatchError,
     VoyageError,
 )
-from hermes_lcm.vector_store import EmbeddingPublishOutcome, VectorStore
+from hermes_trove.vector_store import EmbeddingPublishOutcome, VectorStore
 
 
 class FakeProvider:
@@ -44,7 +44,7 @@ def deterministic_token_count(monkeypatch):
 def _engine(tmp_path, *, enabled: bool = True):
     tmp_path.mkdir(parents=True, exist_ok=True)
     db_path = tmp_path / "backfill.db"
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(db_path),
         embeddings_enabled=enabled,
         embedding_provider="ollama",
@@ -93,7 +93,7 @@ def _meta_ids(engine) -> list[str]:
         return [
             str(row[0])
             for row in conn.execute(
-                "SELECT embedded_id FROM lcm_embedding_meta ORDER BY CAST(embedded_id AS INTEGER)"
+                "SELECT embedded_id FROM trove_embedding_meta ORDER BY CAST(embedded_id AS INTEGER)"
             ).fetchall()
         ]
     finally:
@@ -119,10 +119,10 @@ def _mark_uncertain(engine, node_ids: list[int]) -> str:
         conn = store.connection
         command_mod._ensure_inflight_table(conn)
         identity = str(conn.execute(
-            "SELECT identity_hash FROM lcm_embedding_profile WHERE active=1"
+            "SELECT identity_hash FROM trove_embedding_profile WHERE active=1"
         ).fetchone()[0])
         conn.executemany(
-            "INSERT INTO lcm_embedding_backfill_inflight("
+            "INSERT INTO trove_embedding_backfill_inflight("
             "embedded_id, identity_hash, lease_id, generation, claimed_at, "
             "state, request_id, updated_at, last_error) "
             "VALUES (?, ?, 'prior', 1, 1, 'uncertain', 'prior-request', ?, "
@@ -144,7 +144,7 @@ def _inflight_rows(engine) -> list[tuple[str, str]]:
             (str(row[0]), str(row[1]))
             for row in conn.execute(
                 "SELECT embedded_id, state "
-                "FROM lcm_embedding_backfill_inflight ORDER BY updated_at, embedded_id"
+                "FROM trove_embedding_backfill_inflight ORDER BY updated_at, embedded_id"
             ).fetchall()
         ]
     finally:
@@ -160,7 +160,7 @@ def test_dry_run_reports_counts_tokens_and_cost_without_calls_or_writes(
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: provider)
     before = engine._store.db_path.read_bytes()
 
-    result = handle_lcm_command("embed backfill --limit 2", engine)
+    result = handle_trove_command("embed backfill --limit 2", engine)
 
     assert "status: dry-run" in result
     assert "pending: 3" in result
@@ -177,7 +177,7 @@ def test_dry_run_reports_counts_tokens_and_cost_without_calls_or_writes(
     conn = sqlite3.connect(voyage_engine._store.db_path)
     conn.execute(
         """
-        UPDATE lcm_embedding_profile
+        UPDATE trove_embedding_profile
         SET model_name = 'voyage-4-lite', provider = 'voyage'
         WHERE model_name = 'model-a'
         """
@@ -192,7 +192,7 @@ def test_dry_run_reports_counts_tokens_and_cost_without_calls_or_writes(
         lambda text: 10_000 if str(text).endswith("0") else 30_000,
     )
 
-    voyage_result = handle_lcm_command("embed backfill", voyage_engine)
+    voyage_result = handle_trove_command("embed backfill", voyage_engine)
 
     assert "estimated_tokens: 40000" in voyage_result
     assert "estimated_batches: 1" in voyage_result
@@ -206,7 +206,7 @@ def test_apply_batches_records_correct_meta_and_is_idempotent(monkeypatch, tmp_p
     provider = FakeProvider()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: provider)
 
-    first = handle_lcm_command("embed backfill --apply", engine)
+    first = handle_trove_command("embed backfill --apply", engine)
 
     assert "embedded: 35" in first
     assert "remaining: 0" in first
@@ -217,8 +217,8 @@ def test_apply_batches_records_correct_meta_and_is_idempotent(monkeypatch, tmp_p
         rows = conn.execute(
             """
             SELECT m.embedded_kind, p.model_name, p.provider, m.source_token_count
-            FROM lcm_embedding_meta m
-            JOIN lcm_embedding_profile p ON p.identity_hash = m.identity_hash
+            FROM trove_embedding_meta m
+            JOIN trove_embedding_profile p ON p.identity_hash = m.identity_hash
             ORDER BY CAST(m.embedded_id AS INTEGER)
             """
         ).fetchall()
@@ -228,7 +228,7 @@ def test_apply_batches_records_correct_meta_and_is_idempotent(monkeypatch, tmp_p
         ("summary", "model-a", "ollama", 100 + index) for index in range(35)
     ]
 
-    second = handle_lcm_command("embed backfill --apply", engine)
+    second = handle_trove_command("embed backfill --apply", engine)
     assert "selected: 0" in second
     assert "embedded: 0" in second
     assert [len(batch) for batch in provider.calls] == [32, 3]
@@ -240,7 +240,7 @@ def test_apply_limit_embeds_newest_rows_first(monkeypatch, tmp_path):
     provider = FakeProvider()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: provider)
 
-    result = handle_lcm_command("embed backfill --limit 2 --apply", engine)
+    result = handle_trove_command("embed backfill --limit 2 --apply", engine)
 
     assert "embedded: 2" in result
     assert "remaining: 2" in result
@@ -263,7 +263,7 @@ def test_accepted_then_local_publish_failure_becomes_uncertain(
 
     monkeypatch.setattr(VectorStore, "publish_embedding_under_lease", fail_one)
 
-    result = handle_lcm_command("embed backfill --apply", engine)
+    result = handle_trove_command("embed backfill --apply", engine)
 
     assert "embedded: 1" in result
     assert "uncertain_remote_acceptance: 2" in result
@@ -273,7 +273,7 @@ def test_accepted_then_local_publish_failure_becomes_uncertain(
     # Normal retry performs no provider calls for uncertain remote acceptance.
     healthy = FakeProvider()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: healthy)
-    retry = handle_lcm_command("embed backfill --apply", engine)
+    retry = handle_trove_command("embed backfill --apply", engine)
     assert healthy.calls == []
     assert "uncertain_remote_acceptance: 2" in retry
 
@@ -297,7 +297,7 @@ def test_auth_error_aborts_immediately_and_releases_claim(monkeypatch, tmp_path)
     provider.embed_documents = auth_error
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: provider)
 
-    result = handle_lcm_command("embed backfill --apply", engine)
+    result = handle_trove_command("embed backfill --apply", engine)
 
     assert "status: error" in result
     assert "provider authentication failed" in result
@@ -320,7 +320,7 @@ def test_transient_provider_error_skips_batch_and_continues(monkeypatch, tmp_pat
     provider.embed_documents = transient_once
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: provider)
 
-    result = handle_lcm_command("embed backfill --apply", engine)
+    result = handle_trove_command("embed backfill --apply", engine)
 
     # A failed batch must NOT be reported as complete — the run only partially
     # embedded the discovered work.
@@ -346,7 +346,7 @@ def test_provider_overcap_rows_are_skipped_and_left_pending(monkeypatch, tmp_pat
     provider.embed_documents = skip_middle
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: provider)
 
-    result = handle_lcm_command("embed backfill --apply", engine)
+    result = handle_trove_command("embed backfill --apply", engine)
 
     assert "embedded: 2" in result
     assert "skipped_overcap: 1" in result
@@ -372,7 +372,7 @@ def test_fresh_claim_refuses_second_worker_but_stale_claim_is_overridden(
     conn.commit()
     conn.close()
 
-    refused = handle_lcm_command("embed backfill --apply", engine)
+    refused = handle_trove_command("embed backfill --apply", engine)
     assert "status: refused" in refused
     assert "holds the lease" in refused
     assert provider.calls == []
@@ -387,7 +387,7 @@ def test_fresh_claim_refuses_second_worker_but_stale_claim_is_overridden(
     )
     conn.commit()
     conn.close()
-    applied = handle_lcm_command("embed backfill --apply", engine)
+    applied = handle_trove_command("embed backfill --apply", engine)
     assert "status: complete" in applied
     assert "embedded: 1" in applied
     assert _claim_value(engine) is None
@@ -411,7 +411,7 @@ def test_apply_claims_before_discovery_and_skips_already_embedded(monkeypatch, t
     finally:
         store.close()
 
-    result = handle_lcm_command("embed backfill --apply", engine)
+    result = handle_trove_command("embed backfill --apply", engine)
 
     # Discovery runs AFTER the lease is claimed, so the already-embedded newest
     # row is excluded rather than re-sent to the provider.
@@ -464,7 +464,7 @@ def test_inflight_row_requires_explicit_uncertain_retry_after_crash(monkeypatch,
     provider.embed_documents = crash
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: provider)
 
-    first = handle_lcm_command("embed backfill --apply", engine)
+    first = handle_trove_command("embed backfill --apply", engine)
     # Nothing recorded; both rows are left marked in_flight.
     assert "status: partial" in first
     assert "embedded: 0" in first
@@ -473,14 +473,14 @@ def test_inflight_row_requires_explicit_uncertain_retry_after_crash(monkeypatch,
 
     healthy = FakeProvider()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: healthy)
-    second = handle_lcm_command("embed backfill --apply", engine)
+    second = handle_trove_command("embed backfill --apply", engine)
     # A normal retry is fail-closed: no repeat provider charge.
     assert "status: partial" in second
     assert "embedded: 0" in second
     assert "uncertain_remote_acceptance: 2" in second
     assert healthy.calls == []
 
-    authorized = handle_lcm_command(
+    authorized = handle_trove_command(
         "embed backfill --apply --retry-uncertain", engine
     )
     assert "status: complete" in authorized
@@ -501,7 +501,7 @@ def test_retry_uncertain_limit_binds_exact_old_row_before_new_ordinary(
         command_mod, "resolve_provider", lambda _config, **_kw: retry_provider
     )
 
-    first = handle_lcm_command(
+    first = handle_trove_command(
         "embed backfill --apply --retry-uncertain --limit 1", engine
     )
 
@@ -514,7 +514,7 @@ def test_retry_uncertain_limit_binds_exact_old_row_before_new_ordinary(
     monkeypatch.setattr(
         command_mod, "resolve_provider", lambda _config, **_kw: ordinary_provider
     )
-    second = handle_lcm_command("embed backfill --apply --limit 1", engine)
+    second = handle_trove_command("embed backfill --apply --limit 1", engine)
 
     assert "status: complete" in second
     assert ordinary_provider.calls == [["summary-1"]]
@@ -540,7 +540,7 @@ def test_retry_uncertain_partial_publish_preserves_unused_authorization(
     provider = SplitRejectedProvider()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: provider)
 
-    result = handle_lcm_command(
+    result = handle_trove_command(
         "embed backfill --apply --retry-uncertain --limit 2", engine
     )
 
@@ -551,7 +551,7 @@ def test_retry_uncertain_partial_publish_preserves_unused_authorization(
 
     ordinary = FakeProvider()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: ordinary)
-    followup = handle_lcm_command("embed backfill --apply", engine)
+    followup = handle_trove_command("embed backfill --apply", engine)
     assert ordinary.calls == []
     assert "uncertain_remote_acceptance: 1" in followup
 
@@ -571,7 +571,7 @@ def test_retry_uncertain_definitive_failure_preserves_marker(monkeypatch, tmp_pa
     provider = RejectedProvider()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: provider)
 
-    result = handle_lcm_command(
+    result = handle_trove_command(
         "embed backfill --apply --retry-uncertain --limit 1", engine
     )
 
@@ -581,7 +581,7 @@ def test_retry_uncertain_definitive_failure_preserves_marker(monkeypatch, tmp_pa
 
     ordinary = FakeProvider()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: ordinary)
-    handle_lcm_command("embed backfill --apply", engine)
+    handle_trove_command("embed backfill --apply", engine)
     assert ordinary.calls == []
 
 
@@ -613,7 +613,7 @@ def test_retry_uncertain_lease_loss_before_dispatch_preserves_marker(
     provider = StealingProvider()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: provider)
 
-    result = handle_lcm_command(
+    result = handle_trove_command(
         "embed backfill --apply --retry-uncertain --limit 1", engine
     )
 
@@ -631,7 +631,7 @@ def test_retry_uncertain_budget_expiry_preserves_unselected_marker(
     _mark_uncertain(engine, node_ids)
     provider = FakeProvider()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: provider)
-    monkeypatch.setenv("LCM_EMBEDDING_BACKFILL_BUDGET_S", "1")
+    monkeypatch.setenv("TROVE_EMBEDDING_BACKFILL_BUDGET_S", "1")
     calls = {"n": 0}
 
     def fake_monotonic():
@@ -640,7 +640,7 @@ def test_retry_uncertain_budget_expiry_preserves_unselected_marker(
 
     monkeypatch.setattr(command_mod.time, "monotonic", fake_monotonic)
 
-    result = handle_lcm_command(
+    result = handle_trove_command(
         "embed backfill --apply --retry-uncertain --limit 1", engine
     )
 
@@ -684,7 +684,7 @@ def test_stale_owner_after_provider_call_does_not_publish(monkeypatch, tmp_path)
     provider = StealingProvider()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: provider)
 
-    result = handle_lcm_command("embed backfill --apply", engine)
+    result = handle_trove_command("embed backfill --apply", engine)
 
     # The stale owner published nothing: no meta rows written.
     assert _meta_ids(engine) == []
@@ -736,7 +736,7 @@ def test_lease_takeover_between_batches_stops_stale_worker(monkeypatch, tmp_path
     provider = TakeoverBetweenBatches()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: provider)
 
-    result = handle_lcm_command("embed backfill --apply", engine)
+    result = handle_trove_command("embed backfill --apply", engine)
 
     # The first batch committed fully; the second published nothing.
     assert "embedded: 1" in result
@@ -745,7 +745,7 @@ def test_lease_takeover_between_batches_stops_stale_worker(monkeypatch, tmp_path
     conn = sqlite3.connect(engine._store.db_path)
     try:
         version = conn.execute(
-            "SELECT data_version FROM lcm_embedding_profile WHERE active=1"
+            "SELECT data_version FROM trove_embedding_profile WHERE active=1"
         ).fetchone()[0]
     finally:
         conn.close()
@@ -793,7 +793,7 @@ def test_network_batch_publishes_in_a_single_transaction(monkeypatch, tmp_path):
                 stats["savepoint"] += self._saves - before[1]
 
     monkeypatch.setattr(command_mod, "VectorStore", TracingStore)
-    result = handle_lcm_command("embed backfill --apply", engine)
+    result = handle_trove_command("embed backfill --apply", engine)
 
     assert "embedded: 5" in result
     # Five accepted vectors, ONE transaction — the 5x fsync amplification is gone.
@@ -839,7 +839,7 @@ def test_crash_between_provider_return_and_commit_is_all_or_nothing(
                 self._conn = real
 
     monkeypatch.setattr(command_mod, "VectorStore", CrashStore)
-    result = handle_lcm_command("embed backfill --apply", engine)
+    result = handle_trove_command("embed backfill --apply", engine)
 
     # None half-published: the entire batch rolled back.
     assert _meta_ids(engine) == []
@@ -880,7 +880,7 @@ def test_batch_commits_published_rows_before_a_superseded_row(monkeypatch, tmp_p
     monkeypatch.setattr(
         VectorStore, "publish_embedding_under_lease", supersede_second
     )
-    result = handle_lcm_command("embed backfill --apply", engine)
+    result = handle_trove_command("embed backfill --apply", engine)
 
     assert "embedded: 1" in result
     assert "stop_reason: identity_superseded" in result
@@ -908,7 +908,7 @@ def test_active_identity_switch_quarantines_accepted_request_and_releases_claim(
     provider = SwitchingProvider()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: provider)
 
-    result = handle_lcm_command("embed backfill --apply", engine)
+    result = handle_trove_command("embed backfill --apply", engine)
 
     assert "status: partial" in result
     assert "embedded: 0" in result
@@ -922,7 +922,7 @@ def test_active_identity_switch_quarantines_accepted_request_and_releases_claim(
     conn = sqlite3.connect(engine._store.db_path)
     try:
         rows = conn.execute(
-            "SELECT state, last_error FROM lcm_embedding_backfill_inflight "
+            "SELECT state, last_error FROM trove_embedding_backfill_inflight "
             "ORDER BY embedded_id"
         ).fetchall()
     finally:
@@ -949,7 +949,7 @@ def test_accepted_provider_subbatch_survives_later_subbatch_failure(
 
     provider = SplitProvider()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: provider)
-    first = handle_lcm_command("embed backfill --apply", engine)
+    first = handle_trove_command("embed backfill --apply", engine)
     assert "embedded: 1" in first
     assert "uncertain_remote_acceptance: 0" in first
     assert "remaining: 1" in first
@@ -957,7 +957,7 @@ def test_accepted_provider_subbatch_survives_later_subbatch_failure(
 
     healthy = FakeProvider()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: healthy)
-    second = handle_lcm_command("embed backfill --apply", engine)
+    second = handle_trove_command("embed backfill --apply", engine)
     assert healthy.calls == [["summary-0"]]
     assert "status: complete" in second
     assert _meta_ids(engine) == [str(node_id) for node_id in node_ids]
@@ -978,14 +978,14 @@ def test_accepted_split_survives_later_ambiguous_timeout(monkeypatch, tmp_path):
 
     provider = SplitProvider()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: provider)
-    first = handle_lcm_command("embed backfill --apply", engine)
+    first = handle_trove_command("embed backfill --apply", engine)
 
     assert "embedded: 1" in first
     assert "uncertain_remote_acceptance: 1" in first
     assert _meta_ids(engine) == [str(node_ids[-1])]
     healthy = FakeProvider()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: healthy)
-    second = handle_lcm_command("embed backfill --apply", engine)
+    second = handle_trove_command("embed backfill --apply", engine)
     assert healthy.calls == []
     assert "uncertain_remote_acceptance: 1" in second
 
@@ -1007,14 +1007,14 @@ def test_definitive_pre_dispatch_expiry_is_safe_for_automatic_retry(
     monkeypatch.setattr(
         command_mod, "resolve_provider", lambda _config, **_kw: first_provider
     )
-    first = handle_lcm_command("embed backfill --apply", engine)
+    first = handle_trove_command("embed backfill --apply", engine)
     assert "embedded: 0" in first
     assert "uncertain_remote_acceptance: 0" in first
     assert "in_flight: 0" in first
 
     healthy = FakeProvider()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: healthy)
-    second = handle_lcm_command("embed backfill --apply", engine)
+    second = handle_trove_command("embed backfill --apply", engine)
     assert "status: complete" in second
     assert "embedded: 2" in second
     assert len(healthy.calls) == 1
@@ -1030,7 +1030,7 @@ def test_inflight_maintenance_processes_only_one_bounded_chunk(tmp_path):
         # explicitly instead of forcing one durable transaction per row.
         conn.execute("BEGIN")
         conn.executemany(
-            "INSERT INTO lcm_embedding_backfill_inflight("
+            "INSERT INTO trove_embedding_backfill_inflight("
             "embedded_id, identity_hash, lease_id, generation, claimed_at, "
             "state, updated_at) VALUES (?, ?, 'stale', 1, 1, 'claimed', 1)",
             ((str(index), identity) for index in range(250_001)),
@@ -1044,14 +1044,14 @@ def test_inflight_maintenance_processes_only_one_bounded_chunk(tmp_path):
             str(row[3])
             for row in conn.execute(
                 "EXPLAIN QUERY PLAN SELECT rowid, embedded_id "
-                "FROM lcm_embedding_backfill_inflight "
+                "FROM trove_embedding_backfill_inflight "
                 "WHERE identity_hash=? AND state=? "
                 "AND (lease_id IS NOT ? OR generation IS NOT ?) "
                 "ORDER BY updated_at, embedded_id LIMIT ?",
                 (identity, "claimed", lease.lease_id, lease.generation, 256),
             )
         ]
-        assert any("idx_lcm_embedding_inflight_maintenance" in row for row in plan)
+        assert any("idx_trove_embedding_inflight_maintenance" in row for row in plan)
         assert not any("USE TEMP B-TREE" in row for row in plan)
 
         command_mod._prepare_inflight_for_lease(
@@ -1061,7 +1061,7 @@ def test_inflight_maintenance_processes_only_one_bounded_chunk(tmp_path):
         )
 
         remaining = conn.execute(
-            "SELECT COUNT(*) FROM lcm_embedding_backfill_inflight"
+            "SELECT COUNT(*) FROM trove_embedding_backfill_inflight"
         ).fetchone()[0]
         assert remaining == 250_001 - 256
         lease.release()
@@ -1077,10 +1077,10 @@ def test_retry_uncertain_limit_authorizes_only_deterministic_rows(tmp_path):
         conn = store.connection
         command_mod._ensure_inflight_table(conn)
         identity = str(conn.execute(
-            "SELECT identity_hash FROM lcm_embedding_profile WHERE active=1"
+            "SELECT identity_hash FROM trove_embedding_profile WHERE active=1"
         ).fetchone()[0])
         conn.executemany(
-            "INSERT INTO lcm_embedding_backfill_inflight("
+            "INSERT INTO trove_embedding_backfill_inflight("
             "embedded_id, identity_hash, lease_id, generation, claimed_at, "
             "state, updated_at) VALUES (?, ?, 'stale', 1, 1, 'uncertain', ?)",
             (
@@ -1109,7 +1109,7 @@ def test_retry_uncertain_limit_authorizes_only_deterministic_rows(tmp_path):
         remaining = [
             str(row[0])
             for row in conn.execute(
-                "SELECT embedded_id FROM lcm_embedding_backfill_inflight "
+                "SELECT embedded_id FROM trove_embedding_backfill_inflight "
                 "ORDER BY updated_at, embedded_id"
             )
         ]
@@ -1131,7 +1131,7 @@ def test_inflight_maintenance_fails_closed_after_successor_takeover(tmp_path):
         )
         assert lease is not None
         conn.execute(
-            "INSERT INTO lcm_embedding_backfill_inflight("
+            "INSERT INTO trove_embedding_backfill_inflight("
             "embedded_id, identity_hash, lease_id, generation, claimed_at, "
             "state, request_id, updated_at) "
             "VALUES ('row', 'identity', 'successor', 99, 1, "
@@ -1161,7 +1161,7 @@ def test_inflight_maintenance_fails_closed_after_successor_takeover(tmp_path):
 
         row = conn.execute(
             "SELECT lease_id, generation, state, request_id "
-            "FROM lcm_embedding_backfill_inflight WHERE embedded_id='row'"
+            "FROM trove_embedding_backfill_inflight WHERE embedded_id='row'"
         ).fetchone()
         assert tuple(row) == ("successor", 99, "dispatched", "successor-request")
     finally:
@@ -1178,7 +1178,7 @@ def test_inflight_maintenance_exact_snapshot_cannot_mutate_replaced_row(tmp_path
         )
         assert lease is not None
         conn.executemany(
-            "INSERT INTO lcm_embedding_backfill_inflight("
+            "INSERT INTO trove_embedding_backfill_inflight("
             "embedded_id, identity_hash, lease_id, generation, claimed_at, "
             "state, request_id, updated_at) VALUES (?, 'identity', 'old', 1, "
             "1, ?, ?, 1)",
@@ -1189,9 +1189,9 @@ def test_inflight_maintenance_exact_snapshot_cannot_mutate_replaced_row(tmp_path
         )
         conn.execute(
             "CREATE TEMP TRIGGER replace_dispatched_after_delete "
-            "AFTER DELETE ON lcm_embedding_backfill_inflight "
+            "AFTER DELETE ON trove_embedding_backfill_inflight "
             "WHEN OLD.embedded_id = 'trigger' BEGIN "
-            "UPDATE lcm_embedding_backfill_inflight "
+            "UPDATE trove_embedding_backfill_inflight "
             "SET lease_id='successor', generation=99, request_id='successor-request' "
             "WHERE embedded_id='replaced'; END"
         )
@@ -1204,7 +1204,7 @@ def test_inflight_maintenance_exact_snapshot_cannot_mutate_replaced_row(tmp_path
 
         row = conn.execute(
             "SELECT lease_id, generation, state, request_id "
-            "FROM lcm_embedding_backfill_inflight WHERE embedded_id='replaced'"
+            "FROM trove_embedding_backfill_inflight WHERE embedded_id='replaced'"
         ).fetchone()
         assert tuple(row) == ("successor", 99, "dispatched", "successor-request")
         lease.release()
@@ -1217,25 +1217,25 @@ def test_inflight_schema_repairs_legacy_shape_and_malformed_index(tmp_path):
     try:
         conn = store.connection
         conn.execute(
-            "CREATE TABLE lcm_embedding_backfill_inflight("
+            "CREATE TABLE trove_embedding_backfill_inflight("
             "embedded_id TEXT, identity_hash TEXT, lease_id TEXT, "
             "generation INTEGER, claimed_at REAL, "
             "PRIMARY KEY(embedded_id, identity_hash))"
         )
         conn.execute(
-            "INSERT INTO lcm_embedding_backfill_inflight VALUES "
+            "INSERT INTO trove_embedding_backfill_inflight VALUES "
             "('row', 'identity', 'old-owner', 1, 10)"
         )
 
         command_mod._ensure_inflight_table(conn)
         row = conn.execute(
-            "SELECT state, updated_at FROM lcm_embedding_backfill_inflight"
+            "SELECT state, updated_at FROM trove_embedding_backfill_inflight"
         ).fetchone()
         assert tuple(row) == ("uncertain", 10.0)
-        conn.execute("DROP INDEX idx_lcm_embedding_inflight_maintenance")
+        conn.execute("DROP INDEX idx_trove_embedding_inflight_maintenance")
         conn.execute(
-            "CREATE INDEX idx_lcm_embedding_inflight_maintenance "
-            "ON lcm_embedding_backfill_inflight("
+            "CREATE INDEX idx_trove_embedding_inflight_maintenance "
+            "ON trove_embedding_backfill_inflight("
             "identity_hash COLLATE NOCASE, state, updated_at DESC, embedded_id) "
             "WHERE state = 'claimed'"
         )
@@ -1244,13 +1244,13 @@ def test_inflight_schema_repairs_legacy_shape_and_malformed_index(tmp_path):
         columns = tuple(
             row[2]
             for row in conn.execute(
-                "PRAGMA index_info(idx_lcm_embedding_inflight_maintenance)"
+                "PRAGMA index_info(idx_trove_embedding_inflight_maintenance)"
             )
         )
         assert columns == ("identity_hash", "state", "updated_at", "embedded_id")
         before = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' "
-            "AND name='lcm_embedding_backfill_inflight'"
+            "AND name='trove_embedding_backfill_inflight'"
         ).fetchone()[0]
         traced: list[str] = []
         conn.set_trace_callback(traced.append)
@@ -1258,7 +1258,7 @@ def test_inflight_schema_repairs_legacy_shape_and_malformed_index(tmp_path):
         conn.set_trace_callback(None)
         after = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' "
-            "AND name='lcm_embedding_backfill_inflight'"
+            "AND name='trove_embedding_backfill_inflight'"
         ).fetchone()[0]
         assert after == before
         assert not any(
@@ -1266,7 +1266,7 @@ def test_inflight_schema_repairs_legacy_shape_and_malformed_index(tmp_path):
             for statement in traced
         )
         assert conn.execute(
-            "SELECT COUNT(*) FROM lcm_embedding_backfill_inflight"
+            "SELECT COUNT(*) FROM trove_embedding_backfill_inflight"
         ).fetchone()[0] == 1
     finally:
         store.close()
@@ -1300,7 +1300,7 @@ def test_inflight_schema_repairs_noncanonical_complete_check_set(
     try:
         conn = store.connection
         conn.execute(
-            "CREATE TABLE lcm_embedding_backfill_inflight("
+            "CREATE TABLE trove_embedding_backfill_inflight("
             "embedded_id TEXT, identity_hash TEXT, lease_id TEXT, "
             "generation INTEGER, claimed_at REAL, "
             "state TEXT NOT NULL DEFAULT 'claimed' "
@@ -1314,7 +1314,7 @@ def test_inflight_schema_repairs_noncanonical_complete_check_set(
         sql = str(
             conn.execute(
                 "SELECT sql FROM sqlite_master WHERE type='table' "
-                "AND name='lcm_embedding_backfill_inflight'"
+                "AND name='trove_embedding_backfill_inflight'"
             ).fetchone()[0]
         ).lower()
         assert sql.count("check") == 1
@@ -1335,7 +1335,7 @@ def test_inflight_schema_rejects_incompatible_primary_key(tmp_path):
     try:
         conn = store.connection
         conn.execute(
-            "CREATE TABLE lcm_embedding_backfill_inflight("
+            "CREATE TABLE trove_embedding_backfill_inflight("
             "embedded_id TEXT PRIMARY KEY, identity_hash TEXT, lease_id TEXT, "
             "generation INTEGER, claimed_at REAL)"
         )
@@ -1400,7 +1400,7 @@ def test_embedding_purge_removes_orphaned_inflight_markers(
     try:
         command_mod._ensure_inflight_table(store.connection)
         store.connection.execute(
-            "INSERT INTO lcm_embedding_backfill_inflight("
+            "INSERT INTO trove_embedding_backfill_inflight("
             "embedded_id, identity_hash, state, updated_at) "
             "VALUES ('7', 'identity', 'uncertain', 1)"
         )
@@ -1412,7 +1412,7 @@ def test_embedding_purge_removes_orphaned_inflight_markers(
             store.purge_embeddings_for_nodes([7])
 
         assert store.connection.execute(
-            "SELECT COUNT(*) FROM lcm_embedding_backfill_inflight "
+            "SELECT COUNT(*) FROM trove_embedding_backfill_inflight "
             "WHERE embedded_id = '7'"
         ).fetchone()[0] == 0
     finally:
@@ -1424,7 +1424,7 @@ def test_operation_budget_stops_run_between_batches(monkeypatch, tmp_path):
     _seed(engine, 40)
     provider = FakeProvider()
     monkeypatch.setattr(command_mod, "resolve_provider", lambda _config, **_kw: provider)
-    monkeypatch.setenv("LCM_EMBEDDING_BACKFILL_BUDGET_S", "1")
+    monkeypatch.setenv("TROVE_EMBEDDING_BACKFILL_BUDGET_S", "1")
 
     calls = {"n": 0}
 
@@ -1435,7 +1435,7 @@ def test_operation_budget_stops_run_between_batches(monkeypatch, tmp_path):
 
     monkeypatch.setattr(command_mod.time, "monotonic", fake_monotonic)
 
-    result = handle_lcm_command("embed backfill --apply", engine)
+    result = handle_trove_command("embed backfill --apply", engine)
 
     assert "stop_reason: op_budget_exhausted" in result
     assert "status: partial" in result
@@ -1445,13 +1445,13 @@ def test_operation_budget_stops_run_between_batches(monkeypatch, tmp_path):
 
 def test_disabled_and_missing_profile_refuse_cleanly(tmp_path):
     disabled = _engine(tmp_path / "disabled", enabled=False)
-    assert "embeddings are disabled" in handle_lcm_command(
+    assert "embeddings are disabled" in handle_trove_command(
         "embed backfill", disabled
     )
 
     missing = _engine(tmp_path / "missing")
     _seed(missing, 1, register=False)
-    result = handle_lcm_command("embed backfill --apply", missing)
+    result = handle_trove_command("embed backfill --apply", missing)
     assert "status: refused" in result
     assert "no current embedding profile" in result
-    assert "/lcm embed warmup" in result
+    assert "/trove embed warmup" in result

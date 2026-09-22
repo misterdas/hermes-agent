@@ -8,14 +8,14 @@ import sys
 import types
 from types import SimpleNamespace
 
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.evidence_compiler import SELECTOR_SCHEMA_VERSION
-from hermes_lcm.host_evidence import (
+from hermes_trove.config import TROVEConfig
+from hermes_trove.evidence_compiler import SELECTOR_SCHEMA_VERSION
+from hermes_trove.host_evidence import (
     build_host_supplied_evidence,
     call_auxiliary_selector,
     prepare_host_evidence_selector,
 )
-from hermes_lcm.store import MessageStore
+from hermes_trove.store import MessageStore
 
 # Fixtures that pin question_date="2026-07-20" must also pin the observation
 # time of their appended sources: an unpinned append is observed "now", which
@@ -27,7 +27,7 @@ _OBSERVED_BEFORE_QUESTION_DATE = datetime(
 
 
 def _engine(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm.db"))
+    config = TROVEConfig(database_path=str(tmp_path / "trove.db"))
     return SimpleNamespace(
         _config=config,
         _store=MessageStore(config.database_path, ingest_protection_config=config),
@@ -57,11 +57,11 @@ def test_code_owns_host_envelope_and_selector_proposes_semantics_only(tmp_path):
         },
     )
     owner = {
-        "exact_ref": f"lcm:{owner_id}:0-{len(owner_text)}",
+        "exact_ref": f"trove:{owner_id}:0-{len(owner_text)}",
         "quote": owner_text,
     }
     deadline = {
-        "exact_ref": f"lcm:{deadline_id}:0-{len(deadline_text)}",
+        "exact_ref": f"trove:{deadline_id}:0-{len(deadline_text)}",
         "quote": deadline_text,
     }
     calls = []
@@ -134,10 +134,10 @@ def test_code_owns_host_envelope_and_selector_proposes_semantics_only(tmp_path):
     assert len(prepared["envelope_sha256"]) == 64
     assert result["state"] == "answer_sufficient", json.dumps(result, sort_keys=True)
     assert result["baseline_retained"] is True
-    assert result["context"].startswith("<lcm-compiled-evidence")
+    assert result["context"].startswith("<trove-compiled-evidence")
     assert owner["exact_ref"] in result["context"]
     assert deadline["exact_ref"] in result["context"]
-    assert result["provenance"]["envelope_owner"] == "hermes_lcm_product_code"
+    assert result["provenance"]["envelope_owner"] == "hermes_trove_product_code"
     assert result["provenance"]["registered_tool_transport_used"] is False
 
 
@@ -162,11 +162,11 @@ def test_named_facet_delta_is_selected_before_the_only_semantic_call(tmp_path):
         },
     )
     baseline = {
-        "exact_ref": f"lcm:{baseline_id}:0-{len(baseline_text)}",
+        "exact_ref": f"trove:{baseline_id}:0-{len(baseline_text)}",
         "quote": baseline_text,
     }
     owner = {
-        "exact_ref": f"lcm:{owner_id}:0-{len(owner_text)}",
+        "exact_ref": f"trove:{owner_id}:0-{len(owner_text)}",
         "quote": owner_text,
     }
     retrieval_calls = []
@@ -242,7 +242,7 @@ def test_selector_cannot_override_host_fields_and_failure_retains_baseline(tmp_p
     content = "Maya owns the Atlas rollout."
     store_id = engine._store.append("session-a", {"role": "user", "content": content})
     source = {
-        "exact_ref": f"lcm:{store_id}:0-{len(content)}",
+        "exact_ref": f"trove:{store_id}:0-{len(content)}",
         "quote": content,
     }
 
@@ -283,7 +283,7 @@ def test_latest_state_text_value_uses_source_time_not_ingest_time(tmp_path):
     content = "I moved from Austin to Denver in March 2024."
     store_id = engine._store.append("session-a", {"role": "user", "content": content})
     source = {
-        "exact_ref": f"lcm:{store_id}:0-{len(content)}",
+        "exact_ref": f"trove:{store_id}:0-{len(content)}",
         "quote": content,
     }
 
@@ -326,7 +326,7 @@ def test_compiled_brief_over_context_budget_is_not_injected(tmp_path):
     content = "Maya owns the Atlas rollout."
     store_id = engine._store.append("session-a", {"role": "user", "content": content})
     source = {
-        "exact_ref": f"lcm:{store_id}:0-{len(content)}",
+        "exact_ref": f"trove:{store_id}:0-{len(content)}",
         "quote": content,
     }
 

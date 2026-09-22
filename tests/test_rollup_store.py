@@ -5,15 +5,15 @@ from datetime import datetime, timezone
 
 import pytest
 
-from hermes_lcm import db_bootstrap
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.dag import SummaryDAG, SummaryNode
-from hermes_lcm.rollup_store import RollupBuildToken, RollupStore
+from hermes_trove import db_bootstrap
+from hermes_trove.config import TROVEConfig
+from hermes_trove.dag import SummaryDAG, SummaryNode
+from hermes_trove.rollup_store import RollupBuildToken, RollupStore
 
 
 ROLLUP_TABLES = {
-    "lcm_rollups", "lcm_rollup_sources", "lcm_rollup_state",
-    "lcm_rollup_invalidations",
+    "trove_rollups", "trove_rollup_sources", "trove_rollup_state",
+    "trove_rollup_invalidations",
 }
 
 
@@ -57,7 +57,7 @@ def _ready_rollup(
 def test_core_migrations_do_not_create_rollup_tables_or_bump_schema(tmp_path):
     # The opt-in rollup tables are NOT part of the core numeric schema: a base
     # (feature-off) startup must leave schema_version at SCHEMA_VERSION and create
-    # no lcm_rollups* tables, so a base build keeps opening the DB.
+    # no trove_rollups* tables, so a base build keeps opening the DB.
     conn = sqlite3.connect(tmp_path / "core.db")
     try:
         db_bootstrap.run_versioned_migrations(conn)
@@ -69,7 +69,7 @@ def test_core_migrations_do_not_create_rollup_tables_or_bump_schema(tmp_path):
         assert ROLLUP_TABLES.isdisjoint(_table_names(conn))
         # No numeric v6 step is recorded; the rollup tables use a named step.
         steps = conn.execute(
-            "SELECT step_name FROM lcm_migration_state WHERE step_name LIKE 'v6%' OR step_name = 'temporal_rollups_v1'"
+            "SELECT step_name FROM trove_migration_state WHERE step_name LIKE 'v6%' OR step_name = 'temporal_rollups_v1'"
         ).fetchall()
         assert steps == []
     finally:
@@ -92,15 +92,15 @@ def test_rollup_store_lazily_creates_tables_without_bumping_schema(tmp_path):
         assert ROLLUP_TABLES <= _table_names(store.connection)
         assert db_bootstrap.get_schema_version(store.connection) == db_bootstrap.SCHEMA_VERSION
         completed = store.connection.execute(
-            "SELECT completed_at FROM lcm_migration_state WHERE step_name = 'temporal_rollups_v1'"
+            "SELECT completed_at FROM trove_migration_state WHERE step_name = 'temporal_rollups_v1'"
         ).fetchone()
         assert completed is not None
         index_sql = store.connection.execute(
-            "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_lcm_rollups_ready_period'"
+            "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_trove_rollups_ready_period'"
         ).fetchone()[0]
         assert "WHERE status = 'ready'" in index_sql
         pending_index_sql = store.connection.execute(
-            "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_lcm_rollups_pending'"
+            "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_trove_rollups_pending'"
         ).fetchone()[0]
         assert "WHERE status IN ('stale', 'failed')" in pending_index_sql
     finally:
@@ -127,7 +127,7 @@ def test_base_build_opens_enabled_rollup_db_without_raising(tmp_path, monkeypatc
 def test_rollup_store_refuses_newer_schema_before_configuring_connection(
     tmp_path, monkeypatch
 ):
-    import hermes_lcm.rollup_store as rollup_store_module
+    import hermes_trove.rollup_store as rollup_store_module
 
     db_path = tmp_path / "future.db"
     conn = sqlite3.connect(db_path)
@@ -229,7 +229,7 @@ def test_mark_ready_rejects_unknown_rollup_without_orphan_sources(rollup_store):
         rollup_store.mark_ready(RollupBuildToken(999, 0), "missing", 1, [10], "fingerprint")
 
     count = rollup_store.connection.execute(
-        "SELECT COUNT(*) FROM lcm_rollup_sources"
+        "SELECT COUNT(*) FROM trove_rollup_sources"
     ).fetchone()[0]
     assert count == 0
 
@@ -267,7 +267,7 @@ def test_mark_stale_for_day_cascades_to_containing_week_and_month(rollup_store):
 
     statuses = dict(
         rollup_store.connection.execute(
-            "SELECT rollup_id, status FROM lcm_rollups"
+            "SELECT rollup_id, status FROM trove_rollups"
         ).fetchall()
     )
     assert {statuses[rollup_id] for rollup_id in affected_ids} == {"stale"}
@@ -282,7 +282,7 @@ def test_mark_stale_for_day_creates_missing_maintenance_rows(rollup_store):
     rows = rollup_store.connection.execute(
         """
         SELECT period_kind, period_start, status, summary
-        FROM lcm_rollups
+        FROM trove_rollups
         WHERE scope = ?
         ORDER BY period_kind
         """,
@@ -298,7 +298,7 @@ def test_mark_stale_for_day_creates_missing_maintenance_rows(rollup_store):
 def test_rollup_unique_constraint_is_kind_start_scope(rollup_store):
     rollup_store.connection.execute(
         """
-        INSERT INTO lcm_rollups(period_kind, period_start, scope)
+        INSERT INTO trove_rollups(period_kind, period_start, scope)
         VALUES('day', '2026-07-15', 'global')
         """
     )
@@ -307,7 +307,7 @@ def test_rollup_unique_constraint_is_kind_start_scope(rollup_store):
     with pytest.raises(sqlite3.IntegrityError):
         rollup_store.connection.execute(
             """
-            INSERT INTO lcm_rollups(period_kind, period_start, scope)
+            INSERT INTO trove_rollups(period_kind, period_start, scope)
             VALUES('day', '2026-07-15', 'global')
             """
         )
@@ -315,7 +315,7 @@ def test_rollup_unique_constraint_is_kind_start_scope(rollup_store):
 
     rollup_store.connection.execute(
         """
-        INSERT INTO lcm_rollups(period_kind, period_start, scope)
+        INSERT INTO trove_rollups(period_kind, period_start, scope)
         VALUES('week', '2026-07-15', 'global')
         """
     )
@@ -328,7 +328,7 @@ def test_cursor_round_trip(rollup_store):
     rollup_store.set_cursor("day", "2026-07-15", built_at="2026-07-16T00:00:00Z")
     assert rollup_store.get_cursor("day") == "2026-07-15"
     state = rollup_store.connection.execute(
-        "SELECT last_build_cursor, last_built_at FROM lcm_rollup_state WHERE period_kind = 'day'"
+        "SELECT last_build_cursor, last_built_at FROM trove_rollup_state WHERE period_kind = 'day'"
     ).fetchone()
     assert tuple(state) == ("2026-07-15", "2026-07-16T00:00:00Z")
 
@@ -365,7 +365,7 @@ def test_purge_rollups_for_sources_restales_affected_windows(rollup_store):
     # Affected rollups' source rows are cleared (repopulated on rebuild); only the
     # kept rollup's sources remain.
     remaining_sources = rollup_store.connection.execute(
-        "SELECT rollup_id, node_id FROM lcm_rollup_sources ORDER BY rollup_id, node_id"
+        "SELECT rollup_id, node_id FROM trove_rollup_sources ORDER BY rollup_id, node_id"
     ).fetchall()
     assert [tuple(row) for row in remaining_sources] == [(kept, 4)]
     assert {first, second}.isdisjoint({kept})
@@ -431,7 +431,7 @@ def test_stale_aggregates_for_day_targets_week_and_month_only(rollup_store):
 
     statuses = dict(
         rollup_store.connection.execute(
-            "SELECT rollup_id, status FROM lcm_rollups"
+            "SELECT rollup_id, status FROM trove_rollups"
         ).fetchall()
     )
     assert statuses[day_id] == "ready"
@@ -449,7 +449,7 @@ def test_cursor_state_is_per_scope(rollup_store):
 
 
 def test_temporal_rollup_config_defaults_are_inert():
-    config = LCMConfig()
+    config = TROVEConfig()
 
     assert config.temporal_rollups_enabled is False
     assert config.rollup_daily_target_tokens == 5_000
@@ -458,12 +458,12 @@ def test_temporal_rollup_config_defaults_are_inert():
 
 
 def test_temporal_rollup_config_reads_environment(monkeypatch):
-    monkeypatch.setenv("LCM_TEMPORAL_ROLLUPS_ENABLED", "true")
-    monkeypatch.setenv("LCM_ROLLUP_DAILY_TARGET_TOKENS", "6000")
-    monkeypatch.setenv("LCM_ROLLUP_DAILY_MAX_TOKENS", "16000")
-    monkeypatch.setenv("LCM_ROLLUP_AGGREGATE_MAX_TOKENS", "21000")
+    monkeypatch.setenv("TROVE_TEMPORAL_ROLLUPS_ENABLED", "true")
+    monkeypatch.setenv("TROVE_ROLLUP_DAILY_TARGET_TOKENS", "6000")
+    monkeypatch.setenv("TROVE_ROLLUP_DAILY_MAX_TOKENS", "16000")
+    monkeypatch.setenv("TROVE_ROLLUP_AGGREGATE_MAX_TOKENS", "21000")
 
-    config = LCMConfig.from_env()
+    config = TROVEConfig.from_env()
 
     assert config.temporal_rollups_enabled is True
     assert config.rollup_daily_target_tokens == 6_000
@@ -528,7 +528,7 @@ def test_defer_incomplete_is_token_guarded(rollup_store):
     assert row["status"] == "stale"
     assert "incomplete: 2 dailies" in row["error"]
     nonce = rollup_store.connection.execute(
-        "SELECT lease_nonce FROM lcm_rollups WHERE rollup_id=?",
+        "SELECT lease_nonce FROM trove_rollups WHERE rollup_id=?",
         (token2.rollup_id,),
     ).fetchone()[0]
     assert nonce == ""
@@ -546,7 +546,7 @@ def test_resolve_no_source_clears_only_when_owned(rollup_store):
 
     token2 = rollup_store.upsert_building("day", "2026-07-15", scope)
     rollup_store.connection.execute(
-        "INSERT INTO lcm_rollup_sources(rollup_id, node_id) VALUES(?, ?)",
+        "INSERT INTO trove_rollup_sources(rollup_id, node_id) VALUES(?, ?)",
         (token2.rollup_id, 9),
     )
     rollup_store.connection.commit()
@@ -554,7 +554,7 @@ def test_resolve_no_source_clears_only_when_owned(rollup_store):
     assert rollup_store.resolve_no_source(token2) is True
     assert rollup_store.get_rollup("day", "2026-07-15", scope) is None
     orphan_sources = rollup_store.connection.execute(
-        "SELECT COUNT(*) FROM lcm_rollup_sources WHERE rollup_id = ?",
+        "SELECT COUNT(*) FROM trove_rollup_sources WHERE rollup_id = ?",
         (token2.rollup_id,),
     ).fetchone()[0]
     assert orphan_sources == 0
@@ -568,15 +568,15 @@ def test_rollup_indexes_are_scope_leading_and_cover_source_node(rollup_store):
     def index_columns(name):
         return [row["name"] for row in conn.execute(f"PRAGMA index_info({name})").fetchall()]
 
-    assert index_columns("idx_lcm_rollups_ready_period")[0] == "scope"
-    assert index_columns("idx_lcm_rollups_pending")[0] == "scope"
-    assert index_columns("idx_lcm_rollup_sources_node") == ["node_id"]
+    assert index_columns("idx_trove_rollups_ready_period")[0] == "scope"
+    assert index_columns("idx_trove_rollups_pending")[0] == "scope"
+    assert index_columns("idx_trove_rollup_sources_node") == ["node_id"]
 
     plan = conn.execute(
         "EXPLAIN QUERY PLAN "
-        "SELECT DISTINCT rollup_id FROM lcm_rollup_sources WHERE node_id IN (1, 2)"
+        "SELECT DISTINCT rollup_id FROM trove_rollup_sources WHERE node_id IN (1, 2)"
     ).fetchall()
-    assert any("idx_lcm_rollup_sources_node" in str(row[3]) for row in plan)
+    assert any("idx_trove_rollup_sources_node" in str(row[3]) for row in plan)
 
 
 # --- FIXSPEC4 A1/A2/A3 store additions -----------------------------------------
@@ -615,7 +615,7 @@ def test_resolve_no_source_cannot_delete_a_published_row_at_same_generation(roll
 
 
 def test_rebuild_claim_preserves_lineage_and_purge_still_restales(rollup_store):
-    # Maintainer #387 A2 repro: upsert_building cleared lcm_rollup_sources at claim
+    # Maintainer #387 A2 repro: upsert_building cleared trove_rollup_sources at claim
     # time, so a concurrent purge-by-node found ZERO affected rollups and did not
     # re-stale, letting the in-flight build publish deleted-node content. The
     # claim must keep the prior lineage queryable until mark_ready swaps it.
@@ -688,9 +688,9 @@ def test_init_repairs_dropped_rollup_table_despite_marker(tmp_path):
     RollupStore(db_path).close()
 
     conn = sqlite3.connect(db_path)
-    conn.execute("DROP TABLE lcm_rollup_sources")
+    conn.execute("DROP TABLE trove_rollup_sources")
     marker = conn.execute(
-        "SELECT 1 FROM lcm_migration_state WHERE step_name = 'temporal_rollups_v1'"
+        "SELECT 1 FROM trove_migration_state WHERE step_name = 'temporal_rollups_v1'"
     ).fetchone()
     assert marker is not None  # marker present, but a table is now missing
     conn.commit()
@@ -707,9 +707,9 @@ def test_init_repairs_dropped_rollup_table_despite_marker(tmp_path):
 def test_verify_temporal_rollup_schema_flags_missing_objects(rollup_store):
     # No marker/tables missing on a healthy store; dropping an index is detected.
     assert db_bootstrap.verify_temporal_rollup_schema(rollup_store.connection) == []
-    rollup_store.connection.execute("DROP INDEX idx_lcm_rollups_pending")
+    rollup_store.connection.execute("DROP INDEX idx_trove_rollups_pending")
     missing = db_bootstrap.verify_temporal_rollup_schema(rollup_store.connection)
-    assert "index:idx_lcm_rollups_pending" in missing
+    assert "index:idx_trove_rollups_pending" in missing
 
 
 # --- Proactive invariant-class audit regressions ------------------------------
@@ -763,14 +763,14 @@ def test_purge_source_ids_above_sqlite_bind_limit_is_sql_bounded(rollup_store):
 def test_failure_timestamp_is_terminal_time_not_claim_time(rollup_store):
     token = rollup_store.upsert_building("day", "2026-07-15", "scope-a")
     rollup_store.connection.execute(
-        "UPDATE lcm_rollups SET built_at='2000-01-01T00:00:00+00:00' WHERE rollup_id=?",
+        "UPDATE trove_rollups SET built_at='2000-01-01T00:00:00+00:00' WHERE rollup_id=?",
         (token.rollup_id,),
     )
     rollup_store.connection.commit()
 
     assert rollup_store.mark_failed(token, "boom") is True
     row = rollup_store.connection.execute(
-        "SELECT built_at, failed_at FROM lcm_rollups WHERE rollup_id=?",
+        "SELECT built_at, failed_at FROM trove_rollups WHERE rollup_id=?",
         (token.rollup_id,),
     ).fetchone()
     assert row["built_at"] == "2000-01-01T00:00:00+00:00"
@@ -783,7 +783,7 @@ def test_supported_partial_rollup_schema_is_repaired_before_marker(tmp_path):
     db_bootstrap.run_versioned_migrations(conn)
     conn.execute(
         """
-        CREATE TABLE lcm_rollups(
+        CREATE TABLE trove_rollups(
             rollup_id INTEGER PRIMARY KEY,
             period_kind TEXT NOT NULL CHECK(period_kind IN ('day', 'week', 'month')),
             period_start TEXT NOT NULL,
@@ -803,11 +803,11 @@ def test_supported_partial_rollup_schema_is_repaired_before_marker(tmp_path):
     try:
         assert db_bootstrap.verify_temporal_rollup_schema(store.connection) == []
         columns = {
-            row[1] for row in store.connection.execute("PRAGMA table_info(lcm_rollups)")
+            row[1] for row in store.connection.execute("PRAGMA table_info(trove_rollups)")
         }
         assert {"summary", "token_count", "built_at", "source_fingerprint", "error"} <= columns
         assert store.connection.execute(
-            "SELECT 1 FROM lcm_migration_state WHERE step_name='temporal_rollups_v1'"
+            "SELECT 1 FROM trove_migration_state WHERE step_name='temporal_rollups_v1'"
         ).fetchone()
     finally:
         store.close()
@@ -818,19 +818,19 @@ def test_incompatible_rollup_schema_is_not_marked_complete(tmp_path):
     conn = sqlite3.connect(db_path)
     db_bootstrap.run_versioned_migrations(conn)
     conn.execute(
-        "CREATE TABLE lcm_rollups(rollup_id INTEGER PRIMARY KEY, "
+        "CREATE TABLE trove_rollups(rollup_id INTEGER PRIMARY KEY, "
         "period_kind TEXT, period_start TEXT, scope TEXT, status TEXT, "
         "generation INTEGER DEFAULT 0, lease_expires_at TEXT)"
     )
     conn.commit()
     conn.close()
 
-    with pytest.raises(RuntimeError, match="unique:lcm_rollups"):
+    with pytest.raises(RuntimeError, match="unique:trove_rollups"):
         RollupStore(db_path)
     conn = sqlite3.connect(db_path)
     try:
         assert conn.execute(
-            "SELECT 1 FROM lcm_migration_state WHERE step_name='temporal_rollups_v1'"
+            "SELECT 1 FROM trove_migration_state WHERE step_name='temporal_rollups_v1'"
         ).fetchone() is None
     finally:
         conn.close()
@@ -842,7 +842,7 @@ def test_schema_verifier_rejects_wrong_shape_on_previously_unchecked_column(tmp_
     db_bootstrap.run_versioned_migrations(conn)
     conn.execute(
         """
-        CREATE TABLE lcm_rollups (
+        CREATE TABLE trove_rollups (
             rollup_id INTEGER PRIMARY KEY AUTOINCREMENT,
             period_kind TEXT NOT NULL CHECK(period_kind IN ('day', 'week', 'month')),
             period_start TEXT NOT NULL,
@@ -865,13 +865,13 @@ def test_schema_verifier_rejects_wrong_shape_on_previously_unchecked_column(tmp_
     conn.commit()
     conn.close()
 
-    with pytest.raises(RuntimeError, match=r"column-shape:lcm_rollups\.summary"):
+    with pytest.raises(RuntimeError, match=r"column-shape:trove_rollups\.summary"):
         RollupStore(db_path)
 
     conn = sqlite3.connect(db_path)
     try:
         assert conn.execute(
-            "SELECT 1 FROM lcm_migration_state "
+            "SELECT 1 FROM trove_migration_state "
             "WHERE step_name='temporal_rollups_v1'"
         ).fetchone() is None
     finally:
@@ -907,11 +907,11 @@ def test_summary_mutation_outbox_is_in_same_transaction(tmp_path):
             """
         )
         assert dag.connection.execute(
-            "SELECT COUNT(*) FROM lcm_rollup_invalidations"
+            "SELECT COUNT(*) FROM trove_rollup_invalidations"
         ).fetchone()[0] == 1
         dag.connection.rollback()
         assert dag.connection.execute(
-            "SELECT COUNT(*) FROM lcm_rollup_invalidations"
+            "SELECT COUNT(*) FROM trove_rollup_invalidations"
         ).fetchone()[0] == 0
     finally:
         dag.close()
@@ -922,7 +922,7 @@ def test_long_span_invalidation_resumes_at_bounded_day_cursor(rollup_store):
     end = datetime(2030, 1, 1, tzinfo=timezone.utc)
     rollup_store.connection.execute(
         """
-        INSERT INTO lcm_rollup_invalidations(
+        INSERT INTO trove_rollup_invalidations(
             node_id, scope, covered_start, covered_end, operation
         ) VALUES(1, 'long-scope', ?, ?, 'insert')
         """,
@@ -932,20 +932,20 @@ def test_long_span_invalidation_resumes_at_bounded_day_cursor(rollup_store):
 
     assert rollup_store.drain_invalidations(event_limit=10, day_budget=7) == 7
     event = rollup_store.connection.execute(
-        "SELECT next_day FROM lcm_rollup_invalidations"
+        "SELECT next_day FROM trove_rollup_invalidations"
     ).fetchone()
     assert event["next_day"] == "2020-01-08"
     assert rollup_store.connection.execute(
-        "SELECT COUNT(*) FROM lcm_rollups WHERE scope='long-scope' AND period_kind='day'"
+        "SELECT COUNT(*) FROM trove_rollups WHERE scope='long-scope' AND period_kind='day'"
     ).fetchone()[0] == 7
 
     assert rollup_store.drain_invalidations(event_limit=10, day_budget=7) == 7
     event = rollup_store.connection.execute(
-        "SELECT next_day FROM lcm_rollup_invalidations"
+        "SELECT next_day FROM trove_rollup_invalidations"
     ).fetchone()
     assert event["next_day"] == "2020-01-15"
     assert rollup_store.connection.execute(
-        "SELECT COUNT(*) FROM lcm_rollups WHERE scope='long-scope' AND period_kind='day'"
+        "SELECT COUNT(*) FROM trove_rollups WHERE scope='long-scope' AND period_kind='day'"
     ).fetchone()[0] == 14
 
 
@@ -959,55 +959,55 @@ def test_day_only_rebuild_seed_atomically_stales_containing_aggregates(rollup_st
     statuses = {
         row["period_kind"]: row["status"]
         for row in rollup_store.connection.execute(
-            "SELECT period_kind, status FROM lcm_rollups WHERE scope=?", (scope,)
+            "SELECT period_kind, status FROM trove_rollups WHERE scope=?", (scope,)
         ).fetchall()
     }
     assert statuses == {"day": "stale", "week": "stale", "month": "stale"}
 
 
 def test_schema_verifier_rejects_wrong_same_name_index_shape(rollup_store):
-    rollup_store.connection.execute("DROP INDEX idx_lcm_rollups_pending")
+    rollup_store.connection.execute("DROP INDEX idx_trove_rollups_pending")
     rollup_store.connection.execute(
-        "CREATE INDEX idx_lcm_rollups_pending ON lcm_rollups(period_start)"
+        "CREATE INDEX idx_trove_rollups_pending ON trove_rollups(period_start)"
     )
     problems = db_bootstrap.verify_temporal_rollup_schema(rollup_store.connection)
-    assert "index-shape:idx_lcm_rollups_pending" in problems
+    assert "index-shape:idx_trove_rollups_pending" in problems
 
 
 def test_schema_verifier_rejects_wrong_index_direction(rollup_store):
-    rollup_store.connection.execute("DROP INDEX idx_lcm_rollups_ready_period")
+    rollup_store.connection.execute("DROP INDEX idx_trove_rollups_ready_period")
     rollup_store.connection.execute(
-        "CREATE INDEX idx_lcm_rollups_ready_period "
-        "ON lcm_rollups(scope, period_kind, period_start ASC) "
+        "CREATE INDEX idx_trove_rollups_ready_period "
+        "ON trove_rollups(scope, period_kind, period_start ASC) "
         "WHERE status='ready'"
     )
     problems = db_bootstrap.verify_temporal_rollup_schema(rollup_store.connection)
-    assert "index-shape:idx_lcm_rollups_ready_period" in problems
+    assert "index-shape:idx_trove_rollups_ready_period" in problems
 
 
 def test_schema_verifier_rejects_unique_same_name_feature_index(rollup_store):
-    rollup_store.connection.execute("DROP INDEX idx_lcm_rollups_pending")
+    rollup_store.connection.execute("DROP INDEX idx_trove_rollups_pending")
     rollup_store.connection.execute(
-        "CREATE UNIQUE INDEX idx_lcm_rollups_pending "
-        "ON lcm_rollups(scope, status, failed_at, period_start) "
+        "CREATE UNIQUE INDEX idx_trove_rollups_pending "
+        "ON trove_rollups(scope, status, failed_at, period_start) "
         "WHERE status IN ('stale', 'failed')"
     )
 
     problems = db_bootstrap.verify_temporal_rollup_schema(rollup_store.connection)
 
-    assert "index-shape:idx_lcm_rollups_pending" in problems
+    assert "index-shape:idx_trove_rollups_pending" in problems
 
 
 def test_schema_verifier_rejects_wrong_partial_flag(rollup_store):
-    rollup_store.connection.execute("DROP INDEX idx_lcm_rollups_expired_lease")
+    rollup_store.connection.execute("DROP INDEX idx_trove_rollups_expired_lease")
     rollup_store.connection.execute(
-        "CREATE INDEX idx_lcm_rollups_expired_lease "
-        "ON lcm_rollups(lease_expires_at, rollup_id)"
+        "CREATE INDEX idx_trove_rollups_expired_lease "
+        "ON trove_rollups(lease_expires_at, rollup_id)"
     )
 
     problems = db_bootstrap.verify_temporal_rollup_schema(rollup_store.connection)
 
-    assert "index-shape:idx_lcm_rollups_expired_lease" in problems
+    assert "index-shape:idx_trove_rollups_expired_lease" in problems
 
 
 def test_outbox_update_covers_content_fields_and_normalizes_interval(tmp_path):
@@ -1022,7 +1022,7 @@ def test_outbox_update_covers_content_fields_and_normalizes_interval(tmp_path):
             )
         )
         inserted = dag.connection.execute(
-            "SELECT covered_start, covered_end FROM lcm_rollup_invalidations"
+            "SELECT covered_start, covered_end FROM trove_rollup_invalidations"
         ).fetchone()
         assert tuple(inserted) == (10.0, 30.0)
         dag.connection.execute(
@@ -1031,7 +1031,7 @@ def test_outbox_update_covers_content_fields_and_normalizes_interval(tmp_path):
         )
         dag.connection.commit()
         operations = dag.connection.execute(
-            "SELECT operation FROM lcm_rollup_invalidations ORDER BY event_id"
+            "SELECT operation FROM trove_rollup_invalidations ORDER BY event_id"
         ).fetchall()
         assert [row[0] for row in operations] == ["insert", "update", "update"]
     finally:
@@ -1040,19 +1040,19 @@ def test_outbox_update_covers_content_fields_and_normalizes_interval(tmp_path):
 
 def test_invalidation_existence_and_overlap_queries_are_index_served(rollup_store):
     scope_plan = rollup_store.connection.execute(
-        "EXPLAIN QUERY PLAN SELECT 1 FROM lcm_rollup_invalidations "
+        "EXPLAIN QUERY PLAN SELECT 1 FROM trove_rollup_invalidations "
         "WHERE scope='scope-a' ORDER BY event_id LIMIT 1"
     ).fetchall()
     assert any(
-        "idx_lcm_rollup_invalidations_scope_event" in str(row[3])
+        "idx_trove_rollup_invalidations_scope_event" in str(row[3])
         for row in scope_plan
     )
     overlap_plan = rollup_store.connection.execute(
-        "EXPLAIN QUERY PLAN SELECT 1 FROM lcm_rollup_invalidations "
+        "EXPLAIN QUERY PLAN SELECT 1 FROM trove_rollup_invalidations "
         "WHERE scope='scope-a' AND covered_start < 20 AND covered_end >= 10 LIMIT 1"
     ).fetchall()
     assert any(
-        "idx_lcm_rollup_invalidations_scope_coverage" in str(row[3])
+        "idx_trove_rollup_invalidations_scope_coverage" in str(row[3])
         for row in overlap_plan
     )
 
@@ -1061,14 +1061,14 @@ def test_same_name_malformed_trigger_is_verified_and_repaired(tmp_path):
     db_path = tmp_path / "trigger-repair.db"
     dag = SummaryDAG(db_path)
     RollupStore(db_path).close()
-    dag.connection.execute("DROP TRIGGER lcm_rollup_node_insert")
+    dag.connection.execute("DROP TRIGGER trove_rollup_node_insert")
     dag.connection.execute(
-        "CREATE TRIGGER lcm_rollup_node_insert AFTER INSERT ON summary_nodes "
+        "CREATE TRIGGER trove_rollup_node_insert AFTER INSERT ON summary_nodes "
         "BEGIN SELECT 1; END"
     )
     dag.connection.commit()
     try:
-        assert "trigger-shape:lcm_rollup_node_insert" in (
+        assert "trigger-shape:trove_rollup_node_insert" in (
             db_bootstrap.verify_temporal_rollup_schema(dag.connection)
         )
         RollupStore(db_path).close()

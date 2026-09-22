@@ -6,7 +6,7 @@ assistant message still has visible content, and detect sensitive-redaction
 markers. Raw store and DAG history stay lossless -- these only sanitize the
 active context, never stored rows.
 
-Extracted verbatim from ``LCMEngine`` (WS5 seam 2). These depend only on
+Extracted verbatim from ``TROVEEngine`` (WS5 seam 2). These depend only on
 ``escalation._strip_reasoning_blocks`` and each other, so this module never
 imports the engine and introduces no import cycle.
 """
@@ -33,7 +33,7 @@ _INTERNAL_ASSISTANT_PART_TYPES = {
 
 def _contains_sensitive_redaction(value: Any) -> bool:
     if isinstance(value, str):
-        return "[LCM sensitive redaction:" in value
+        return "[TROVE sensitive redaction:" in value
     if isinstance(value, dict):
         return any(
             _contains_sensitive_redaction(item)

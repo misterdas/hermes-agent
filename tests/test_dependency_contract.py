@@ -944,7 +944,7 @@ def test_contract_records_host_ownership_versions_and_update_owner():
     assert contract["boundary"] == "host-owned"
     assert contract["imported_api_validation"] == "observed-coverage-only"
     assert contract["ownership"]["dependency_resolver"] == "Hermes Agent host environment"
-    assert contract["ownership"]["update_owner"] == "Hermes-LCM maintainers"
+    assert contract["ownership"]["update_owner"] == "Hermes-TROVE maintainers"
     assert contract["ownership"]["update_trigger"] == (
         "Review and increment this contract when the imported-API assurance policy, a "
         "scanned runtime import, supported Python or Hermes Agent version, or required "
@@ -952,7 +952,7 @@ def test_contract_records_host_ownership_versions_and_update_owner():
     )
     assert contract["supported_versions"]["python"] == ["3.11", "3.12", "3.13", "3.14"]
     assert contract["supported_versions"]["hermes_agent"] == ">=0.16,<1"
-    assert contract["runtime_scan"]["local_imports"] == ["hermes_lcm", "benchmarking"]
+    assert contract["runtime_scan"]["local_imports"] == ["hermes_trove", "benchmarking"]
     assert set(contract["external_imports"]) == {
         "agent",
         "fastembed",

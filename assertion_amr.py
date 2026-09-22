@@ -89,8 +89,8 @@ def verify_assertion_citations(
         SELECT a.assertion_id, a.source_store_id, a.source_span_start,
                a.source_span_end, a.source_quote, a.source_quote_hash,
                s.source_content_sha256, s.invalidated_at, m.content
-          FROM lcm_assertions AS a
-          JOIN lcm_assertion_sources AS s
+          FROM trove_assertions AS a
+          JOIN trove_assertion_sources AS s
             ON s.source_store_id = a.source_store_id
            AND s.extraction_version = a.extraction_version
            AND s.source_content_sha256 = a.source_content_sha256
@@ -231,8 +231,8 @@ def verify_relation_citations(
         SELECT r.relation_id, r.source_store_id, r.source_span_start,
                r.source_span_end, r.source_quote, r.source_quote_hash,
                s.source_content_sha256, s.invalidated_at, m.content
-          FROM lcm_assertion_relations AS r
-          JOIN lcm_assertion_sources AS s
+          FROM trove_assertion_relations AS r
+          JOIN trove_assertion_sources AS s
             ON s.source_store_id = r.source_store_id
            AND s.extraction_version = r.extraction_version
            AND s.source_content_sha256 = r.source_content_sha256

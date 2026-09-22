@@ -21,7 +21,7 @@ from .reasoning import question_date_as_of_epoch
 
 
 SELECTIVE_SELECTOR_VERSION = "selective-evidence-selector-v1"
-_EXACT_REF_RE = re.compile(r"^lcm:(?P<store>[1-9]\d*):(?P<start>\d+)-(?P<end>\d+)$")
+_EXACT_REF_RE = re.compile(r"^trove:(?P<store>[1-9]\d*):(?P<start>\d+)-(?P<end>\d+)$")
 _SECRET_RE = re.compile(
     r"(?:Bearer\s+[A-Za-z0-9._~-]{8,}|\b(?:sk|pa)-[A-Za-z0-9_-]{8,}|"
     r"(?:api[_-]?key|token|secret|password)\s*[:=]\s*[^\s,;]+)",
@@ -286,7 +286,7 @@ def call_selective_auxiliary_selector(
     if prepared.get("status") != "selector_required" or not prepared.get("prompt"):
         raise ValueError("selective selector is not required")
     from agent.auxiliary_client import call_llm
-    from .model_routing import apply_lcm_model_route
+    from .model_routing import apply_trove_model_route
 
     timeout = min(8.0, max(0.1, float(timeout_seconds)))
     kwargs: dict[str, Any] = {
@@ -296,7 +296,7 @@ def call_selective_auxiliary_selector(
         "max_tokens": 1_500,
         "timeout": timeout,
     }
-    apply_lcm_model_route(kwargs, model)
+    apply_trove_model_route(kwargs, model)
     started = time.perf_counter()
     response = call_llm(**kwargs)
     latency_ms = round((time.perf_counter() - started) * 1_000.0, 3)
@@ -368,7 +368,7 @@ def _render(result: Mapping[str, Any], *, max_chars: int = 3_000) -> str | None:
         "computation": result.get("computation"),
     }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    context = f'<lcm-selective-evidence version="{SELECTIVE_SELECTOR_VERSION}">{encoded}</lcm-selective-evidence>'
+    context = f'<trove-selective-evidence version="{SELECTIVE_SELECTOR_VERSION}">{encoded}</trove-selective-evidence>'
     return context if len(context) <= max_chars else None
 
 
@@ -428,7 +428,7 @@ def compile_selective_evidence(
             return _fallback("selector_handle_invalid", selector_proposal)
         start = int(match.group("start")) + offset
         end = start + len(quote)
-        exact_ref = f"lcm:{match.group('store')}:{start}-{end}"
+        exact_ref = f"trove:{match.group('store')}:{start}-{end}"
         selection = {
             "claim_id": f"claim-{index + 1}",
             "facet": (

@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from hermes_lcm.trajectory_store import (
+from hermes_trove.trajectory_store import (
     CorpusIdentity,
     TrajectorySource,
     TrajectoryState,
@@ -88,7 +88,7 @@ def _build_magnet_store(tmp_path: Path):
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     store = TrajectoryStore(
-        tmp_path / "lcm.db",
+        tmp_path / "trove.db",
         _identity(),
         asset_root=asset_root,
         embedding_provider=MagnetProvider(),
@@ -223,7 +223,7 @@ def test_policies_are_noops_without_semantic_ranks(tmp_path: Path):
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     store = TrajectoryStore(
-        tmp_path / "lcm.db",
+        tmp_path / "trove.db",
         _identity(),
         asset_root=asset_root,
         embedding_provider=None,

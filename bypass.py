@@ -1,7 +1,7 @@
-"""LCM-bypass compaction and host-fallback-compressor handling.
+"""TROVE-bypass compaction and host-fallback-compressor handling.
 
-Extracted verbatim from :mod:`hermes_lcm.engine` as ``BypassMixin`` (WS5 seam).
-The methods manage sessions that opt out of LCM context management: detecting
+Extracted verbatim from :mod:`hermes_trove.engine` as ``BypassMixin`` (WS5 seam).
+The methods manage sessions that opt out of TROVE context management: detecting
 the bypass, mirroring the host's native fallback compressor, and applying the
 deterministic tail-compaction fallback. State stays on the engine (accessed via
 ``self``); mixing this in leaves every call site and ``self._*`` reference
@@ -21,11 +21,11 @@ logger = logging.getLogger(__name__)
 
 
 class BypassMixin:
-    def _bypasses_lcm_context_management(self) -> bool:
-        """Return True when this binding must not write/manage LCM state.
+    def _bypasses_trove_context_management(self) -> bool:
+        """Return True when this binding must not write/manage TROVE state.
 
         Ignored, stateless, and in-process auxiliary sessions are excluded from
-        LCM storage. They still need context-size protection because Hermes has
+        TROVE storage. They still need context-size protection because Hermes has
         exactly one active context engine; returning a pure no-op here would
         disable every compaction layer for the session.
         """
@@ -35,7 +35,7 @@ class BypassMixin:
             or self._thread_context_stateless()
         )
 
-    def _bypass_lcm_reason(self) -> str:
+    def _bypass_trove_reason(self) -> str:
         if self._thread_context_stateless():
             return "auxiliary thread context"
         if self._session_ignored:
@@ -44,10 +44,10 @@ class BypassMixin:
             return "stateless session"
         return "active session"
 
-    def _bypass_lcm_session_id(self) -> str:
+    def _bypass_trove_session_id(self) -> str:
         return self._thread_context_session_id() or self._session_id or "(unknown)"
 
-    def _session_id_matches_lcm_bypass_filters(
+    def _session_id_matches_trove_bypass_filters(
         self,
         session_id: str,
         *,
@@ -60,13 +60,13 @@ class BypassMixin:
             return True
         return matches_session_pattern(match_keys, self._compiled_stateless_session_patterns)
 
-    def _ended_session_directly_bypasses_lcm(self, session_id: str) -> bool:
+    def _ended_session_directly_bypasses_trove(self, session_id: str) -> bool:
         """Classify a session-end callback by the ended id, not the active binding."""
         if not session_id:
             return False
         if session_id == self._thread_context_session_id():
             return True
-        return self._session_id_matches_lcm_bypass_filters(session_id)
+        return self._session_id_matches_trove_bypass_filters(session_id)
 
     def _end_host_fallback_compressor_for_session(
         self,
@@ -87,19 +87,19 @@ class BypassMixin:
                 try:
                     on_session_end(fallback_session_id, messages)
                 except Exception:
-                    logger.debug("LCM host fallback compressor session-end reset failed", exc_info=True)
+                    logger.debug("TROVE host fallback compressor session-end reset failed", exc_info=True)
             on_session_reset = getattr(compressor, "on_session_reset", None)
             if callable(on_session_reset):
                 try:
                     on_session_reset()
                 except Exception:
-                    logger.debug("LCM host fallback compressor reset failed", exc_info=True)
+                    logger.debug("TROVE host fallback compressor reset failed", exc_info=True)
             self._host_fallback_compressor = None
             self._host_fallback_session_id = ""
 
     def _get_host_fallback_compressor(self) -> Any:
-        """Return Hermes' native compressor for LCM-bypassed sessions if available."""
-        session_id = self._bypass_lcm_session_id()
+        """Return Hermes' native compressor for TROVE-bypassed sessions if available."""
+        session_id = self._bypass_trove_session_id()
         if self._host_fallback_compressor is not None:
             if session_id == self._host_fallback_session_id:
                 return self._host_fallback_compressor
@@ -109,13 +109,13 @@ class BypassMixin:
                 try:
                     on_session_end(self._host_fallback_session_id, [])
                 except Exception:
-                    logger.debug("LCM host fallback compressor session-end reset failed", exc_info=True)
+                    logger.debug("TROVE host fallback compressor session-end reset failed", exc_info=True)
             on_session_reset = getattr(previous, "on_session_reset", None)
             if callable(on_session_reset):
                 try:
                     on_session_reset()
                 except Exception:
-                    logger.debug("LCM host fallback compressor reset failed", exc_info=True)
+                    logger.debug("TROVE host fallback compressor reset failed", exc_info=True)
             self._host_fallback_compressor = None
             self._host_fallback_session_id = ""
         try:
@@ -126,7 +126,7 @@ class BypassMixin:
         except Exception as exc:  # pragma: no cover - only hit on non-Hermes hosts
             if not self._host_fallback_import_warning_logged:
                 logger.warning(
-                    "LCM could not load Hermes native ContextCompressor for bypassed session fallback: %s",
+                    "TROVE could not load Hermes native ContextCompressor for bypassed session fallback: %s",
                     exc,
                 )
                 self._host_fallback_import_warning_logged = True
@@ -161,13 +161,13 @@ class BypassMixin:
                 )
             except Exception as exc:
                 logger.warning(
-                    "LCM could not initialize Hermes native ContextCompressor for bypassed session fallback; using deterministic trim: %s",
+                    "TROVE could not initialize Hermes native ContextCompressor for bypassed session fallback; using deterministic trim: %s",
                     exc,
                 )
                 return None
         except Exception as exc:
             logger.warning(
-                "LCM could not initialize Hermes native ContextCompressor for bypassed session fallback; using deterministic trim: %s",
+                "TROVE could not initialize Hermes native ContextCompressor for bypassed session fallback; using deterministic trim: %s",
                 exc,
             )
             return None
@@ -177,7 +177,7 @@ class BypassMixin:
         return compressor
 
     def _sync_host_fallback_compressor(self, compressor: Any) -> None:
-        """Keep the delegated native compressor aligned with LCM runtime metadata."""
+        """Keep the delegated native compressor aligned with TROVE runtime metadata."""
         update_model = getattr(compressor, "update_model", None)
         context_length = self.context_length or self.raw_context_length
         if callable(update_model) and context_length > 0:
@@ -196,9 +196,9 @@ class BypassMixin:
                 except TypeError:
                     pass
                 except Exception:
-                    logger.debug("LCM host fallback compressor model sync failed", exc_info=True)
+                    logger.debug("TROVE host fallback compressor model sync failed", exc_info=True)
             except Exception:
-                logger.debug("LCM host fallback compressor model sync failed", exc_info=True)
+                logger.debug("TROVE host fallback compressor model sync failed", exc_info=True)
         for attr, value in (
             ("threshold_percent", self.context_threshold or self.threshold_percent),
             ("protect_first_n", self.protect_first_n),
@@ -209,7 +209,7 @@ class BypassMixin:
             except Exception:
                 pass
         on_session_start = getattr(compressor, "on_session_start", None)
-        session_id = self._bypass_lcm_session_id()
+        session_id = self._bypass_trove_session_id()
         if callable(on_session_start) and session_id:
             try:
                 on_session_start(
@@ -220,7 +220,7 @@ class BypassMixin:
                     context_length=context_length,
                 )
             except Exception:
-                logger.debug("LCM host fallback compressor session bind failed", exc_info=True)
+                logger.debug("TROVE host fallback compressor session bind failed", exc_info=True)
 
     def _mirror_host_fallback_state(self, compressor: Any) -> None:
         for attr in (
@@ -403,7 +403,7 @@ class BypassMixin:
         marker = {
             "role": "user",
             "content": (
-                "[Context omitted: this session is ignored/stateless for LCM, "
+                "[Context omitted: this session is ignored/stateless for TROVE, "
                 "and Hermes native compression was unavailable. Older messages "
                 "were dropped to keep the request within the model context window.]"
             ),
@@ -411,7 +411,7 @@ class BypassMixin:
         compacted = list(messages[:head_count]) + [marker] + list(messages[-tail_count:])
         return self._trim_bypass_compacted_to_cap(compacted, target_tokens)
 
-    def _compress_lcm_bypassed_session(
+    def _compress_trove_bypassed_session(
         self,
         messages: List[Dict[str, Any]],
         *,
@@ -419,10 +419,10 @@ class BypassMixin:
         focus_topic: Optional[str] = None,
         force: bool = False,
     ) -> List[Dict[str, Any]]:
-        """Delegate ignored/stateless context bounding without writing to LCM."""
-        reason = self._bypass_lcm_reason()
-        session_id = self._bypass_lcm_session_id()
-        self._remember_lcm_bypass_message_prefix(session_id, messages)
+        """Delegate ignored/stateless context bounding without writing to TROVE."""
+        reason = self._bypass_trove_reason()
+        session_id = self._bypass_trove_session_id()
+        self._remember_trove_bypass_message_prefix(session_id, messages)
         observed_tokens = current_tokens if current_tokens and current_tokens > 0 else count_messages_tokens(messages)
         force_overflow = self._should_force_overflow_recovery(
             observed_tokens=observed_tokens,
@@ -430,19 +430,19 @@ class BypassMixin:
         )
         if not force and not force_overflow and self.threshold_tokens > 0 and observed_tokens < self.threshold_tokens:
             logger.debug(
-                "LCM compaction bypass no-op for %s %s below threshold (%s < %s)",
+                "TROVE compaction bypass no-op for %s %s below threshold (%s < %s)",
                 reason,
                 session_id,
                 observed_tokens,
                 self.threshold_tokens,
             )
             self._last_compression_status = "noop"
-            self._last_compression_noop_reason = f"LCM bypassed below threshold: {reason}"
+            self._last_compression_noop_reason = f"TROVE bypassed below threshold: {reason}"
             return self._redact_active_replay_messages(messages)
 
-        logger.debug("LCM delegating compaction for bypassed %s %s", reason, session_id)
+        logger.debug("TROVE delegating compaction for bypassed %s %s", reason, session_id)
         self._last_compression_status = "host_fallback"
-        self._last_compression_noop_reason = f"LCM bypassed: {reason}"
+        self._last_compression_noop_reason = f"TROVE bypassed: {reason}"
         safe_messages = self._redact_active_replay_messages(messages)
         target_tokens = self._bypass_compaction_target_tokens(
             observed_tokens=observed_tokens,
@@ -475,7 +475,7 @@ class BypassMixin:
         except Exception as exc:
             self._mirror_host_fallback_state(compressor)
             logger.warning(
-                "LCM Hermes native ContextCompressor failed for bypassed %s %s; using deterministic trim: %s",
+                "TROVE Hermes native ContextCompressor failed for bypassed %s %s; using deterministic trim: %s",
                 reason,
                 session_id,
                 exc,

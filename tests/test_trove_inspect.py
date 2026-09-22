@@ -1,4 +1,4 @@
-"""Read-only lcm_inspect tool contract tests."""
+"""Read-only trove_inspect tool contract tests."""
 
 import json
 import sys
@@ -7,16 +7,16 @@ from types import ModuleType
 
 import pytest
 
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.dag import SummaryNode
-from hermes_lcm.externalize import get_large_output_storage_dir
-from hermes_lcm import tools as lcm_tools
+from hermes_trove.config import TROVEConfig
+from hermes_trove.dag import SummaryNode
+from hermes_trove.externalize import get_large_output_storage_dir
+from hermes_trove import tools as trove_tools
 
 
-def _import_lcm_engine():
+def _import_trove_engine():
     try:
-        from hermes_lcm.engine import LCMEngine
-        return LCMEngine
+        from hermes_trove.engine import TROVEEngine
+        return TROVEEngine
     except ModuleNotFoundError as exc:
         if exc.name not in {"agent", "agent.context_engine"}:
             raise
@@ -35,21 +35,21 @@ def _import_lcm_engine():
         setattr(context_engine_module, "ContextEngine", ContextEngine)
         sys.modules["agent.context_engine"] = context_engine_module
         setattr(agent_module, "context_engine", context_engine_module)
-        sys.modules.pop("hermes_lcm.engine", None)
-        from hermes_lcm.engine import LCMEngine
-        return LCMEngine
+        sys.modules.pop("hermes_trove.engine", None)
+        from hermes_trove.engine import TROVEEngine
+        return TROVEEngine
 
 
-LCMEngine = _import_lcm_engine()
+TROVEEngine = _import_trove_engine()
 
 
 def _make_engine(tmp_path: Path, **config_overrides):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=config_overrides.pop("fresh_tail_count", 2),
         **config_overrides,
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     engine.on_session_start(
         "sess-current",
         platform="discord",
@@ -91,7 +91,7 @@ def _write_externalized_payload(engine, *, ref="payload-test.json", session_id="
     return ref
 
 
-def test_lcm_inspect_reports_bounded_metadata_without_content(tmp_path):
+def test_trove_inspect_reports_bounded_metadata_without_content(tmp_path):
     engine = _make_engine(tmp_path)
     try:
         rows = _seed_messages(engine)
@@ -121,7 +121,7 @@ def test_lcm_inspect_reports_bounded_metadata_without_content(tmp_path):
         engine._last_compression_noop_reason = "no eligible raw backlog outside fresh tail"
         engine._last_compacted_store_id = max(compacted_store_ids)
 
-        result = json.loads(engine.handle_tool_call("lcm_inspect", {"limit": 2}))
+        result = json.loads(engine.handle_tool_call("trove_inspect", {"limit": 2}))
 
         assert result["read_only"] is True
         assert result["session_id"] == "sess-current"
@@ -155,7 +155,7 @@ def test_lcm_inspect_reports_bounded_metadata_without_content(tmp_path):
         engine.shutdown()
 
 
-def test_lcm_inspect_reports_effective_token_bounded_tail(tmp_path):
+def test_trove_inspect_reports_effective_token_bounded_tail(tmp_path):
     engine = _make_engine(
         tmp_path,
         fresh_tail_count=10,
@@ -164,7 +164,7 @@ def test_lcm_inspect_reports_effective_token_bounded_tail(tmp_path):
     try:
         _seed_messages(engine)
 
-        result = json.loads(engine.handle_tool_call("lcm_inspect", {"limit": 10}))
+        result = json.loads(engine.handle_tool_call("trove_inspect", {"limit": 10}))
 
         assert result["messages"]["fresh_tail_count"] == 10
         assert result["messages"]["fresh_tail_max_tokens"] == 5
@@ -175,14 +175,14 @@ def test_lcm_inspect_reports_effective_token_bounded_tail(tmp_path):
         engine.shutdown()
 
 
-def test_lcm_inspect_includes_sensitive_pattern_status(tmp_path):
+def test_trove_inspect_includes_sensitive_pattern_status(tmp_path):
     engine = _make_engine(
         tmp_path,
         sensitive_patterns_enabled=True,
         sensitive_patterns=["api_key", "typoed_pattern"],
     )
     try:
-        result = json.loads(engine.handle_tool_call("lcm_inspect", {}))
+        result = json.loads(engine.handle_tool_call("trove_inspect", {}))
 
         protection = result["ingest_protection"]
         assert protection["sensitive_patterns_enabled"] is True
@@ -198,7 +198,7 @@ def test_lcm_inspect_includes_sensitive_pattern_status(tmp_path):
         engine.shutdown()
 
 
-def test_lcm_inspect_skips_tool_dispatch_ingest_with_messages(tmp_path):
+def test_trove_inspect_skips_tool_dispatch_ingest_with_messages(tmp_path):
     engine = _make_engine(tmp_path)
     try:
         before = {
@@ -208,7 +208,7 @@ def test_lcm_inspect_skips_tool_dispatch_ingest_with_messages(tmp_path):
 
         result = json.loads(
             engine.handle_tool_call(
-                "lcm_inspect",
+                "trove_inspect",
                 {},
                 messages=[{"role": "user", "content": "current turn must not be ingested"}],
             )
@@ -225,12 +225,12 @@ def test_lcm_inspect_skips_tool_dispatch_ingest_with_messages(tmp_path):
         engine.shutdown()
 
 
-def test_lcm_inspect_honors_zero_fresh_tail_count(tmp_path):
+def test_trove_inspect_honors_zero_fresh_tail_count(tmp_path):
     engine = _make_engine(tmp_path, fresh_tail_count=0)
     try:
         _seed_messages(engine)
 
-        result = json.loads(engine.handle_tool_call("lcm_inspect", {"limit": 2}))
+        result = json.loads(engine.handle_tool_call("trove_inspect", {"limit": 2}))
 
         assert result["messages"]["fresh_tail_count"] == 0
         assert result["messages"]["pre_tail_message_count"] == 5
@@ -240,7 +240,7 @@ def test_lcm_inspect_honors_zero_fresh_tail_count(tmp_path):
         engine.shutdown()
 
 
-def test_lcm_inspect_externalized_ref_scan_reports_truncation(tmp_path, monkeypatch):
+def test_trove_inspect_externalized_ref_scan_reports_truncation(tmp_path, monkeypatch):
     engine = _make_engine(tmp_path)
     try:
         ref = _write_externalized_payload(engine, ref="payload-after-scan-window.json")
@@ -256,9 +256,9 @@ def test_lcm_inspect_externalized_ref_scan_reports_truncation(tmp_path, monkeypa
             source="discord",
             conversation_id="discord:channel:thread",
         )
-        monkeypatch.setattr(lcm_tools, "_LCM_INSPECT_REF_SCAN_MESSAGE_LIMIT", 1)
+        monkeypatch.setattr(trove_tools, "_TROVE_INSPECT_REF_SCAN_MESSAGE_LIMIT", 1)
 
-        result = json.loads(engine.handle_tool_call("lcm_inspect", {}))
+        result = json.loads(engine.handle_tool_call("trove_inspect", {}))
 
         assert result["externalized_refs"]["scanned_messages"] == 1
         assert result["externalized_refs"]["scan_truncated"] is True
@@ -269,7 +269,7 @@ def test_lcm_inspect_externalized_ref_scan_reports_truncation(tmp_path, monkeypa
         engine.shutdown()
 
 
-def test_lcm_inspect_payload_metadata_prefix_stops_before_content(tmp_path):
+def test_trove_inspect_payload_metadata_prefix_stops_before_content(tmp_path):
     path = tmp_path / "payload.json"
     path.write_text(
         json.dumps(
@@ -284,7 +284,7 @@ def test_lcm_inspect_payload_metadata_prefix_stops_before_content(tmp_path):
         encoding="utf-8",
     )
 
-    prefix_text, stopped_at_content, prefix_truncated = lcm_tools._read_externalized_payload_metadata_prefix(path)
+    prefix_text, stopped_at_content, prefix_truncated = trove_tools._read_externalized_payload_metadata_prefix(path)
 
     assert stopped_at_content is True
     assert prefix_truncated is False
@@ -293,7 +293,7 @@ def test_lcm_inspect_payload_metadata_prefix_stops_before_content(tmp_path):
     assert "SECRET_PAYLOAD_BODY" not in prefix_text
 
 
-def test_lcm_inspect_payload_metadata_prefix_accepts_valid_non_ascii_before_content(tmp_path):
+def test_trove_inspect_payload_metadata_prefix_accepts_valid_non_ascii_before_content(tmp_path):
     path = tmp_path / "payload.json"
     path.write_text(
         json.dumps(
@@ -308,7 +308,7 @@ def test_lcm_inspect_payload_metadata_prefix_accepts_valid_non_ascii_before_cont
         encoding="utf-8",
     )
 
-    prefix_text, stopped_at_content, prefix_truncated = lcm_tools._read_externalized_payload_metadata_prefix(path)
+    prefix_text, stopped_at_content, prefix_truncated = trove_tools._read_externalized_payload_metadata_prefix(path)
 
     assert stopped_at_content is True
     assert prefix_truncated is False
@@ -317,8 +317,8 @@ def test_lcm_inspect_payload_metadata_prefix_accepts_valid_non_ascii_before_cont
     assert "SECRET_PAYLOAD_BODY" not in prefix_text
 
 
-def test_lcm_inspect_payload_metadata_parser_uses_top_level_session_owner():
-    fields, content_key_seen = lcm_tools._inspect_top_level_json_string_fields_before_content(
+def test_trove_inspect_payload_metadata_parser_uses_top_level_session_owner():
+    fields, content_key_seen = trove_tools._inspect_top_level_json_string_fields_before_content(
         json.dumps(
             {
                 "metadata": {"session_id": "nested-session"},
@@ -331,14 +331,14 @@ def test_lcm_inspect_payload_metadata_parser_uses_top_level_session_owner():
     assert content_key_seen is True
     assert fields["session_id"] == "top-level-session"
 
-    fields, content_key_seen = lcm_tools._inspect_top_level_json_string_fields_before_content(
+    fields, content_key_seen = trove_tools._inspect_top_level_json_string_fields_before_content(
         '{"session_id":"first","session_id":"second","content":"payload body"}'
     )
 
     assert content_key_seen is True
     assert fields["session_id"] == "second"
 
-    fields, content_key_seen = lcm_tools._inspect_top_level_json_string_fields_before_content(
+    fields, content_key_seen = trove_tools._inspect_top_level_json_string_fields_before_content(
         '{"session_id":"first","session_id":123,"content":"payload body"}'
     )
 
@@ -346,7 +346,7 @@ def test_lcm_inspect_payload_metadata_parser_uses_top_level_session_owner():
     assert "session_id" not in fields
 
 
-def test_lcm_inspect_rejects_cross_session_externalized_refs(tmp_path):
+def test_trove_inspect_rejects_cross_session_externalized_refs(tmp_path):
     engine = _make_engine(tmp_path)
     try:
         ref = _write_externalized_payload(
@@ -361,7 +361,7 @@ def test_lcm_inspect_rejects_cross_session_externalized_refs(tmp_path):
             conversation_id="discord:channel:thread",
         )
 
-        result = json.loads(engine.handle_tool_call("lcm_inspect", {}))
+        result = json.loads(engine.handle_tool_call("trove_inspect", {}))
 
         item = result["externalized_refs"]["items"][0]
         assert item["externalized_ref"] == ref
@@ -375,7 +375,7 @@ def test_lcm_inspect_rejects_cross_session_externalized_refs(tmp_path):
         engine.shutdown()
 
 
-def test_lcm_inspect_rejects_nested_session_spoofed_externalized_refs(tmp_path):
+def test_trove_inspect_rejects_nested_session_spoofed_externalized_refs(tmp_path):
     engine = _make_engine(tmp_path)
     try:
         storage_dir = get_large_output_storage_dir(
@@ -403,7 +403,7 @@ def test_lcm_inspect_rejects_nested_session_spoofed_externalized_refs(tmp_path):
             conversation_id="discord:channel:thread",
         )
 
-        result = json.loads(engine.handle_tool_call("lcm_inspect", {}))
+        result = json.loads(engine.handle_tool_call("trove_inspect", {}))
 
         item = result["externalized_refs"]["items"][0]
         assert item["readable"] is False
@@ -414,7 +414,7 @@ def test_lcm_inspect_rejects_nested_session_spoofed_externalized_refs(tmp_path):
         engine.shutdown()
 
 
-def test_lcm_inspect_rejects_payload_refs_without_session_metadata(tmp_path):
+def test_trove_inspect_rejects_payload_refs_without_session_metadata(tmp_path):
     engine = _make_engine(tmp_path)
     try:
         storage_dir = get_large_output_storage_dir(
@@ -441,7 +441,7 @@ def test_lcm_inspect_rejects_payload_refs_without_session_metadata(tmp_path):
             conversation_id="discord:channel:thread",
         )
 
-        result = json.loads(engine.handle_tool_call("lcm_inspect", {}))
+        result = json.loads(engine.handle_tool_call("trove_inspect", {}))
 
         item = result["externalized_refs"]["items"][0]
         assert item["readable"] is False
@@ -452,7 +452,7 @@ def test_lcm_inspect_rejects_payload_refs_without_session_metadata(tmp_path):
         engine.shutdown()
 
 
-def test_lcm_inspect_rejects_payload_refs_when_session_metadata_is_beyond_prefix(tmp_path):
+def test_trove_inspect_rejects_payload_refs_when_session_metadata_is_beyond_prefix(tmp_path):
     engine = _make_engine(tmp_path)
     try:
         storage_dir = get_large_output_storage_dir(
@@ -481,7 +481,7 @@ def test_lcm_inspect_rejects_payload_refs_when_session_metadata_is_beyond_prefix
             conversation_id="discord:channel:thread",
         )
 
-        result = json.loads(engine.handle_tool_call("lcm_inspect", {}))
+        result = json.loads(engine.handle_tool_call("trove_inspect", {}))
 
         item = result["externalized_refs"]["items"][0]
         assert item["readable"] is False
@@ -492,7 +492,7 @@ def test_lcm_inspect_rejects_payload_refs_when_session_metadata_is_beyond_prefix
         engine.shutdown()
 
 
-def test_lcm_inspect_uses_bounded_prefix_for_payload_readability(tmp_path):
+def test_trove_inspect_uses_bounded_prefix_for_payload_readability(tmp_path):
     engine = _make_engine(tmp_path)
     try:
         storage_dir = get_large_output_storage_dir(
@@ -512,7 +512,7 @@ def test_lcm_inspect_uses_bounded_prefix_for_payload_readability(tmp_path):
             conversation_id="discord:channel:thread",
         )
 
-        result = json.loads(engine.handle_tool_call("lcm_inspect", {}))
+        result = json.loads(engine.handle_tool_call("trove_inspect", {}))
 
         item = result["externalized_refs"]["items"][0]
         assert item["readable"] is True
@@ -534,7 +534,7 @@ def test_lcm_inspect_uses_bounded_prefix_for_payload_readability(tmp_path):
         ('{"kind":"tool_result","session_id":"sess-current","content":1}', "payload-non-string-content.json"),
     ],
 )
-def test_lcm_inspect_rejects_invalid_payload_metadata_prefix(tmp_path, payload_text, ref):
+def test_trove_inspect_rejects_invalid_payload_metadata_prefix(tmp_path, payload_text, ref):
     engine = _make_engine(tmp_path)
     try:
         storage_dir = get_large_output_storage_dir(
@@ -550,7 +550,7 @@ def test_lcm_inspect_rejects_invalid_payload_metadata_prefix(tmp_path, payload_t
             conversation_id="discord:channel:thread",
         )
 
-        result = json.loads(engine.handle_tool_call("lcm_inspect", {}))
+        result = json.loads(engine.handle_tool_call("trove_inspect", {}))
 
         item = result["externalized_refs"]["items"][0]
         assert item["readable"] is False
@@ -561,7 +561,7 @@ def test_lcm_inspect_rejects_invalid_payload_metadata_prefix(tmp_path, payload_t
         engine.shutdown()
 
 
-def test_lcm_inspect_rejects_invalid_utf8_payload_metadata_prefix(tmp_path):
+def test_trove_inspect_rejects_invalid_utf8_payload_metadata_prefix(tmp_path):
     engine = _make_engine(tmp_path)
     try:
         storage_dir = get_large_output_storage_dir(
@@ -578,7 +578,7 @@ def test_lcm_inspect_rejects_invalid_utf8_payload_metadata_prefix(tmp_path):
             conversation_id="discord:channel:thread",
         )
 
-        result = json.loads(engine.handle_tool_call("lcm_inspect", {}))
+        result = json.loads(engine.handle_tool_call("trove_inspect", {}))
 
         item = result["externalized_refs"]["items"][0]
         assert item["readable"] is False
@@ -589,7 +589,7 @@ def test_lcm_inspect_rejects_invalid_utf8_payload_metadata_prefix(tmp_path):
         engine.shutdown()
 
 
-def test_lcm_inspect_caps_payload_validation_to_returned_refs(tmp_path, monkeypatch):
+def test_trove_inspect_caps_payload_validation_to_returned_refs(tmp_path, monkeypatch):
     engine = _make_engine(tmp_path)
     try:
         for index in range(5):
@@ -607,9 +607,9 @@ def test_lcm_inspect_caps_payload_validation_to_returned_refs(tmp_path, monkeypa
             calls.append((ref, session_id))
             return {"readable": True, "payload_session_id": session_id}
 
-        monkeypatch.setattr(lcm_tools, "_inspect_externalized_payload_metadata", fake_metadata)
+        monkeypatch.setattr(trove_tools, "_inspect_externalized_payload_metadata", fake_metadata)
 
-        result = json.loads(engine.handle_tool_call("lcm_inspect", {"limit": 2}))
+        result = json.loads(engine.handle_tool_call("trove_inspect", {"limit": 2}))
 
         assert result["externalized_refs"]["total_known"] == 5
         assert result["externalized_refs"]["returned"] == 2
@@ -619,7 +619,7 @@ def test_lcm_inspect_caps_payload_validation_to_returned_refs(tmp_path, monkeypa
         engine.shutdown()
 
 
-def test_lcm_inspect_finds_externalized_refs_inside_decoded_tool_calls(tmp_path):
+def test_trove_inspect_finds_externalized_refs_inside_decoded_tool_calls(tmp_path):
     engine = _make_engine(tmp_path)
     try:
         ref = _write_externalized_payload(engine, ref="payload-tool-call.json")
@@ -646,7 +646,7 @@ def test_lcm_inspect_finds_externalized_refs_inside_decoded_tool_calls(tmp_path)
         row = engine._store.load_session_page("sess-current", limit=1)[0]
         assert isinstance(row["tool_calls"], list)
 
-        result = json.loads(engine.handle_tool_call("lcm_inspect", {}))
+        result = json.loads(engine.handle_tool_call("trove_inspect", {}))
 
         assert result["externalized_refs"]["total_known"] == 1
         item = result["externalized_refs"]["items"][0]
@@ -658,14 +658,14 @@ def test_lcm_inspect_finds_externalized_refs_inside_decoded_tool_calls(tmp_path)
         engine.shutdown()
 
 
-def test_lcm_inspect_surfaces_matched_session_patterns(tmp_path):
+def test_trove_inspect_surfaces_matched_session_patterns(tmp_path):
     engine = _make_engine(
         tmp_path,
         ignore_session_patterns=["discord:*"],
         stateless_session_patterns=["sess-*"],
     )
     try:
-        result = json.loads(engine.handle_tool_call("lcm_inspect", {}))
+        result = json.loads(engine.handle_tool_call("trove_inspect", {}))
 
         assert result["filters"]["session_keys"] == [
             "sess-current",
@@ -682,7 +682,7 @@ def test_lcm_inspect_surfaces_matched_session_patterns(tmp_path):
         engine.shutdown()
 
 
-def test_lcm_inspect_is_read_only_for_database_connections(tmp_path):
+def test_trove_inspect_is_read_only_for_database_connections(tmp_path):
     engine = _make_engine(tmp_path)
     try:
         _seed_messages(engine)
@@ -692,10 +692,10 @@ def test_lcm_inspect_is_read_only_for_database_connections(tmp_path):
             "lifecycle_changes": engine._lifecycle._conn.total_changes,
             "max_store_id": engine._store._conn.execute("SELECT MAX(store_id) FROM messages").fetchone()[0],
             "node_count": engine._dag._conn.execute("SELECT COUNT(*) FROM summary_nodes").fetchone()[0],
-            "lifecycle_rows": engine._lifecycle._conn.execute("SELECT COUNT(*) FROM lcm_lifecycle_state").fetchone()[0],
+            "lifecycle_rows": engine._lifecycle._conn.execute("SELECT COUNT(*) FROM trove_lifecycle_state").fetchone()[0],
         }
 
-        result = json.loads(engine.handle_tool_call("lcm_inspect", {"limit": 500}))
+        result = json.loads(engine.handle_tool_call("trove_inspect", {"limit": 500}))
 
         after = {
             "store_changes": engine._store._conn.total_changes,
@@ -703,7 +703,7 @@ def test_lcm_inspect_is_read_only_for_database_connections(tmp_path):
             "lifecycle_changes": engine._lifecycle._conn.total_changes,
             "max_store_id": engine._store._conn.execute("SELECT MAX(store_id) FROM messages").fetchone()[0],
             "node_count": engine._dag._conn.execute("SELECT COUNT(*) FROM summary_nodes").fetchone()[0],
-            "lifecycle_rows": engine._lifecycle._conn.execute("SELECT COUNT(*) FROM lcm_lifecycle_state").fetchone()[0],
+            "lifecycle_rows": engine._lifecycle._conn.execute("SELECT COUNT(*) FROM trove_lifecycle_state").fetchone()[0],
         }
         assert result["limit"] == 200
         assert result["limit_clamped_from"] == 500

@@ -1,4 +1,4 @@
-"""Tests for the deterministic LCM stress release-check CLI."""
+"""Tests for the deterministic TROVE stress release-check CLI."""
 
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ import pytest
 
 
 def _load_stress_cli():
-    script_path = Path(__file__).resolve().parents[1] / "scripts" / "lcm_stress_check.py"
-    spec = importlib.util.spec_from_file_location("lcm_stress_check_cli", script_path)
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "trove_stress_check.py"
+    spec = importlib.util.spec_from_file_location("trove_stress_check_cli", script_path)
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -27,7 +27,7 @@ def _load_stress_cli():
 
 def _block_agent_imports(monkeypatch):
     for name in list(sys.modules):
-        if name == "agent" or name.startswith("agent.") or name == "hermes_lcm" or name.startswith("hermes_lcm."):
+        if name == "agent" or name.startswith("agent.") or name == "hermes_trove" or name.startswith("hermes_trove."):
             monkeypatch.delitem(sys.modules, name, raising=False)
 
     real_import = builtins.__import__
@@ -63,7 +63,7 @@ def _assert_path_under(path_value: str, root: Path) -> None:
     assert Path(path_value).resolve().is_relative_to(root.resolve())
 
 
-def test_lcm_grep_result_rows_collects_every_supported_container():
+def test_trove_grep_result_rows_collects_every_supported_container():
     from benchmarking import stress
 
     payload = {
@@ -72,7 +72,7 @@ def test_lcm_grep_result_rows_collects_every_supported_container():
         "data": [{"store_id": 3}],
     }
 
-    assert stress._lcm_grep_result_rows(payload) == [
+    assert stress._trove_grep_result_rows(payload) == [
         {"store_id": 1},
         {"store_id": 2},
         {"store_id": 3},
@@ -235,15 +235,15 @@ def test_stress_run_blanks_provider_keys_and_restores_environment(tmp_path, monk
 
 
 @pytest.mark.filterwarnings("ignore:.*__package__ != __spec__.*:DeprecationWarning")
-def test_stress_runner_reloads_partial_hermes_lcm_submodules(tmp_path, monkeypatch):
+def test_stress_runner_reloads_partial_hermes_trove_submodules(tmp_path, monkeypatch):
     from benchmarking import stress
 
-    partial_engine = types.ModuleType("hermes_lcm.engine")
+    partial_engine = types.ModuleType("hermes_trove.engine")
     partial_engine.__file__ = str(Path(__file__).resolve().parents[1] / "engine.py")
-    monkeypatch.setitem(sys.modules, "hermes_lcm.engine", partial_engine)
+    monkeypatch.setitem(sys.modules, "hermes_trove.engine", partial_engine)
 
     def module_probe(run):
-        import hermes_lcm.engine as engine_mod
+        import hermes_trove.engine as engine_mod
 
         run.record("module_probe", "has_summarizer", hasattr(engine_mod, "summarize_with_escalation"))
 

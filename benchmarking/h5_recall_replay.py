@@ -95,8 +95,8 @@ class H5Context:
             store = self.ctx.stores[domain]
             rows = store._conn.execute(
                 """SELECT s.state_index, s.state_id
-                   FROM lcm_trajectory_states s
-                   JOIN lcm_trajectory_sources src ON src.source_id = s.source_id
+                   FROM trove_trajectory_states s
+                   JOIN trove_trajectory_sources src ON src.source_id = s.source_id
                    WHERE src.trajectory_id = ?""",
                 (trajectory_id,),
             ).fetchall()
@@ -107,7 +107,7 @@ class H5Context:
     def traj_source_id(self, domain: str, trajectory_id: str) -> int:
         store = self.ctx.stores[domain]
         row = store._conn.execute(
-            "SELECT source_id FROM lcm_trajectory_sources WHERE trajectory_id = ?",
+            "SELECT source_id FROM trove_trajectory_sources WHERE trajectory_id = ?",
             (trajectory_id,),
         ).fetchone()
         if row is None:

@@ -3,7 +3,7 @@
 Externalization started as a pre-compaction serializer guard for oversized tool
 outputs. The same durable payload format is also used by the ingest path so
 obvious oversized content can be kept out of SQLite/FTS while still being
-recoverable through the LCM inspection and expansion tools.
+recoverable through the TROVE inspection and expansion tools.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 from typing import Any, BinaryIO, Dict
 
-DEFAULT_LARGE_OUTPUT_DIRNAME = "lcm-large-outputs"
+DEFAULT_LARGE_OUTPUT_DIRNAME = "trove-large-outputs"
 _EXTERNALIZED_REF_RE = re.compile(
     r"\[(?:Externalized|GC'd externalized) (?:tool output|payload):.*?;\s*ref=([^;\]\s]+)\]"
 )
@@ -134,8 +134,8 @@ def _warn_externalization_path_outside_base(path: Path, allowed_base: Path) -> N
         return
     _WARNED_EXTERNALIZATION_PATHS.add(key)
     logger.warning(
-        "LCM externalized-payload path %s is outside the hermes_home base %s; "
-        "set LCM_HERMES_BASE_DIR to enforce strict containment",
+        "TROVE externalized-payload path %s is outside the hermes_home base %s; "
+        "set TROVE_HERMES_BASE_DIR to enforce strict containment",
         path,
         allowed_base,
     )
@@ -145,8 +145,8 @@ def get_large_output_storage_dir(config, hermes_home: str = "", *, create: bool)
     configured = getattr(config, "large_output_externalization_path", "") or ""
     if configured:
         path = Path(configured).expanduser().resolve()
-        # Check containment for configured paths when LCM_HERMES_BASE_DIR is set
-        env_base = os.environ.get("LCM_HERMES_BASE_DIR")
+        # Check containment for configured paths when TROVE_HERMES_BASE_DIR is set
+        env_base = os.environ.get("TROVE_HERMES_BASE_DIR")
         if env_base:
             allowed_base = Path(env_base).expanduser().resolve()
             try:
@@ -157,7 +157,7 @@ def get_large_output_storage_dir(config, hermes_home: str = "", *, create: bool)
             # No explicit base configured: hermes_home is the natural default
             # containment root. A configured path may legitimately point to
             # another volume, so warn (once) rather than break a running
-            # deployment; set LCM_HERMES_BASE_DIR to enforce strictly.
+            # deployment; set TROVE_HERMES_BASE_DIR to enforce strictly.
             allowed_base = Path(hermes_home).expanduser().resolve()
             try:
                 path.relative_to(allowed_base)
@@ -167,8 +167,8 @@ def get_large_output_storage_dir(config, hermes_home: str = "", *, create: bool)
         base = Path(hermes_home).expanduser().resolve() if hermes_home else Path("~/.hermes").expanduser().resolve()
         path = base / DEFAULT_LARGE_OUTPUT_DIRNAME
         # Check containment within allowed base for default/hermes_home-based paths
-        # Only enforced when LCM_HERMES_BASE_DIR is explicitly set
-        env_base = os.environ.get("LCM_HERMES_BASE_DIR")
+        # Only enforced when TROVE_HERMES_BASE_DIR is explicitly set
+        env_base = os.environ.get("TROVE_HERMES_BASE_DIR")
         if env_base:
             allowed_base = Path(env_base).expanduser().resolve()
             try:
@@ -183,7 +183,7 @@ def get_large_output_storage_dir(config, hermes_home: str = "", *, create: bool)
         try:
             path.chmod(0o700)
         except OSError as exc:
-            logger.warning("Could not restrict LCM externalized payload directory permissions for %s: %s", path, exc)
+            logger.warning("Could not restrict TROVE externalized payload directory permissions for %s: %s", path, exc)
     return path
 
 
@@ -191,7 +191,7 @@ def _unlink_partial_payload(path: Path) -> None:
     try:
         path.unlink(missing_ok=True)
     except OSError as exc:
-        logger.warning("Could not remove partial LCM externalized payload %s: %s", path, exc)
+        logger.warning("Could not remove partial TROVE externalized payload %s: %s", path, exc)
 
 
 def _unlink_partial_payload_at(name: str, *, dir_fd: int) -> None:
@@ -200,7 +200,7 @@ def _unlink_partial_payload_at(name: str, *, dir_fd: int) -> None:
     except FileNotFoundError:
         pass
     except (OSError, TypeError, NotImplementedError) as exc:
-        logger.warning("Could not remove partial LCM externalized payload %s: %s", name, exc)
+        logger.warning("Could not remove partial TROVE externalized payload %s: %s", name, exc)
 
 
 def _write_externalized_payload(path: Path, payload: Dict[str, Any]) -> None:
@@ -1962,7 +1962,7 @@ def find_externalized_tool_result_content_for_call(
     """Return durable externalized tool-result content for a matching marker.
 
     This is used only for replay identity recovery when Hermes' temporary
-    persisted-output file has already been cleaned up but LCM previously stored
+    persisted-output file has already been cleaned up but TROVE previously stored
     the recovered full tool output durably. A reused tool-call id alone is not
     sufficient proof; marker-specific metadata captured before redaction must
     match when provided.
@@ -2050,7 +2050,7 @@ def externalize_ingest_payload(
     try:
         storage_dir = resolve_large_output_storage_dir(config, hermes_home=hermes_home)
     except OSError as exc:
-        logger.warning("LCM ingest payload externalization skipped (non-blocking): %s", exc)
+        logger.warning("TROVE ingest payload externalization skipped (non-blocking): %s", exc)
         return None
 
     digest_prefix = _content_digest_prefix(content)
@@ -2073,12 +2073,12 @@ def externalize_ingest_payload(
     try:
         _write_externalized_payload(path, payload)
     except OSError as exc:
-        logger.warning("LCM ingest payload externalization skipped (non-blocking): %s", exc)
+        logger.warning("TROVE ingest payload externalization skipped (non-blocking): %s", exc)
         return None
 
     summary = _externalized_summary(path, payload)
     placeholder = (
-        f"[Externalized LCM ingest payload: kind={_placeholder_metadata(summary.get('kind') or kind)}; "
+        f"[Externalized TROVE ingest payload: kind={_placeholder_metadata(summary.get('kind') or kind)}; "
         f"field={_placeholder_metadata(summary.get('field_path') or '?')}; chars={summary.get('content_chars', 0)}; "
         f"bytes={summary.get('content_bytes', 0)}; ref={summary.get('ref', '')}]"
     )

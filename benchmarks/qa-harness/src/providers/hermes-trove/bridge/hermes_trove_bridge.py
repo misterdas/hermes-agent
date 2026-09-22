@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-"""JSON-line bridge exposing hermes-lcm as a memorybench Provider backend.
+"""JSON-line bridge exposing hermes-trove as a memorybench Provider backend.
 
-The TypeScript ``HermesLcmProvider`` spawns this script in ``serve`` mode and
+The TypeScript ``HermesTroveProvider`` spawns this script in ``serve`` mode and
 speaks newline-delimited JSON over stdin/stdout: one request object per line,
 one response object per line. It implements the four stateful provider methods
 (initialize / ingest / search / clear); ``awaitIndexing`` is a no-op on the TS
 side because ingest is fully synchronous here.
 
-Design contract (faithful to ``benchmarking/longmemeval.py`` in the hermes-lcm
+Design contract (faithful to ``benchmarking/longmemeval.py`` in the hermes-trove
 repo, which this imports rather than reimplements):
 
-* ``ingest`` accumulates ONE harness session at a time into a per-container LCM
+* ``ingest`` accumulates ONE harness session at a time into a per-container TROVE
   store on disk (the harness calls ``provider.ingest([session], ...)`` in a loop),
   preserving session ids/order, building the SAME deterministic per-session
   summary the in-house harness uses, recording summary + conversational-chunk
   embeddings. Embeds are batched per call.
-* ``search`` invokes the PRODUCTION ``tools.lcm_recall`` over that store through a
+* ``search`` invokes the PRODUCTION ``tools.trove_recall`` over that store through a
   ``SimpleNamespace`` engine with a fresh, dataset-disjoint ``current_session_id``
   (so the scope prior never silently lifts an evidence session), then maps each
   hit -> ``{content, metadata}`` and returns the top-k the harness asks for.
@@ -23,15 +23,15 @@ repo, which this imports rather than reimplements):
 Fairness: the bridge only ever sees what the harness hands it (the session
 messages + the query). No dataset-specific logic, no evidence peeking.
 
-The hermes-lcm plugin repo is NEVER modified: it is made importable via the same
+The hermes-trove plugin repo is NEVER modified: it is made importable via the same
 ``sys.path`` + package-spec bootstrap the repo's own harness uses.
 
 Environment:
-    HERMES_LCM_REPO                path to the hermes-lcm checkout (required)
-    HERMES_MB_WORKDIR              base dir for per-container LCM dbs (required)
+    HERMES_TROVE_REPO                path to the hermes-trove checkout (required)
+    HERMES_MB_WORKDIR              base dir for per-container TROVE dbs (required)
     HERMES_MB_PROVIDER            embedding provider: fastembed (default) | voyage
     HERMES_MB_MODEL              embedding model id (default per provider)
-    LCM_LONGMEMEVAL_FASTEMBED_CACHE  fastembed model cache dir
+    TROVE_LONGMEMEVAL_FASTEMBED_CACHE  fastembed model cache dir
     VOYAGE_API_KEY               required when HERMES_MB_PROVIDER=voyage
 """
 
@@ -59,7 +59,7 @@ sys.stdout = sys.stderr
 
 
 def _log(message: str) -> None:
-    print(f"[hermes-lcm-bridge] {message}", file=sys.stderr, flush=True)
+    print(f"[hermes-trove-bridge] {message}", file=sys.stderr, flush=True)
 
 
 def _safe(value: str) -> str:
@@ -68,12 +68,12 @@ def _safe(value: str) -> str:
 
 class Bridge:
     def __init__(self) -> None:
-        repo = os.environ.get("HERMES_LCM_REPO")
+        repo = os.environ.get("HERMES_TROVE_REPO")
         if not repo:
-            raise RuntimeError("HERMES_LCM_REPO is not set")
+            raise RuntimeError("HERMES_TROVE_REPO is not set")
         self.repo_root = Path(repo).resolve()
         if not self.repo_root.is_dir():
-            raise RuntimeError(f"HERMES_LCM_REPO does not exist: {self.repo_root}")
+            raise RuntimeError(f"HERMES_TROVE_REPO does not exist: {self.repo_root}")
 
         workdir = os.environ.get("HERMES_MB_WORKDIR")
         if not workdir:
@@ -94,19 +94,19 @@ class Bridge:
         if str(self.repo_root) not in sys.path:
             sys.path.insert(0, str(self.repo_root))
         from benchmarking.longmemeval import (  # noqa: E402
-            _ensure_hermes_lcm_package,
+            _ensure_hermes_trove_package,
             deterministic_session_summary,
             resolve_harness_provider,
         )
 
-        _ensure_hermes_lcm_package()
+        _ensure_hermes_trove_package()
         self._deterministic_session_summary = deterministic_session_summary
         self._resolve_harness_provider = resolve_harness_provider
 
         # Lazily populated on initialize().
         self.embedder: Any = None
         self.dim: int = 0
-        # Per-container monotonic session order (recency prior in lcm_recall).
+        # Per-container monotonic session order (recency prior in trove_recall).
         self._order: dict[str, int] = {}
 
     # -- lifecycle ------------------------------------------------------------
@@ -154,9 +154,9 @@ class Bridge:
         return {}
 
     def _config(self, db_path: Path):
-        from hermes_lcm.config import LCMConfig
+        from hermes_trove.config import TROVEConfig
 
-        return LCMConfig(
+        return TROVEConfig(
             database_path=str(db_path),
             embeddings_enabled=True,
             embedding_provider=self.provider_name,
@@ -181,10 +181,10 @@ class Bridge:
             for m in session.get("messages", [])
         ]
 
-        from hermes_lcm.chunking import iter_message_chunks
-        from hermes_lcm.dag import SummaryDAG, SummaryNode
-        from hermes_lcm.store import MessageStore
-        from hermes_lcm.vector_store import EmbeddingIdentity, VectorStore
+        from hermes_trove.chunking import iter_message_chunks
+        from hermes_trove.dag import SummaryDAG, SummaryNode
+        from hermes_trove.store import MessageStore
+        from hermes_trove.vector_store import EmbeddingIdentity, VectorStore
 
         db_path = self._db_path(container_tag)
         config = self._config(db_path)
@@ -266,10 +266,10 @@ class Bridge:
         query = str(req.get("query", ""))
         limit = int(req.get("limit", 25))
 
-        import hermes_lcm.tools as lcm_tools
-        from hermes_lcm.dag import SummaryDAG
-        from hermes_lcm.store import MessageStore
-        from hermes_lcm.vector_store import VectorStore
+        import hermes_trove.tools as trove_tools
+        from hermes_trove.dag import SummaryDAG
+        from hermes_trove.store import MessageStore
+        from hermes_trove.vector_store import VectorStore
 
         db_path = self._db_path(container_tag)
         config = self._config(db_path)
@@ -280,7 +280,7 @@ class Bridge:
             # A probe current-session id disjoint from any dataset session id
             # (the harness uses "<qid>-session-<i>"); the scope prior may boost
             # the current conversation, so it must NOT be an evidence session.
-            fresh_session = f"__hermes_lcm_recall_probe__{container_tag}"
+            fresh_session = f"__hermes_trove_recall_probe__{container_tag}"
             engine = SimpleNamespace(
                 _config=config,
                 _store=store,
@@ -289,10 +289,10 @@ class Bridge:
                 current_session_id=fresh_session,
             )
             cache_key = (self.provider_name.strip().lower(), str(self.embedder.model_id).strip())
-            engine._lcm_embedding_provider_cache = (cache_key, self.embedder)
+            engine._trove_embedding_provider_cache = (cache_key, self.embedder)
 
             payload = json.loads(
-                lcm_tools.lcm_recall({"query": query, "limit": limit}, engine=engine)
+                trove_tools.trove_recall({"query": query, "limit": limit}, engine=engine)
             )
         finally:
             vector_store.close()
@@ -300,7 +300,7 @@ class Bridge:
             store.close()
 
         if "error" in payload:
-            raise RuntimeError(f"lcm_recall error: {payload['error']}")
+            raise RuntimeError(f"trove_recall error: {payload['error']}")
 
         dates = self._load_dates(container_tag)
         results: list[dict[str, Any]] = []

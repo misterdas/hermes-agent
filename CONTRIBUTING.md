@@ -1,4 +1,4 @@
-# Contributing to hermes-lcm
+# Contributing to hermes-trove
 
 Thanks for contributing.
 
@@ -73,9 +73,9 @@ PR bodies should use this template. It is mirrored in `.github/PULL_REQUEST_TEMP
 ## Validation
 - [ ] Focused validation: `<command>` -> `<result>`
 - [ ] Default validation:
-  - [ ] `pytest tests/test_lcm_core.py tests/test_lcm_engine.py tests/test_packaging_install.py -q`
+  - [ ] `pytest tests/test_trove_core.py tests/test_trove_engine.py tests/test_packaging_install.py -q`
   - [ ] `pytest -q`
-  - [ ] `scripts/validate_release.sh --full --keep-going --output /tmp/hermes-lcm-release-validation-<topic>`
+  - [ ] `scripts/validate_release.sh --full --keep-going --output /tmp/hermes-trove-release-validation-<topic>`
   - [ ] `git diff --check origin/main...HEAD && git diff --check && git diff --cached --check`
 - [ ] Workflow validation, if workflows changed: `actionlint`
 
@@ -101,8 +101,8 @@ Do **not** claim behavior that is only partially implemented. If a filter, featu
 Default validation for code changes:
 
 ```bash
-scripts/validate_release.sh --full --keep-going --output /tmp/hermes-lcm-release-validation-<topic>
-pytest tests/test_lcm_core.py tests/test_lcm_engine.py tests/test_packaging_install.py -q
+scripts/validate_release.sh --full --keep-going --output /tmp/hermes-trove-release-validation-<topic>
+pytest tests/test_trove_core.py tests/test_trove_engine.py tests/test_packaging_install.py -q
 pytest -q
 git diff --check origin/main...HEAD
 git diff --check
@@ -118,16 +118,16 @@ actionlint
 If your PR only touches a narrow surface area, include the focused command too. Example:
 
 ```bash
-pytest tests/test_lcm_command.py -q
+pytest tests/test_trove_command.py -q
 ```
 
 Packaging or install-flow changes should also verify the standalone user-plugin path:
 
 ```bash
-export HERMES_HOME=/tmp/hermes-lcm-smoke
+export HERMES_HOME=/tmp/hermes-trove-smoke
 mkdir -p "$HERMES_HOME/plugins"
-git clone https://github.com/misterdas/hermes-lcm "$HERMES_HOME/plugins/hermes-lcm"
-# then enable `hermes-lcm` in plugins.enabled and set context.engine: lcm
+git clone https://github.com/misterdas/hermes-trove "$HERMES_HOME/plugins/hermes-trove"
+# then enable `hermes-trove` in plugins.enabled and set context.engine: trove
 hermes plugins
 ```
 

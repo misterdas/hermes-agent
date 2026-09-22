@@ -9,12 +9,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from hermes_lcm.assertion_store import (
+from hermes_trove.assertion_store import (
     AssertionCandidate,
     AssertionRelationCandidate,
     AssertionStore,
 )
-from hermes_lcm.reasoning import (
+from hermes_trove.reasoning import (
     compile_evidence_plan,
     execute_plan,
     ground_evidence,
@@ -23,8 +23,8 @@ from hermes_lcm.reasoning import (
     validate_selector_alignment,
     verify_final_answer,
 )
-from hermes_lcm.store import MessageStore
-from hermes_lcm.tools import lcm_compute
+from hermes_trove.store import MessageStore
+from hermes_trove.tools import trove_compute
 
 
 def _epoch(day: str) -> float:
@@ -33,7 +33,7 @@ def _epoch(day: str) -> float:
 
 @pytest.fixture
 def evidence_db(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     messages = MessageStore(db_path)
     assertions = AssertionStore(db_path)
     try:
@@ -304,7 +304,7 @@ def test_sum_preserves_large_integers_and_bounds_decimal_overflow(evidence_db):
     second_id = _message(messages, second, "2024-02-02")
     engine = SimpleNamespace(_store=messages, _assertions=assertions)
 
-    exact = json.loads(lcm_compute(
+    exact = json.loads(trove_compute(
         {
             "question": "What is the combined total?",
             "evidence_complete": True,
@@ -321,7 +321,7 @@ def test_sum_preserves_large_integers_and_bounds_decimal_overflow(evidence_db):
 
     comparison = "The comparison total is 9007199254740992 items."
     comparison_id = _message(messages, comparison, "2024-02-03")
-    exact_difference = json.loads(lcm_compute(
+    exact_difference = json.loads(trove_compute(
         {
             "question": "How much more is the first total than the comparison total?",
             "evidence_complete": True,
@@ -388,7 +388,7 @@ def test_planner_populates_requested_result_unit_for_time_arithmetic(evidence_db
     assert minutes.result_unit == "minute"
     assert how_many_hours.result_unit == "hour"
 
-    in_hours = json.loads(lcm_compute(
+    in_hours = json.loads(trove_compute(
         {
             "question": "What is the combined total in hours?",
             "evidence_complete": True,
@@ -396,7 +396,7 @@ def test_planner_populates_requested_result_unit_for_time_arithmetic(evidence_db
         },
         engine=engine,
     ))
-    in_minutes = json.loads(lcm_compute(
+    in_minutes = json.loads(trove_compute(
         {
             "question": "What is the combined total in minutes?",
             "evidence_complete": True,
@@ -404,7 +404,7 @@ def test_planner_populates_requested_result_unit_for_time_arithmetic(evidence_db
         },
         engine=engine,
     ))
-    difference = json.loads(lcm_compute(
+    difference = json.loads(trove_compute(
         {
             "question": "How much more time did jogging take than yoga, in minutes?",
             "evidence_complete": True,
@@ -435,7 +435,7 @@ def test_explicit_time_result_unit_wins_over_incidental_currency(evidence_db):
     plan = compile_evidence_plan(question).plan
     assert plan.result_unit == "hour"
 
-    result = json.loads(lcm_compute(
+    result = json.loads(trove_compute(
         {
             "question": question,
             "evidence_complete": True,
@@ -545,7 +545,7 @@ def test_temporal_filter_revalidates_exact_cardinality(evidence_db):
         "operands": raw,
     }
 
-    filtered = json.loads(lcm_compute(args, engine=engine))
+    filtered = json.loads(trove_compute(args, engine=engine))
     assert filtered["status"] == "fallback"
     assert filtered["reason"] == "date_filter requires exactly 3 operands"
 
@@ -593,7 +593,7 @@ def test_order_projects_requested_ordinal_and_preserves_full_order(evidence_db):
         ("Which city did I visit second?", "Beta"),
         ("What restaurant did I visit first?", "Alpha"),
     ):
-        result = json.loads(lcm_compute(
+        result = json.loads(trove_compute(
             {
                 "question": question,
                 "question_date": "2023-03-20",
@@ -606,7 +606,7 @@ def test_order_projects_requested_ordinal_and_preserves_full_order(evidence_db):
         assert result["trace"]["result"] == expected
         assert result["trace"]["result_value"] == [expected]
 
-    full = json.loads(lcm_compute(
+    full = json.loads(trove_compute(
         {
             "question": "Put the events in chronological order.",
             "question_date": "2023-03-20",
@@ -748,7 +748,7 @@ def test_verifier_preserves_result_entities_units_and_exact_citations(evidence_d
         f"Alice spent $13 more than Bob. {cited}",
         f"Alice spent 12 pages more than Bob. {cited}",
         f"Charlie spent $12 more than Bob. {cited}",
-        "Alice spent $12 more than Bob. [lcm:999:0-1]",
+        "Alice spent $12 more than Bob. [trove:999:0-1]",
     ):
         assert verify_final_answer(candidate, trace).status == "fallback"
 
@@ -763,7 +763,7 @@ def test_question_date_boundary_is_utc_end_of_day():
 
 def test_public_compute_rejects_terminal_question_date_without_overflow(evidence_db):
     messages, assertions = evidence_db
-    result = json.loads(lcm_compute(
+    result = json.loads(trove_compute(
         {
             "question": "What happened 1 day ago?",
             "question_date": "9999-12-31",
@@ -790,7 +790,7 @@ def test_public_compute_tool_reports_stages_and_discards_mutated_candidate(evide
         ],
     }
     engine = SimpleNamespace(_store=messages, _assertions=assertions)
-    computed = json.loads(lcm_compute(args, engine=engine))
+    computed = json.loads(trove_compute(args, engine=engine))
     assert computed["status"] == "computed"
     assert computed["answer"].startswith("$12 ")
     assert set(computed["provenance"]["stages"]) == {
@@ -805,7 +805,7 @@ def test_public_compute_tool_reports_stages_and_discards_mutated_candidate(evide
     )
 
     cited = " ".join(f"[{value}]" for value in computed["trace"]["citations"])
-    mutated = json.loads(lcm_compute(
+    mutated = json.loads(trove_compute(
         {**args, "candidate_answer": f"Charlie spent $12 more than Bob. {cited}"},
         engine=engine,
     ))
@@ -819,7 +819,7 @@ def test_public_compute_tool_requires_closed_cardinality(evidence_db):
     messages, assertions = evidence_db
     content = "I visited Paris."
     store_id = _message(messages, content, "2024-02-01")
-    response = json.loads(lcm_compute(
+    response = json.loads(trove_compute(
         {
             "question": "How many cities did I visit?",
             "operands": [
@@ -848,8 +848,8 @@ def test_count_distinct_rejects_question_subject_as_canonical_key(evidence_db):
     }
     engine = SimpleNamespace(_store=messages, _assertions=assertions)
 
-    rejected = json.loads(lcm_compute(args, engine=engine))
-    accepted = json.loads(lcm_compute(
+    rejected = json.loads(trove_compute(args, engine=engine))
+    accepted = json.loads(trove_compute(
         {
             **args,
             "operands": [
@@ -878,7 +878,7 @@ def test_named_sum_binds_each_value_to_its_requested_summand(evidence_db):
     question = "What was the total of the taxi and hotel?"
     engine = SimpleNamespace(_store=messages, _assertions=assertions)
 
-    wrong_values = json.loads(lcm_compute(
+    wrong_values = json.loads(trove_compute(
         {
             "question": question,
             "evidence_complete": True,
@@ -889,7 +889,7 @@ def test_named_sum_binds_each_value_to_its_requested_summand(evidence_db):
         },
         engine=engine,
     ))
-    wrong_labels = json.loads(lcm_compute(
+    wrong_labels = json.loads(trove_compute(
         {
             "question": question,
             "evidence_complete": True,
@@ -900,7 +900,7 @@ def test_named_sum_binds_each_value_to_its_requested_summand(evidence_db):
         },
         engine=engine,
     ))
-    correct = json.loads(lcm_compute(
+    correct = json.loads(trove_compute(
         {
             "question": question,
             "evidence_complete": True,

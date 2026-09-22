@@ -14,15 +14,15 @@ from pathlib import Path
 
 import pytest
 
-from hermes_lcm import tools as lcm_tools
-from hermes_lcm.command import handle_lcm_command
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.engine import LCMEngine
-import hermes_lcm.engine as lcm_engine_module
-import hermes_lcm.store as lcm_store_module
-from hermes_lcm.extraction import sanitize_pre_compaction_tool_arguments
-import hermes_lcm.externalize as externalize_module
-from hermes_lcm.externalize import (
+from hermes_trove import tools as trove_tools
+from hermes_trove.command import handle_trove_command
+from hermes_trove.config import TROVEConfig
+from hermes_trove.engine import TROVEEngine
+import hermes_trove.engine as trove_engine_module
+import hermes_trove.store as trove_store_module
+from hermes_trove.extraction import sanitize_pre_compaction_tool_arguments
+import hermes_trove.externalize as externalize_module
+from hermes_trove.externalize import (
     build_transcript_gc_placeholder,
     externalize_ingest_payload,
     extract_externalized_ref,
@@ -30,27 +30,27 @@ from hermes_lcm.externalize import (
     read_externalized_payload_search_prefix,
     reassign_externalized_payloads,
 )
-from hermes_lcm.ingest_protection import (
+from hermes_trove.ingest_protection import (
     extract_all_externalized_payload_refs,
     extract_ingest_externalized_refs,
     redact_sensitive_text,
     scan_externalized_payload_integrity,
 )
-from hermes_lcm.tokens import count_messages_tokens
+from hermes_trove.tokens import count_messages_tokens
 
 
-DATA_PAYLOAD = base64.b64encode(("LCM payload boundary repro ".encode("ascii")) * 900).decode("ascii")
+DATA_PAYLOAD = base64.b64encode(("TROVE payload boundary repro ".encode("ascii")) * 900).decode("ascii")
 DATA_URI = "data:image/png;base64," + DATA_PAYLOAD
 GENERIC_BASE64 = DATA_PAYLOAD * 2
 GENERIC_BASE64URL = base64.urlsafe_b64encode(bytes(range(256)) * 40).decode("ascii")
 
 
-def _engine(tmp_path: Path) -> LCMEngine:
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+def _engine(tmp_path: Path) -> TROVEEngine:
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         large_output_externalization_path=str(tmp_path / "externalized"),
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     engine.on_session_start(
         "payload-session",
         platform="telegram",
@@ -60,16 +60,16 @@ def _engine(tmp_path: Path) -> LCMEngine:
     return engine
 
 
-def _sensitive_engine(tmp_path: Path, **overrides) -> LCMEngine:
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+def _sensitive_engine(tmp_path: Path, **overrides) -> TROVEEngine:
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         large_output_externalization_path=str(tmp_path / "externalized"),
     )
     setattr(config, "sensitive_patterns_enabled", True)
     setattr(config, "sensitive_patterns", ["api_key", "bearer_token", "password_assignment", "private_key"])
     for key, value in overrides.items():
         setattr(config, key, value)
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     engine.on_session_start(
         "payload-session",
         platform="telegram",
@@ -79,7 +79,7 @@ def _sensitive_engine(tmp_path: Path, **overrides) -> LCMEngine:
     return engine
 
 
-def _single_message_row(engine: LCMEngine, *, role: str | None = None):
+def _single_message_row(engine: TROVEEngine, *, role: str | None = None):
     where = "WHERE session_id = ?"
     args = [engine.current_session_id]
     if role:
@@ -103,8 +103,8 @@ def _extract_refs(text: str) -> list[str]:
     return refs
 
 
-def _expand_ref(engine: LCMEngine, ref: str) -> dict:
-    return json.loads(lcm_tools.lcm_expand({"externalized_ref": ref, "max_tokens": 100_000}, engine=engine))
+def _expand_ref(engine: TROVEEngine, ref: str) -> dict:
+    return json.loads(trove_tools.trove_expand({"externalized_ref": ref, "max_tokens": 100_000}, engine=engine))
 
 
 def _externalized_files(tmp_path: Path) -> list[Path]:
@@ -117,7 +117,7 @@ def test_engine_ingest_does_not_reprotect_messages_in_store(tmp_path, monkeypatc
     def fail_if_store_protects_again(*_args, **_kwargs):
         raise AssertionError("engine ingest already protected this batch")
 
-    monkeypatch.setattr(lcm_store_module, "protect_messages_for_ingest", fail_if_store_protects_again)
+    monkeypatch.setattr(trove_store_module, "protect_messages_for_ingest", fail_if_store_protects_again)
 
     engine._ingest_messages([{"role": "user", "content": "hello"}])
 
@@ -133,7 +133,7 @@ def test_store_append_batch_still_protects_direct_callers(tmp_path, monkeypatch)
         calls.append(len(messages))
         return [dict(message, content="protected by store") for message in messages]
 
-    monkeypatch.setattr(lcm_store_module, "protect_messages_for_ingest", mark_protected)
+    monkeypatch.setattr(trove_store_module, "protect_messages_for_ingest", mark_protected)
 
     ids = engine._store.append_batch("direct-session", [{"role": "user", "content": "raw"}], [1])
 
@@ -166,7 +166,7 @@ def test_sensitive_redaction_continues_after_existing_placeholder(tmp_path):
 
     assert first_secret not in redacted
     assert second_secret not in redacted
-    assert redacted.count("[LCM sensitive redaction:") == 2
+    assert redacted.count("[TROVE sensitive redaction:") == 2
 
 
 def test_sensitive_patterns_redact_user_assistant_tool_and_tool_calls_before_sqlite_write(tmp_path):
@@ -202,7 +202,7 @@ def test_sensitive_patterns_redact_user_assistant_tool_and_tool_calls_before_sql
     for raw in (user_secret, assistant_secret, "tool-secret-value", tool_call_secret):
         assert raw not in stored_text
         assert engine._store.search(raw, session_id=engine.current_session_id) == []
-    assert stored_text.count("[LCM sensitive redaction:") >= 4
+    assert stored_text.count("[TROVE sensitive redaction:") >= 4
     assert "please use api_key=" in stored_text
 
 
@@ -222,7 +222,7 @@ def test_sensitive_patterns_redact_before_large_payload_externalization(tmp_path
     ref = _extract_ref(stored_content)
     expanded = _expand_ref(engine, ref)
     assert secret not in expanded["content"]
-    assert "[LCM sensitive redaction:" in expanded["content"]
+    assert "[TROVE sensitive redaction:" in expanded["content"]
 
 
 def test_sensitive_patterns_redact_before_summary_serialization(tmp_path, monkeypatch):
@@ -235,7 +235,7 @@ def test_sensitive_patterns_redact_before_summary_serialization(tmp_path, monkey
         assert secret not in kwargs["text"]
         return "summary without raw credential", 1
 
-    monkeypatch.setattr(lcm_engine_module, "summarize_with_escalation", fake_summarize)
+    monkeypatch.setattr(trove_engine_module, "summarize_with_escalation", fake_summarize)
 
     engine.compress(
         [
@@ -246,7 +246,7 @@ def test_sensitive_patterns_redact_before_summary_serialization(tmp_path, monkey
     )
 
     assert captured["text"]
-    assert "[LCM sensitive redaction:" in captured["text"]
+    assert "[TROVE sensitive redaction:" in captured["text"]
     node = engine._dag.get_session_nodes(engine.current_session_id)[0]
     assert secret not in node.summary
 
@@ -254,11 +254,11 @@ def test_sensitive_patterns_redact_before_summary_serialization(tmp_path, monkey
 def test_sensitive_patterns_visible_in_status_and_doctor(tmp_path):
     engine = _sensitive_engine(tmp_path)
 
-    status = json.loads(lcm_tools.lcm_status({}, engine=engine))
+    status = json.loads(trove_tools.trove_status({}, engine=engine))
     assert status["ingest_protection"]["sensitive_patterns_enabled"] is True
     assert "api_key" in status["ingest_protection"]["sensitive_patterns"]
 
-    doctor = json.loads(lcm_tools.lcm_doctor({}, engine=engine))
+    doctor = json.loads(trove_tools.trove_doctor({}, engine=engine))
     protection = next(check for check in doctor["checks"] if check["check"] == "sensitive_pattern_handling")
     assert protection["status"] == "pass"
     assert protection["detail"]["enabled"] is True
@@ -285,21 +285,21 @@ def test_sensitive_patterns_redact_bypassed_active_replay_without_storage(tmp_pa
         },
     ]
 
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / "no-session.db"),
         large_output_externalization_path=str(tmp_path / "no-session-externalized"),
         sensitive_patterns_enabled=True,
     )
-    no_session_engine = LCMEngine(config=config, hermes_home=str(tmp_path / "no-session-home"))
+    no_session_engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "no-session-home"))
     no_session_active = no_session_engine._ingest_messages(deepcopy(messages))
 
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / "ignored.db"),
         large_output_externalization_path=str(tmp_path / "ignored-externalized"),
         sensitive_patterns_enabled=True,
         ignore_session_patterns=["cron:*"],
     )
-    ignored_engine = LCMEngine(config=config, hermes_home=str(tmp_path / "ignored-home"))
+    ignored_engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "ignored-home"))
     ignored_engine.on_session_start(
         "nightly",
         platform="cron",
@@ -308,13 +308,13 @@ def test_sensitive_patterns_redact_bypassed_active_replay_without_storage(tmp_pa
     )
     ignored_active = ignored_engine.compress(deepcopy(messages), current_tokens=0)
 
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / "stateless.db"),
         large_output_externalization_path=str(tmp_path / "stateless-externalized"),
         sensitive_patterns_enabled=True,
         stateless_session_patterns=["debug:*"],
     )
-    stateless_engine = LCMEngine(config=config, hermes_home=str(tmp_path / "stateless-home"))
+    stateless_engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "stateless-home"))
     stateless_engine.on_session_start(
         "scratch",
         platform="debug",
@@ -327,7 +327,7 @@ def test_sensitive_patterns_redact_bypassed_active_replay_without_storage(tmp_pa
         active_text = json.dumps(active, sort_keys=True)
         assert secret not in active_text
         assert tool_secret not in active_text
-        assert active_text.count("[LCM sensitive redaction:") == 2
+        assert active_text.count("[TROVE sensitive redaction:") == 2
         assert "content" not in active[1]
 
     assert ignored_engine._store.get_session_messages(ignored_engine.current_session_id) == []
@@ -390,7 +390,7 @@ def test_sensitive_patterns_cover_client_secret_duplicate_json_and_quoted_passwo
         assert raw not in stored_text
         assert engine._store.search(raw, session_id=engine.current_session_id) == []
     assert "client_secret=" in stored_text
-    assert 'password="[LCM sensitive redaction:' in stored_text
+    assert 'password="[TROVE sensitive redaction:' in stored_text
     assert "sha256=" not in stored_text.split('password="', 1)[1].split('"', 1)[0]
 
 
@@ -413,7 +413,7 @@ def test_extract_externalized_ref_recovers_tool_and_non_tool_placeholders():
 def test_extract_all_externalized_payload_refs_recovers_real_placeholders_only():
     text = "\n".join(
         [
-            "[Externalized LCM ingest payload: kind=ingest_payload; field=content; chars=1; bytes=1; ref=ingest.json]",
+            "[Externalized TROVE ingest payload: kind=ingest_payload; field=content; chars=1; bytes=1; ref=ingest.json]",
             "[Externalized tool output: tool_call_id=call_1; chars=1200; bytes=1200; ref=tool.json]",
             "[GC'd externalized tool output: tool_call_id=call_1; chars=1200; ref=tool-gc.json]",
             "[Externalized payload: kind=raw_payload; role=assistant; chars=1200; bytes=1200; ref=raw.json]",
@@ -422,8 +422,8 @@ def test_extract_all_externalized_payload_refs_recovers_real_placeholders_only()
             "[Externalized payload example: ref=example.json]",
             "[Externalized payload: kind=raw_payload; role=assistant; chars=1; ref=nested/not-basename.json]",
             "[Externalized payload: kind=raw_payload; role=assistant; chars=1; ref=nested\\not-basename.json]",
-            "[Externalized LCM ingest payload: kind=ingest_payload; field=content; chars=1; bytes=1; ref=../escape.json]",
-            "[Externalized LCM ingest payload: kind=ingest_payload; field=content; chars=1; bytes=1; ref=..\\escape.json]",
+            "[Externalized TROVE ingest payload: kind=ingest_payload; field=content; chars=1; bytes=1; ref=../escape.json]",
+            "[Externalized TROVE ingest payload: kind=ingest_payload; field=content; chars=1; bytes=1; ref=..\\escape.json]",
             "[Externalized tool output: tool_call_id=call_1; chars=1200; bytes=1200; ref=tool.json]",
         ]
     )
@@ -742,7 +742,7 @@ def test_ingest_externalizes_plain_data_uri_user_content_before_sqlite_write(tmp
     assert expanded["content"] == DATA_URI
     assert expanded["kind"] == "ingest_payload"
 
-    raw_message = json.loads(lcm_tools.lcm_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
+    raw_message = json.loads(trove_tools.trove_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
     assert raw_message["externalized_ref"] == ref
     assert raw_message["externalized"]["kind"] == "ingest_payload"
     assert raw_message["externalized"]["field_path"] == "content"
@@ -841,7 +841,7 @@ def test_ingest_externalizes_generic_long_base64url_string(tmp_path):
     ref = _extract_ref(content)
     expanded = _expand_ref(engine, ref)
     assert expanded["content"] == GENERIC_BASE64URL
-    raw_message = json.loads(lcm_tools.lcm_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
+    raw_message = json.loads(trove_tools.trove_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
     assert raw_message["externalized_ref"] == ref
     assert GENERIC_BASE64URL[:120] not in json.dumps(raw_message)
 
@@ -870,10 +870,10 @@ def test_ingest_externalizes_base64url_tool_call_arguments(tmp_path):
     ref = _extract_ref(tool_calls)
     parsed_tool_calls = json.loads(tool_calls)
     parsed_args = json.loads(parsed_tool_calls[0]["function"]["arguments"])
-    assert parsed_args["blob"].startswith("[Externalized LCM ingest payload:")
+    assert parsed_args["blob"].startswith("[Externalized TROVE ingest payload:")
     expanded = _expand_ref(engine, ref)
     assert expanded["content"] == GENERIC_BASE64URL
-    raw_message = json.loads(lcm_tools.lcm_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
+    raw_message = json.loads(trove_tools.trove_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
     assert raw_message["externalized_refs"] == [ref]
     assert GENERIC_BASE64URL[:120] not in json.dumps(raw_message)
 
@@ -907,7 +907,7 @@ def test_ingest_externalizes_data_uri_and_generic_base64_in_same_text(tmp_path):
     assert len(refs) == 2
     expanded_payloads = [_expand_ref(engine, ref)["content"] for ref in refs]
     assert expanded_payloads == [DATA_URI, GENERIC_BASE64]
-    raw_message = json.loads(lcm_tools.lcm_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
+    raw_message = json.loads(trove_tools.trove_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
     assert raw_message["externalized_refs"] == refs
 
 
@@ -970,13 +970,13 @@ def test_tool_result_ingest_preserves_active_context_while_protecting_storage(tm
 
 
 def test_preflight_storage_protection_does_not_force_noop_compaction(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         large_output_externalization_path=str(tmp_path / "externalized"),
         context_threshold=0.0001,
         fresh_tail_count=64,
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     engine.on_session_start(
         "preflight-storage-protection-session",
         platform="cli",
@@ -1011,13 +1011,13 @@ def test_ingest_protection_is_idempotent_for_existing_placeholder(tmp_path):
 
 
 def test_engine_ingest_does_not_double_externalize_existing_externalized_payload_placeholder(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         large_output_externalization_enabled=True,
         large_output_externalization_threshold_chars=50,
         large_output_externalization_path=str(tmp_path / "externalized"),
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     engine.on_session_start(
         "double-protection-session",
         platform="telegram",
@@ -1251,7 +1251,7 @@ def test_restart_replay_does_not_skip_changed_duplicate_key_tool_argument_payloa
 
 
 def test_ingest_preserves_inline_payload_when_externalization_fails(tmp_path, monkeypatch):
-    from hermes_lcm import ingest_protection
+    from hermes_trove import ingest_protection
 
     engine = _engine(tmp_path)
     monkeypatch.setattr(ingest_protection, "externalize_ingest_payload", lambda *args, **kwargs: None)
@@ -1331,8 +1331,8 @@ def test_ingest_externalizes_tool_calls_function_arguments(tmp_path):
     assert expanded["content"] == DATA_URI
     parsed_tool_calls = json.loads(tool_calls)
     parsed_args = json.loads(parsed_tool_calls[0]["function"]["arguments"])
-    assert parsed_args["image"].startswith("[Externalized LCM ingest payload:")
-    raw_message = json.loads(lcm_tools.lcm_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
+    assert parsed_args["image"].startswith("[Externalized TROVE ingest payload:")
+    raw_message = json.loads(trove_tools.trove_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
     assert raw_message["externalized_refs"] == [ref]
     assert raw_message["externalized_payloads"][0]["field_path"] == "tool_calls[0].function.arguments"
     assert "tool_calls" not in raw_message
@@ -1399,11 +1399,11 @@ def test_ingest_externalizes_tool_call_argument_payload_keys(tmp_path):
     parsed_tool_calls = json.loads(tool_calls)
     parsed_args = json.loads(parsed_tool_calls[0]["function"]["arguments"])
     protected_key = next(iter(parsed_args))
-    assert protected_key.startswith("[Externalized LCM ingest payload:")
+    assert protected_key.startswith("[Externalized TROVE ingest payload:")
     assert parsed_args[protected_key] == "plain-value"
     expanded = _expand_ref(engine, ref)
     assert expanded["content"] == DATA_URI
-    raw_message = json.loads(lcm_tools.lcm_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
+    raw_message = json.loads(trove_tools.trove_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
     assert raw_message["externalized_refs"] == [ref]
     assert DATA_PAYLOAD[:80] not in json.dumps(raw_message)
 
@@ -1427,7 +1427,7 @@ def test_ingest_externalizes_structured_content_payload_keys(tmp_path):
     ref = _extract_ref(content)
     expanded = _expand_ref(engine, ref)
     assert expanded["content"] == DATA_URI
-    raw_message = json.loads(lcm_tools.lcm_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
+    raw_message = json.loads(trove_tools.trove_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
     assert raw_message["externalized_refs"] == [ref]
     assert DATA_PAYLOAD[:80] not in json.dumps(raw_message)
 
@@ -1567,7 +1567,7 @@ def test_ingest_externalizes_duplicate_key_json_argument_escaped_data_uri(tmp_pa
     expanded = _expand_ref(engine, refs[0])
     assert expanded["content"] == escaped_data_uri
     assert expanded["field_path"] == "tool_calls[0].function.arguments"
-    raw_message = json.loads(lcm_tools.lcm_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
+    raw_message = json.loads(trove_tools.trove_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
     assert raw_message["externalized_refs"] == refs
     assert medium_payload[:120] not in json.dumps(raw_message)
 
@@ -1678,7 +1678,7 @@ def test_ingest_ref_parser_ignores_ref_text_in_tool_argument_key(tmp_path):
     assert refs[0] != "bogus"
     expanded = _expand_ref(engine, refs[0])
     assert expanded["content"] == DATA_URI
-    raw_message = json.loads(lcm_tools.lcm_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
+    raw_message = json.loads(trove_tools.trove_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
     assert raw_message["externalized_refs"] == refs
     assert raw_message["externalized_payloads"][0]["field_path"] == "tool_calls[0].function.arguments"
     assert engine._store.count_session_load_messages(engine.current_session_id) == 2
@@ -1766,7 +1766,7 @@ def test_import_lossless_claw_externalizes_legacy_data_uri_content(tmp_path):
     first = importer.import_lossless_claw(
         source_db=source_db,
         target_db=target_db,
-        namespace="openclaw-lcm",
+        namespace="openclaw-trove",
         agent="repro",
         import_id="payload-import",
         apply=True,
@@ -1774,7 +1774,7 @@ def test_import_lossless_claw_externalizes_legacy_data_uri_content(tmp_path):
     second = importer.import_lossless_claw(
         source_db=source_db,
         target_db=target_db,
-        namespace="openclaw-lcm",
+        namespace="openclaw-trove",
         agent="repro",
         import_id="payload-import",
         apply=True,
@@ -1789,11 +1789,11 @@ def test_import_lossless_claw_externalizes_legacy_data_uri_content(tmp_path):
         conn.close()
     assert "data:image" not in content
     ref = _extract_ref(content)
-    engine = LCMEngine(
-        config=LCMConfig(database_path=str(target_db)),
+    engine = TROVEEngine(
+        config=TROVEConfig(database_path=str(target_db)),
         hermes_home=str(tmp_path),
     )
-    engine.on_session_start("openclaw-lcm:agent:repro:legacy-session", platform="import", context_length=200_000)
+    engine.on_session_start("openclaw-trove:agent:repro:legacy-session", platform="import", context_length=200_000)
     expanded = _expand_ref(engine, ref)
     assert expanded["content"] == DATA_URI
 
@@ -1804,12 +1804,12 @@ def test_import_lossless_claw_respects_externalization_path_env(tmp_path, monkey
     target_db = tmp_path / "target.db"
     custom_externalized = tmp_path / "custom-externalized"
     _create_lossless_source(source_db)
-    monkeypatch.setenv("LCM_LARGE_OUTPUT_EXTERNALIZATION_PATH", str(custom_externalized))
+    monkeypatch.setenv("TROVE_LARGE_OUTPUT_EXTERNALIZATION_PATH", str(custom_externalized))
 
     result = importer.import_lossless_claw(
         source_db=source_db,
         target_db=target_db,
-        namespace="openclaw-lcm",
+        namespace="openclaw-trove",
         agent="repro",
         import_id="payload-import-custom-path",
         apply=True,
@@ -1823,11 +1823,11 @@ def test_import_lossless_claw_respects_externalization_path_env(tmp_path, monkey
         conn.close()
     ref = _extract_ref(content)
     assert (custom_externalized / ref).exists()
-    engine = LCMEngine(
-        config=LCMConfig(database_path=str(target_db), large_output_externalization_path=str(custom_externalized)),
+    engine = TROVEEngine(
+        config=TROVEConfig(database_path=str(target_db), large_output_externalization_path=str(custom_externalized)),
         hermes_home=str(tmp_path),
     )
-    engine.on_session_start("openclaw-lcm:agent:repro:legacy-session", platform="import", context_length=200_000)
+    engine.on_session_start("openclaw-trove:agent:repro:legacy-session", platform="import", context_length=200_000)
     expanded = _expand_ref(engine, ref)
     assert expanded["content"] == DATA_URI
 
@@ -1855,7 +1855,7 @@ def test_store_id_expand_never_returns_raw_historical_tool_calls(tmp_path):
     engine._store._conn.commit()
     store_id = engine._store._conn.execute("SELECT max(store_id) FROM messages").fetchone()[0]
 
-    raw_message_text = lcm_tools.lcm_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine)
+    raw_message_text = trove_tools.trove_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine)
     raw_message = json.loads(raw_message_text)
 
     assert "tool_calls" not in raw_message
@@ -1863,7 +1863,7 @@ def test_store_id_expand_never_returns_raw_historical_tool_calls(tmp_path):
     assert DATA_PAYLOAD[:120] not in raw_message_text
 
 
-def test_lcm_doctor_reports_largest_and_suspicious_payload_rows(tmp_path):
+def test_trove_doctor_reports_largest_and_suspicious_payload_rows(tmp_path):
     engine = _engine(tmp_path)
     engine._store._conn.execute(
         """INSERT INTO messages
@@ -1884,7 +1884,7 @@ def test_lcm_doctor_reports_largest_and_suspicious_payload_rows(tmp_path):
     )
     engine._store._conn.commit()
 
-    result = handle_lcm_command("doctor", engine)
+    result = handle_trove_command("doctor", engine)
 
     assert "largest_content_rows:" in result
     assert "largest_tool_calls_rows:" in result
@@ -1893,7 +1893,7 @@ def test_lcm_doctor_reports_largest_and_suspicious_payload_rows(tmp_path):
     assert "suspicious_base64_like_rows:" in result
 
 
-def test_lcm_doctor_ignores_literal_data_uri_like_scaffold(tmp_path):
+def test_trove_doctor_ignores_literal_data_uri_like_scaffold(tmp_path):
     engine = _engine(tmp_path)
     engine._store._conn.execute(
         """INSERT INTO messages
@@ -1914,7 +1914,7 @@ def test_lcm_doctor_ignores_literal_data_uri_like_scaffold(tmp_path):
     )
     engine._store._conn.commit()
 
-    json_result = json.loads(lcm_tools.lcm_doctor({}, engine=engine))
+    json_result = json.loads(trove_tools.trove_doctor({}, engine=engine))
 
     payload_check = next(check for check in json_result["checks"] if check["check"] == "payload_storage")
     assert payload_check["status"] == "pass"
@@ -1922,7 +1922,7 @@ def test_lcm_doctor_ignores_literal_data_uri_like_scaffold(tmp_path):
     assert payload_check["detail"]["suspicious_data_uri_tool_calls_rows"] == []
 
 
-def test_lcm_doctor_ignores_code_data_uri_prefix_without_payload(tmp_path):
+def test_trove_doctor_ignores_code_data_uri_prefix_without_payload(tmp_path):
     engine = _engine(tmp_path)
     engine._store._conn.execute(
         """INSERT INTO messages
@@ -1943,14 +1943,14 @@ def test_lcm_doctor_ignores_code_data_uri_prefix_without_payload(tmp_path):
     )
     engine._store._conn.commit()
 
-    json_result = json.loads(lcm_tools.lcm_doctor({}, engine=engine))
+    json_result = json.loads(trove_tools.trove_doctor({}, engine=engine))
 
     payload_check = next(check for check in json_result["checks"] if check["check"] == "payload_storage")
     assert payload_check["status"] == "pass"
     assert payload_check["detail"]["suspicious_data_uri_content_rows"] == []
 
 
-def test_lcm_doctor_reports_embedded_generic_base64_without_raw_preview(tmp_path):
+def test_trove_doctor_reports_embedded_generic_base64_without_raw_preview(tmp_path):
     engine = _engine(tmp_path)
     engine._store._conn.execute(
         """INSERT INTO messages
@@ -1971,7 +1971,7 @@ def test_lcm_doctor_reports_embedded_generic_base64_without_raw_preview(tmp_path
     )
     engine._store._conn.commit()
 
-    json_result_text = lcm_tools.lcm_doctor({}, engine=engine)
+    json_result_text = trove_tools.trove_doctor({}, engine=engine)
     json_result = json.loads(json_result_text)
 
     assert GENERIC_BASE64[:120] not in json_result_text
@@ -1982,12 +1982,12 @@ def test_lcm_doctor_reports_embedded_generic_base64_without_raw_preview(tmp_path
     assert rows[0]["suspicious_category"] == "base64_like"
 
 
-def test_lcm_doctor_reports_externalized_payload_stats(tmp_path):
+def test_trove_doctor_reports_externalized_payload_stats(tmp_path):
     engine = _engine(tmp_path)
     engine._ingest_messages([{"role": "user", "content": DATA_URI}])
 
-    text_result = handle_lcm_command("doctor", engine)
-    json_result = json.loads(lcm_tools.lcm_doctor({}, engine=engine))
+    text_result = handle_trove_command("doctor", engine)
+    json_result = json.loads(trove_tools.trove_doctor({}, engine=engine))
 
     assert "externalized_payload_count: 1" in text_result
     assert "externalized_payload_bytes:" in text_result
@@ -2009,7 +2009,7 @@ def test_externalized_payload_integrity_scan_reports_missing_and_unreferenced_re
 
     content = "\n".join(
         [
-            "[Externalized LCM ingest payload: kind=ingest_payload; field=content; chars=1; bytes=1; ref=ingest-present.json]",
+            "[Externalized TROVE ingest payload: kind=ingest_payload; field=content; chars=1; bytes=1; ref=ingest-present.json]",
             "[Externalized payload: kind=raw_payload; role=assistant; chars=1; bytes=1; ref=missing-raw.json]",
             "[Externalized payload: kind=raw_payload; role=assistant; chars=1; ref=nested/not-counted.json]",
             "docs mention ref=doc-only.json but not in a real placeholder",
@@ -2081,7 +2081,7 @@ def test_externalized_payload_integrity_scan_detects_embedded_content_placeholde
             engine.current_session_id,
             "telegram",
             "user",
-            "see image [Externalized LCM ingest payload: kind=media_payload; field=content; chars=1; bytes=1; ref=missing-embedded.json] please inspect",
+            "see image [Externalized TROVE ingest payload: kind=media_payload; field=content; chars=1; bytes=1; ref=missing-embedded.json] please inspect",
             None,
             None,
             None,
@@ -2112,7 +2112,7 @@ def test_externalized_payload_integrity_scan_ignores_escaped_placeholder_example
     engine = _engine(tmp_path)
     (tmp_path / "externalized").mkdir()
     escaped_output = (
-        'pytest output: \\\\"[Externalized LCM ingest payload: kind=ingest_payload; '
+        'pytest output: \\\\"[Externalized TROVE ingest payload: kind=ingest_payload; '
         'field=content; chars=1; bytes=1; '
         'ref=example-log-ref.json]\\\\"'
     )
@@ -2146,7 +2146,7 @@ def test_externalized_payload_integrity_scan_detects_nested_tool_call_argument_j
     engine = _engine(tmp_path)
     (tmp_path / "externalized").mkdir()
     placeholder = (
-        "[Externalized LCM ingest payload: kind=media_payload; field=tool_calls; "
+        "[Externalized TROVE ingest payload: kind=media_payload; field=tool_calls; "
         "chars=1; bytes=1; ref=missing-tool-call-media.json]"
     )
     tool_calls = json.dumps(
@@ -2200,7 +2200,7 @@ def test_externalized_payload_integrity_scan_detects_embedded_tool_call_metadata
     storage_dir.mkdir()
     (storage_dir / "present-tool-call-metadata-media.json").write_text(json.dumps({"content": "payload"}))
     placeholder = (
-        "[Externalized LCM ingest payload: kind=media_payload; field=tool_calls; "
+        "[Externalized TROVE ingest payload: kind=media_payload; field=tool_calls; "
         "chars=1; bytes=1; ref=present-tool-call-metadata-media.json]"
     )
     tool_calls = json.dumps(
@@ -2247,7 +2247,7 @@ def test_externalized_payload_integrity_scan_counts_duplicate_provider_custom_fi
     storage_dir.mkdir()
     (storage_dir / "present-provider-custom.json").write_text(json.dumps({"content": "payload"}))
     placeholder = (
-        "[Externalized LCM ingest payload: kind=media_payload; field=tool_calls; "
+        "[Externalized TROVE ingest payload: kind=media_payload; field=tool_calls; "
         "chars=1; bytes=1; ref=present-provider-custom.json]"
     )
     tool_calls = (
@@ -2286,7 +2286,7 @@ def test_externalized_payload_integrity_scan_reports_missing_ref_in_malformed_to
     engine = _engine(tmp_path)
     (tmp_path / "externalized").mkdir()
     placeholder = (
-        "[Externalized LCM ingest payload: kind=media_payload; field=tool_calls; "
+        "[Externalized TROVE ingest payload: kind=media_payload; field=tool_calls; "
         "chars=1; bytes=1; ref=missing-malformed-tool-calls.json]"
     )
     tool_calls = '[{"function":{"arguments":"{}"},"metadata":"' + placeholder + '"'
@@ -2331,7 +2331,7 @@ def test_externalized_payload_integrity_scan_detects_embedded_tool_call_argument
     storage_dir.mkdir()
     (storage_dir / "present-tool-call-media.json").write_text(json.dumps({"content": "payload"}))
     placeholder = (
-        "[Externalized LCM ingest payload: kind=media_payload; field=tool_calls; "
+        "[Externalized TROVE ingest payload: kind=media_payload; field=tool_calls; "
         "chars=1; bytes=1; ref=present-tool-call-media.json]"
     )
     duplicate_key_arguments = (
@@ -2382,7 +2382,7 @@ def test_externalized_payload_integrity_scan_detects_free_form_tool_call_argumen
     storage_dir.mkdir()
     (storage_dir / "present-free-form-tool-call-media.json").write_text(json.dumps({"content": "payload"}))
     placeholder = (
-        "[Externalized LCM ingest payload: kind=media_payload; field=tool_calls; "
+        "[Externalized TROVE ingest payload: kind=media_payload; field=tool_calls; "
         "chars=1; bytes=1; ref=present-free-form-tool-call-media.json]"
     )
     tool_calls = json.dumps(
@@ -2428,7 +2428,7 @@ def test_externalized_payload_integrity_scan_detects_json_tool_call_argument_pla
     storage_dir.mkdir()
     (storage_dir / "present-caption-tool-call-media.json").write_text(json.dumps({"content": "payload"}))
     placeholder = (
-        "[Externalized LCM ingest payload: kind=media_payload; field=tool_calls; "
+        "[Externalized TROVE ingest payload: kind=media_payload; field=tool_calls; "
         "chars=1; bytes=1; ref=present-caption-tool-call-media.json]"
     )
     arguments = json.dumps({"image": f'caption says "front" {placeholder}'})
@@ -2475,7 +2475,7 @@ def test_externalized_payload_integrity_scan_detects_json_tool_call_argument_pla
     storage_dir.mkdir()
     (storage_dir / "present-unmatched-caption-tool-call-media.json").write_text(json.dumps({"content": "payload"}))
     placeholder = (
-        "[Externalized LCM ingest payload: kind=media_payload; field=tool_calls; "
+        "[Externalized TROVE ingest payload: kind=media_payload; field=tool_calls; "
         "chars=1; bytes=1; ref=present-unmatched-caption-tool-call-media.json]"
     )
     arguments = json.dumps({"image": f'caption says "front {placeholder}'})
@@ -2522,7 +2522,7 @@ def test_externalized_payload_integrity_scan_detects_parsed_object_tool_call_arg
     storage_dir.mkdir()
     (storage_dir / "present-object-tool-call-media.json").write_text(json.dumps({"content": "payload"}))
     placeholder = (
-        "[Externalized LCM ingest payload: kind=media_payload; field=tool_calls; "
+        "[Externalized TROVE ingest payload: kind=media_payload; field=tool_calls; "
         "chars=1; bytes=1; ref=present-object-tool-call-media.json]"
     )
     tool_calls = json.dumps(
@@ -2566,7 +2566,7 @@ def test_externalized_payload_integrity_scan_ignores_escaped_placeholder_example
     engine = _engine(tmp_path)
     (tmp_path / "externalized").mkdir()
     placeholder = (
-        "[Externalized LCM ingest payload: kind=media_payload; field=tool_calls; "
+        "[Externalized TROVE ingest payload: kind=media_payload; field=tool_calls; "
         "chars=1; bytes=1; ref=example-missing.json]"
     )
     arguments = json.dumps({"log": f'pytest output: "prefix before placeholder {placeholder}"'})
@@ -2610,7 +2610,7 @@ def test_externalized_payload_integrity_scan_ignores_single_quoted_placeholder_e
     engine = _engine(tmp_path)
     (tmp_path / "externalized").mkdir()
     placeholder = (
-        "[Externalized LCM ingest payload: kind=media_payload; field=tool_calls; "
+        "[Externalized TROVE ingest payload: kind=media_payload; field=tool_calls; "
         "chars=1; bytes=1; ref=example-single-quote.json]"
     )
     arguments = json.dumps({"log": f"pytest output: 'prefix before placeholder {placeholder}'"})
@@ -2656,7 +2656,7 @@ def test_externalized_payload_integrity_scan_counts_real_refs_inside_tool_call_l
     storage_dir.mkdir()
     (storage_dir / "20260625-real-tool-call-media.json").write_text(json.dumps({"content": "payload"}))
     placeholder = (
-        "[Externalized LCM ingest payload: kind=media_payload; field=tool_calls; "
+        "[Externalized TROVE ingest payload: kind=media_payload; field=tool_calls; "
         "chars=1; bytes=1; ref=20260625-real-tool-call-media.json]"
     )
     arguments = json.dumps({"log": f'pytest output: "prefix before placeholder {placeholder}"'})
@@ -2702,7 +2702,7 @@ def test_externalized_payload_integrity_scan_detects_embedded_tool_content_place
     (tmp_path / "externalized").mkdir()
     content = (
         'log returned \\\"preview\\\" plus '
-        "[Externalized LCM ingest payload: kind=media_payload; field=content; "
+        "[Externalized TROVE ingest payload: kind=media_payload; field=content; "
         "chars=1; bytes=1; ref=missing-tool-content-media.json]"
     )
     engine._store._conn.execute(
@@ -2746,7 +2746,7 @@ def test_externalized_payload_integrity_scan_detects_escaped_json_tool_content_p
     storage_dir.mkdir()
     (storage_dir / "present-tool-content-media.json").write_text(json.dumps({"content": "payload"}))
     placeholder = (
-        "[Externalized LCM ingest payload: kind=media_payload; field=content; "
+        "[Externalized TROVE ingest payload: kind=media_payload; field=content; "
         "chars=1; bytes=1; ref=present-tool-content-media.json]"
     )
     content = '{\\"output\\":\\"' + placeholder + '\\",\\"output\\":\\"fallback\\"}'
@@ -2781,7 +2781,7 @@ def test_externalized_payload_integrity_scan_ignores_escaped_placeholder_example
     engine = _engine(tmp_path)
     (tmp_path / "externalized").mkdir()
     placeholder = (
-        "[Externalized LCM ingest payload: kind=media_payload; field=content; "
+        "[Externalized TROVE ingest payload: kind=media_payload; field=content; "
         "chars=1; bytes=1; ref=example-tool-content.json]"
     )
     content = '{\\"log\\":\\"pytest output: \\\\\\\"prefix before placeholder ' + placeholder + '\\\\\\\"\\"}'
@@ -2811,7 +2811,7 @@ def test_externalized_payload_integrity_scan_ignores_escaped_placeholder_example
     assert detail["missing_externalized_payload_refs"] == []
 
 
-def test_lcm_doctor_warns_on_missing_externalized_payload_refs_when_inline_payloads_are_clean(tmp_path):
+def test_trove_doctor_warns_on_missing_externalized_payload_refs_when_inline_payloads_are_clean(tmp_path):
     engine = _engine(tmp_path)
     (tmp_path / "externalized").mkdir()
     engine._store._conn.execute(
@@ -2833,7 +2833,7 @@ def test_lcm_doctor_warns_on_missing_externalized_payload_refs_when_inline_paylo
     )
     engine._store._conn.commit()
 
-    json_result = json.loads(lcm_tools.lcm_doctor({}, engine=engine))
+    json_result = json.loads(trove_tools.trove_doctor({}, engine=engine))
 
     payload_check = next(check for check in json_result["checks"] if check["check"] == "payload_storage")
     assert payload_check["status"] == "warn"
@@ -2882,24 +2882,24 @@ def test_repetitive_assistant_output_is_quarantined_before_sqlite_and_fts(tmp_pa
     assert expanded["kind"] == "quarantined_assistant_output"
     assert expanded["content"] == broken
 
-    raw_message = json.loads(lcm_tools.lcm_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
+    raw_message = json.loads(trove_tools.trove_expand({"store_id": store_id, "max_tokens": 100_000}, engine=engine))
     assert raw_message["externalized_ref"] == ref
     assert raw_message["externalized"]["kind"] == "quarantined_assistant_output"
 
-    doctor = handle_lcm_command("doctor", engine)
+    doctor = handle_trove_command("doctor", engine)
     assert "quarantined_assistant_rows:" in doctor
     assert "suspicious_repetitive_assistant_rows: []" in doctor
 
 
 def test_quarantined_assistant_output_does_not_enter_summaries_or_active_context(tmp_path, monkeypatch):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=1,
         leaf_chunk_tokens=100,
         context_threshold=0.10,
         large_output_externalization_path=str(tmp_path / "externalized"),
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     engine.on_session_start(
         "quarantine-summary-session",
         platform="telegram",
@@ -2919,7 +2919,7 @@ def test_quarantined_assistant_output_does_not_enter_summaries_or_active_context
         assert BROKEN_ASSISTANT_MARKER not in text
         return text, 1
 
-    monkeypatch.setattr(lcm_engine_module, "summarize_with_escalation", summarize_without_marker)
+    monkeypatch.setattr(trove_engine_module, "summarize_with_escalation", summarize_without_marker)
 
     active_context = engine.compress(messages)
 
@@ -2931,14 +2931,14 @@ def test_quarantined_assistant_output_does_not_enter_summaries_or_active_context
 
 
 def test_quarantined_assistant_output_does_not_enter_summaries_or_active_context_after_preflight(tmp_path, monkeypatch):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=1,
         leaf_chunk_tokens=100,
         context_threshold=0.10,
         large_output_externalization_path=str(tmp_path / "externalized"),
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     engine.on_session_start(
         "quarantine-preflight-session",
         platform="telegram",
@@ -2959,7 +2959,7 @@ def test_quarantined_assistant_output_does_not_enter_summaries_or_active_context
         assert BROKEN_ASSISTANT_MARKER not in text
         return text, 1
 
-    monkeypatch.setattr(lcm_engine_module, "summarize_with_escalation", summarize_without_marker)
+    monkeypatch.setattr(trove_engine_module, "summarize_with_escalation", summarize_without_marker)
 
     active_context = engine.compress(messages)
 
@@ -2971,8 +2971,8 @@ def test_quarantined_assistant_output_does_not_enter_summaries_or_active_context
 
 
 def test_preflight_quarantined_assistant_rebind_keeps_durable_placeholder(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
@@ -2983,7 +2983,7 @@ def test_preflight_quarantined_assistant_rebind_keeps_durable_placeholder(tmp_pa
         {"role": "assistant", "content": _broken_assistant_output()},
     ]
 
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     first.on_session_start(
         "quarantine-preflight-rebind-session",
         platform="telegram",
@@ -2994,17 +2994,17 @@ def test_preflight_quarantined_assistant_rebind_keeps_durable_placeholder(tmp_pa
 
     preflight_rows = first._store.get_session_messages(first.current_session_id)
     assert len(preflight_rows) == 2
-    assert "Externalized LCM ingest payload" in str(preflight_rows[1].get("content", ""))
-    assert "LCM active replay placeholder" not in str(preflight_rows[1].get("content", ""))
+    assert "Externalized TROVE ingest payload" in str(preflight_rows[1].get("content", ""))
+    assert "TROVE active replay placeholder" not in str(preflight_rows[1].get("content", ""))
 
     active_context = first.compress(messages)
     assert len(active_context) == 2
     assert all(BROKEN_ASSISTANT_MARKER not in str(message.get("content", "")) for message in active_context)
-    assert "Externalized LCM ingest payload" in str(active_context[1].get("content", ""))
-    assert "LCM active replay placeholder" not in str(active_context[1].get("content", ""))
+    assert "Externalized TROVE ingest payload" in str(active_context[1].get("content", ""))
+    assert "TROVE active replay placeholder" not in str(active_context[1].get("content", ""))
     first.shutdown()
 
-    second = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    second = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     second.on_session_start(
         "quarantine-preflight-rebind-session",
         platform="telegram",
@@ -3016,13 +3016,13 @@ def test_preflight_quarantined_assistant_rebind_keeps_durable_placeholder(tmp_pa
     rebound_rows = second._store.get_session_messages(second.current_session_id)
     assert len(rebound_rows) == 2
     assert [row["role"] for row in rebound_rows] == ["user", "assistant"]
-    assert "Externalized LCM ingest payload" in str(rebound_rows[1].get("content", ""))
-    assert all("LCM active replay placeholder" not in str(row.get("content", "")) for row in rebound_rows)
+    assert "Externalized TROVE ingest payload" in str(rebound_rows[1].get("content", ""))
+    assert all("TROVE active replay placeholder" not in str(row.get("content", "")) for row in rebound_rows)
 
 
 def test_dynamic_quarantined_assistant_pressure_continues_after_first_leaf_pass(tmp_path, monkeypatch):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=1,
         leaf_chunk_tokens=100,
         dynamic_leaf_chunk_enabled=True,
@@ -3030,7 +3030,7 @@ def test_dynamic_quarantined_assistant_pressure_continues_after_first_leaf_pass(
         context_threshold=0.10,
         large_output_externalization_path=str(tmp_path / "externalized"),
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     engine.on_session_start(
         "dynamic-quarantine-pressure-session",
         platform="telegram",
@@ -3051,7 +3051,7 @@ def test_dynamic_quarantined_assistant_pressure_continues_after_first_leaf_pass(
         summarized_texts.append(text)
         return "summary", 1
 
-    monkeypatch.setattr(lcm_engine_module, "summarize_with_escalation", summarize_without_marker)
+    monkeypatch.setattr(trove_engine_module, "summarize_with_escalation", summarize_without_marker)
 
     active_context = engine.compress(messages, current_tokens=count_messages_tokens(messages))
 
@@ -3063,14 +3063,14 @@ def test_dynamic_quarantined_assistant_pressure_continues_after_first_leaf_pass(
 
 
 def test_quarantined_assistant_tool_call_content_does_not_enter_summarization(tmp_path, monkeypatch):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=1,
         leaf_chunk_tokens=100,
         context_threshold=0.10,
         large_output_externalization_path=str(tmp_path / "externalized"),
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     engine.on_session_start(
         "quarantine-tool-call-summary-session",
         platform="telegram",
@@ -3095,7 +3095,7 @@ def test_quarantined_assistant_tool_call_content_does_not_enter_summarization(tm
         assert "assistant output quarantined" in text
         return text, 1
 
-    monkeypatch.setattr(lcm_engine_module, "summarize_with_escalation", summarize_without_marker)
+    monkeypatch.setattr(trove_engine_module, "summarize_with_escalation", summarize_without_marker)
 
     active_context = engine.compress(messages)
 
@@ -3106,14 +3106,14 @@ def test_quarantined_assistant_tool_call_content_does_not_enter_summarization(tm
 
 
 def test_quarantined_assistant_tool_call_content_is_removed_from_noop_active_replay(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
         large_output_externalization_path=str(tmp_path / "externalized"),
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     engine.on_session_start(
         "quarantine-tool-call-noop-session",
         platform="telegram",
@@ -3140,8 +3140,8 @@ def test_quarantined_assistant_tool_call_content_is_removed_from_noop_active_rep
 
 
 def test_quarantined_assistant_rebind_reconciliation_does_not_duplicate_rows(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
@@ -3152,7 +3152,7 @@ def test_quarantined_assistant_rebind_reconciliation_does_not_duplicate_rows(tmp
         {"role": "assistant", "content": _broken_assistant_output()},
     ]
 
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     first.on_session_start(
         "quarantine-rebind-session",
         platform="telegram",
@@ -3164,7 +3164,7 @@ def test_quarantined_assistant_rebind_reconciliation_does_not_duplicate_rows(tmp
     assert first_count == 2
     first.shutdown()
 
-    second = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    second = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     second.on_session_start(
         "quarantine-rebind-session",
         platform="telegram",
@@ -3233,7 +3233,7 @@ def test_ignore_message_pattern_drop_is_counted_and_surfaced_in_status(tmp_path)
     status = engine.get_status()
     assert status["ignore_pattern_dropped_count"] == 1
 
-    doctor = json.loads(lcm_tools.lcm_doctor({}, engine=engine))
+    doctor = json.loads(trove_tools.trove_doctor({}, engine=engine))
     drop_check = next(c for c in doctor["checks"] if c["check"] == "ignore_pattern_drops")
     assert drop_check["status"] == "warn"
 
@@ -3260,13 +3260,13 @@ def test_live_placeholder_text_does_not_match_ignore_pattern_via_payload(tmp_pat
 
 
 def test_ignore_message_patterns_remain_storage_only_for_compress_replay(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     engine._compiled_ignore_message_patterns = [_PrefixPattern()]
     engine.on_session_start(
         "ignore-storage-only-session",
@@ -3284,7 +3284,7 @@ def test_ignore_message_patterns_remain_storage_only_for_compress_replay(tmp_pat
     active_context = engine.compress(messages)
 
     active_contents = [message.get("content") for message in active_context]
-    assert active_contents[0].startswith("[LCM active replay placeholder: message ignored;")
+    assert active_contents[0].startswith("[TROVE active replay placeholder: message ignored;")
     assert ignored not in active_contents[0]
     assert active_contents[1] == kept
     stored_contents = [row["content"] for row in engine._store.get_session_messages(engine.current_session_id)]
@@ -3293,14 +3293,14 @@ def test_ignore_message_patterns_remain_storage_only_for_compress_replay(tmp_pat
 
 
 def test_quarantined_assistant_preflight_requests_cleanup_when_no_compaction_needed(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
         large_output_externalization_path=str(tmp_path / "externalized"),
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     engine.on_session_start(
         "quarantine-preflight-noop-session",
         platform="telegram",
@@ -3334,14 +3334,14 @@ class _NeverMatchesPattern:
 
 
 def test_ignore_message_patterns_match_original_suspicious_assistant_before_storage(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
         large_output_externalization_path=str(tmp_path / "externalized"),
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     engine._compiled_ignore_message_patterns = [_ContainsBrokenAssistantPattern()]
     engine.on_session_start(
         "ignore-quarantine-storage-session",
@@ -3365,8 +3365,8 @@ def test_ignore_message_patterns_match_original_suspicious_assistant_before_stor
 
 
 def test_ignored_quarantined_assistant_rebind_reconciliation_does_not_duplicate_rows(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
@@ -3378,7 +3378,7 @@ def test_ignored_quarantined_assistant_rebind_reconciliation_does_not_duplicate_
         {"role": "user", "content": "fresh request"},
     ]
 
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     first._compiled_ignore_message_patterns = [_ContainsBrokenAssistantPattern()]
     first.on_session_start(
         "ignore-quarantine-rebind-session",
@@ -3392,7 +3392,7 @@ def test_ignored_quarantined_assistant_rebind_reconciliation_does_not_duplicate_
     assert [row["role"] for row in first_rows] == ["system", "user"]
     first.shutdown()
 
-    second = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    second = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     second._compiled_ignore_message_patterns = [_ContainsBrokenAssistantPattern()]
     second.on_session_start(
         "ignore-quarantine-rebind-session",
@@ -3409,8 +3409,8 @@ def test_ignored_quarantined_assistant_rebind_reconciliation_does_not_duplicate_
 
 
 def test_existing_quarantined_assistant_row_rebinds_after_ignore_pattern_added(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
@@ -3422,7 +3422,7 @@ def test_existing_quarantined_assistant_row_rebinds_after_ignore_pattern_added(t
         {"role": "user", "content": "fresh request"},
     ]
 
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     first.on_session_start(
         "ignore-added-after-quarantine-session",
         platform="telegram",
@@ -3435,7 +3435,7 @@ def test_existing_quarantined_assistant_row_rebinds_after_ignore_pattern_added(t
     assert [row["role"] for row in first_rows] == ["system", "assistant", "user"]
     first.shutdown()
 
-    second = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    second = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     second._compiled_ignore_message_patterns = [_ContainsBrokenAssistantPattern()]
     second.on_session_start(
         "ignore-added-after-quarantine-session",
@@ -3447,13 +3447,13 @@ def test_existing_quarantined_assistant_row_rebinds_after_ignore_pattern_added(t
 
     second_rows = second._store.get_session_messages(second.current_session_id)
     assert [row["role"] for row in second_rows] == ["system", "assistant", "user"]
-    assert "LCM active replay placeholder: message ignored" in str(second_active[1].get("content", ""))
+    assert "TROVE active replay placeholder: message ignored" in str(second_active[1].get("content", ""))
     assert BROKEN_ASSISTANT_MARKER not in str(second_active[1].get("content", ""))
 
 
 def test_nonmatching_ignore_pattern_preserves_existing_quarantine_rebind_prefix(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
@@ -3465,7 +3465,7 @@ def test_nonmatching_ignore_pattern_preserves_existing_quarantine_rebind_prefix(
         {"role": "user", "content": "fresh request"},
     ]
 
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     first.on_session_start(
         "nonmatching-ignore-quarantine-session",
         platform="telegram",
@@ -3481,7 +3481,7 @@ def test_nonmatching_ignore_pattern_preserves_existing_quarantine_rebind_prefix(
     ]
     first.shutdown()
 
-    second = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    second = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     second._compiled_ignore_message_patterns = [_NeverMatchesPattern()]
     second.on_session_start(
         "nonmatching-ignore-quarantine-session",
@@ -3497,8 +3497,8 @@ def test_nonmatching_ignore_pattern_preserves_existing_quarantine_rebind_prefix(
 
 
 def test_singleton_quarantined_assistant_row_rebinds_after_ignore_pattern_added(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
@@ -3506,7 +3506,7 @@ def test_singleton_quarantined_assistant_row_rebinds_after_ignore_pattern_added(
     )
     messages = [{"role": "assistant", "content": _broken_assistant_output()}]
 
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     first.on_session_start(
         "singleton-ignore-added-session",
         platform="telegram",
@@ -3518,7 +3518,7 @@ def test_singleton_quarantined_assistant_row_rebinds_after_ignore_pattern_added(
     assert len(first._store.get_session_messages(first.current_session_id)) == 1
     first.shutdown()
 
-    second = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    second = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     second._compiled_ignore_message_patterns = [_ContainsBrokenAssistantPattern()]
     second.on_session_start(
         "singleton-ignore-added-session",
@@ -3534,8 +3534,8 @@ def test_singleton_quarantined_assistant_row_rebinds_after_ignore_pattern_added(
 
 
 def test_singleton_quarantined_assistant_rebind_reconciliation_does_not_duplicate_row(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
@@ -3543,7 +3543,7 @@ def test_singleton_quarantined_assistant_rebind_reconciliation_does_not_duplicat
     )
     messages = [{"role": "assistant", "content": _broken_assistant_output()}]
 
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     first.on_session_start(
         "singleton-quarantine-rebind-session",
         platform="telegram",
@@ -3555,7 +3555,7 @@ def test_singleton_quarantined_assistant_rebind_reconciliation_does_not_duplicat
     assert len(first._store.get_session_messages(first.current_session_id)) == 1
     first.shutdown()
 
-    second = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    second = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     second.on_session_start(
         "singleton-quarantine-rebind-session",
         platform="telegram",
@@ -3571,15 +3571,15 @@ def test_singleton_quarantined_assistant_rebind_reconciliation_does_not_duplicat
 
 
 def test_fresh_singleton_quarantined_assistant_delta_after_rebind_is_stored(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
         large_output_externalization_path=str(tmp_path / "externalized"),
     )
 
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     first.on_session_start(
         "fresh-singleton-quarantine-delta-session",
         platform="telegram",
@@ -3590,7 +3590,7 @@ def test_fresh_singleton_quarantined_assistant_delta_after_rebind_is_stored(tmp_
     assert len(first._store.get_session_messages(first.current_session_id)) == 1
     first.shutdown()
 
-    second = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    second = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     second.on_session_start(
         "fresh-singleton-quarantine-delta-session",
         platform="telegram",
@@ -3605,8 +3605,8 @@ def test_fresh_singleton_quarantined_assistant_delta_after_rebind_is_stored(tmp_
 
 
 def test_no_system_ignored_quarantined_assistant_rebind_does_not_duplicate_tail(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
@@ -3617,7 +3617,7 @@ def test_no_system_ignored_quarantined_assistant_rebind_does_not_duplicate_tail(
         {"role": "user", "content": "fresh request"},
     ]
 
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     first._compiled_ignore_message_patterns = [_ContainsBrokenAssistantPattern()]
     first.on_session_start(
         "no-system-ignore-quarantine-rebind-session",
@@ -3629,7 +3629,7 @@ def test_no_system_ignored_quarantined_assistant_rebind_does_not_duplicate_tail(
     assert [row["role"] for row in first._store.get_session_messages(first.current_session_id)] == ["user"]
     first.shutdown()
 
-    second = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    second = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     second._compiled_ignore_message_patterns = [_ContainsBrokenAssistantPattern()]
     second.on_session_start(
         "no-system-ignore-quarantine-rebind-session",
@@ -3648,8 +3648,8 @@ def test_no_system_ignored_quarantined_assistant_rebind_does_not_duplicate_tail(
 
 
 def test_no_system_trailing_ignored_quarantined_assistant_rebind_does_not_duplicate_tail(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
@@ -3660,7 +3660,7 @@ def test_no_system_trailing_ignored_quarantined_assistant_rebind_does_not_duplic
         {"role": "assistant", "content": _broken_assistant_output()},
     ]
 
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     first._compiled_ignore_message_patterns = [_ContainsBrokenAssistantPattern()]
     first.on_session_start(
         "no-system-trailing-ignore-quarantine-rebind-session",
@@ -3673,7 +3673,7 @@ def test_no_system_trailing_ignored_quarantined_assistant_rebind_does_not_duplic
     assert "sha256=" in str(first_active[-1].get("content", ""))
     first.shutdown()
 
-    second = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    second = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     second._compiled_ignore_message_patterns = [_ContainsBrokenAssistantPattern()]
     second.on_session_start(
         "no-system-trailing-ignore-quarantine-rebind-session",
@@ -3688,15 +3688,15 @@ def test_no_system_trailing_ignored_quarantined_assistant_rebind_does_not_duplic
 
 
 def test_only_ignored_quarantined_assistant_rebind_does_not_store_placeholder(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
         large_output_externalization_path=str(tmp_path / "externalized"),
     )
 
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     first._compiled_ignore_message_patterns = [_ContainsBrokenAssistantPattern()]
     first.on_session_start(
         "only-ignored-quarantine-rebind-session",
@@ -3709,7 +3709,7 @@ def test_only_ignored_quarantined_assistant_rebind_does_not_store_placeholder(tm
     assert "sha256=" in str(first_active[0].get("content", ""))
     first.shutdown()
 
-    second = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    second = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     second._compiled_ignore_message_patterns = [_ContainsBrokenAssistantPattern()]
     second.on_session_start(
         "only-ignored-quarantine-rebind-session",
@@ -3749,8 +3749,8 @@ def test_rebind_with_ignore_patterns_preserves_assistant_text_that_mentions_quar
         def search(self, text, timeout=None):
             return object() if "drop me only" in str(text) else None
 
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
@@ -3758,10 +3758,10 @@ def test_rebind_with_ignore_patterns_preserves_assistant_text_that_mentions_quar
     )
     text = (
         "This assistant message literally mentions assistant output quarantined "
-        "and quarantined_assistant_output, but it is not an LCM placeholder."
+        "and quarantined_assistant_output, but it is not an TROVE placeholder."
     )
 
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     first.on_session_start(
         "literal-quarantine-marker-session",
         platform="telegram",
@@ -3771,7 +3771,7 @@ def test_rebind_with_ignore_patterns_preserves_assistant_text_that_mentions_quar
     first.compress([{"role": "user", "content": "seed"}])
     first.shutdown()
 
-    second = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    second = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     second._compiled_ignore_message_patterns = [_DropOnlyPattern()]
     second.on_session_start(
         "literal-quarantine-marker-session",
@@ -3793,20 +3793,20 @@ def test_rebind_with_ignore_patterns_preserves_trailing_literal_quarantine_place
         def search(self, text, timeout=None):
             return object() if "drop me only" in str(text) else None
 
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
         large_output_externalization_path=str(tmp_path / "externalized"),
     )
     literal = (
-        "[LCM active replay placeholder: assistant output quarantined; "
+        "[TROVE active replay placeholder: assistant output quarantined; "
         "kind=quarantined_assistant_output; reason=high_repetition; "
         "scope=ignored_message_pattern; field=content; chars=65536; bytes=65536]"
     )
 
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     first.on_session_start(
         "trailing-literal-quarantine-placeholder-session",
         platform="telegram",
@@ -3816,7 +3816,7 @@ def test_rebind_with_ignore_patterns_preserves_trailing_literal_quarantine_place
     first.compress([{"role": "user", "content": "seed"}])
     first.shutdown()
 
-    second = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    second = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     second._compiled_ignore_message_patterns = [_DropOnlyPattern()]
     second.on_session_start(
         "trailing-literal-quarantine-placeholder-session",
@@ -3837,20 +3837,20 @@ def test_rebind_with_ignore_patterns_preserves_literal_quarantine_placeholder_be
         def search(self, text, timeout=None):
             return object() if "drop me only" in str(text) else None
 
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
         large_output_externalization_path=str(tmp_path / "externalized"),
     )
     literal = (
-        "[LCM active replay placeholder: assistant output quarantined; "
+        "[TROVE active replay placeholder: assistant output quarantined; "
         "kind=quarantined_assistant_output; reason=high_repetition; "
         "scope=ignored_message_pattern; field=content; chars=65536; bytes=65536]"
     )
 
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     first.on_session_start(
         "literal-quarantine-placeholder-before-tail-session",
         platform="telegram",
@@ -3860,7 +3860,7 @@ def test_rebind_with_ignore_patterns_preserves_literal_quarantine_placeholder_be
     first.compress([{"role": "user", "content": "fresh request"}])
     first.shutdown()
 
-    second = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    second = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     second._compiled_ignore_message_patterns = [_DropOnlyPattern()]
     second.on_session_start(
         "literal-quarantine-placeholder-before-tail-session",
@@ -3888,7 +3888,7 @@ def test_ignore_message_patterns_do_not_drop_literal_quarantine_placeholder_text
     engine = _engine(tmp_path)
     engine._compiled_ignore_message_patterns = [_DropOnlyPattern()]
     text = (
-        "[LCM active replay placeholder: assistant output quarantined; "
+        "[TROVE active replay placeholder: assistant output quarantined; "
         "kind=quarantined_assistant_output; reason=high_repetition; "
         "scope=ignored_message_pattern; field=content; chars=65536; bytes=65536]"
     )
@@ -3900,20 +3900,20 @@ def test_ignore_message_patterns_do_not_drop_literal_quarantine_placeholder_text
 
 
 def test_rebind_does_not_skip_literal_quarantine_placeholder_without_ignore_patterns(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
         large_output_externalization_path=str(tmp_path / "externalized"),
     )
     literal = (
-        "[LCM active replay placeholder: assistant output quarantined; "
+        "[TROVE active replay placeholder: assistant output quarantined; "
         "kind=quarantined_assistant_output; reason=high_repetition; "
         "scope=ignored_message_pattern; field=content; chars=65536; bytes=65536]"
     )
 
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     first.on_session_start(
         "literal-placeholder-rebind-session",
         platform="telegram",
@@ -3923,7 +3923,7 @@ def test_rebind_does_not_skip_literal_quarantine_placeholder_without_ignore_patt
     first.compress([{"role": "user", "content": "seed"}])
     first.shutdown()
 
-    second = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    second = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     second.on_session_start(
         "literal-placeholder-rebind-session",
         platform="telegram",
@@ -3937,8 +3937,8 @@ def test_rebind_does_not_skip_literal_quarantine_placeholder_without_ignore_patt
 
 
 def test_no_system_raw_ignored_quarantined_assistant_rebind_preserves_repeated_tail_delta(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
@@ -3949,7 +3949,7 @@ def test_no_system_raw_ignored_quarantined_assistant_rebind_preserves_repeated_t
         {"role": "user", "content": "fresh request"},
     ]
 
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     first._compiled_ignore_message_patterns = [_ContainsBrokenAssistantPattern()]
     first.on_session_start(
         "no-system-raw-ignore-quarantine-rebind-session",
@@ -3961,7 +3961,7 @@ def test_no_system_raw_ignored_quarantined_assistant_rebind_preserves_repeated_t
     assert [row["content"] for row in first._store.get_session_messages(first.current_session_id)] == ["fresh request"]
     first.shutdown()
 
-    second = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    second = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     second._compiled_ignore_message_patterns = [_ContainsBrokenAssistantPattern()]
     second.on_session_start(
         "no-system-raw-ignore-quarantine-rebind-session",
@@ -3984,14 +3984,14 @@ def test_no_system_filtered_non_quarantine_rebind_preserves_repeated_tail_delta(
         def search(self, text, timeout=None):
             return object() if str(text).startswith("Cronjob Response:") else None
 
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         fresh_tail_count=10,
         leaf_chunk_tokens=10_000,
         context_threshold=0.95,
         large_output_externalization_path=str(tmp_path / "externalized"),
     )
-    first = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    first = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     first._compiled_ignore_message_patterns = [_CronPattern()]
     first.on_session_start(
         "no-system-filtered-delta-session",
@@ -4002,7 +4002,7 @@ def test_no_system_filtered_non_quarantine_rebind_preserves_repeated_tail_delta(
     first.compress([{"role": "user", "content": "fresh request"}])
     first.shutdown()
 
-    second = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    second = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     second._compiled_ignore_message_patterns = [_CronPattern()]
     second.on_session_start(
         "no-system-filtered-delta-session",
@@ -4041,8 +4041,8 @@ def test_readme_documents_storage_boundary_payload_guard():
     assert "data:*;base64" in readme
     assert "Doctor output is metadata-only" in readme
     assert "state.db" in readme
-    assert "upstream/outside LCM scope" in readme
-    assert "historical rows already present in `lcm.db`" in readme
+    assert "upstream/outside TROVE scope" in readme
+    assert "historical rows already present in `trove.db`" in readme
     assert "backup-first cleanup or migration" in readme
 
 
@@ -4114,7 +4114,7 @@ def test_private_key_redaction_never_leaks_on_pathological_input(tmp_path):
 
 
 def test_sensitive_private_key_fallback_bounds_input_without_regex(tmp_path, monkeypatch):
-    import hermes_lcm.ingest_protection as ip
+    import hermes_trove.ingest_protection as ip
 
     monkeypatch.setattr(ip, "_regex_engine", None)
     ip._SENSITIVE_REGEX_CATALOG.clear()
@@ -4171,7 +4171,7 @@ def test_ingest_externalizes_wrapped_base64_with_short_terminal_line(tmp_path):
 
 
 def test_private_key_redaction_fallback_is_case_insensitive(tmp_path, monkeypatch):
-    import hermes_lcm.ingest_protection as ip
+    import hermes_trove.ingest_protection as ip
 
     engine = _sensitive_engine(tmp_path)
     monkeypatch.setattr(ip, "_regex_engine", None)
@@ -4184,13 +4184,13 @@ def test_private_key_redaction_fallback_is_case_insensitive(tmp_path, monkeypatc
 
     assert "begin private key" not in redacted.lower()
     assert "end private key" not in redacted.lower()
-    assert "[LCM sensitive redaction: name=private_key" in redacted
+    assert "[TROVE sensitive redaction: name=private_key" in redacted
     assert redacted.startswith("prefix ")
     assert redacted.endswith(" suffix")
 
 
 def test_private_key_redaction_fallback_preserves_large_complete_key(tmp_path, monkeypatch):
-    import hermes_lcm.ingest_protection as ip
+    import hermes_trove.ingest_protection as ip
 
     engine = _sensitive_engine(tmp_path)
     monkeypatch.setattr(ip, "_regex_engine", None)
@@ -4205,20 +4205,20 @@ def test_private_key_redaction_fallback_preserves_large_complete_key(tmp_path, m
 
     assert "BEGIN PRIVATE KEY" not in redacted
     assert "END PRIVATE KEY" not in redacted
-    assert "[LCM sensitive redaction: name=private_key" in redacted
+    assert "[TROVE sensitive redaction: name=private_key" in redacted
     assert redacted.startswith("prefix ")
     assert redacted.endswith(" suffix")
 
 
 def test_wrapped_base64_scan_ignores_long_single_line_without_regex_backtracking():
-    from hermes_lcm.ingest_protection import contains_long_base64_run
+    from hermes_trove.ingest_protection import contains_long_base64_run
 
     not_payload = "A" * 80_000
 
     assert contains_long_base64_run(not_payload) is False
 
 def test_sensitive_private_key_regex_timeout_preserves_prior_redactions(tmp_path, monkeypatch):
-    import hermes_lcm.ingest_protection as ip
+    import hermes_trove.ingest_protection as ip
 
     class TimeoutPattern:
         def sub(self, repl, text, timeout=None):
@@ -4232,19 +4232,19 @@ def test_sensitive_private_key_regex_timeout_preserves_prior_redactions(tmp_path
 
     assert "sk-test-secret-value" not in redacted
     assert "BEGIN PRIVATE KEY" not in redacted
-    assert "[LCM sensitive redaction: name=api_key" in redacted
-    assert "[LCM sensitive redaction: name=private_key" in redacted
+    assert "[TROVE sensitive redaction: name=api_key" in redacted
+    assert "[TROVE sensitive redaction: name=private_key" in redacted
 
 
 def test_wrapped_base64_scan_ignores_hex_hash_inventory():
-    from hermes_lcm.ingest_protection import contains_long_base64_run
+    from hermes_trove.ingest_protection import contains_long_base64_run
 
     hex_lines = "\n".join(f"{i:064x}" for i in range(96))
 
     assert contains_long_base64_run(hex_lines) is False
 
 def test_wrapped_base64_scan_preserves_short_terminal_line():
-    from hermes_lcm.ingest_protection import contains_long_base64_run
+    from hermes_trove.ingest_protection import contains_long_base64_run
 
     full_line = "QUJD" * 16
     terminal = "REVG" * 4

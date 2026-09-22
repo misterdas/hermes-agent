@@ -2,7 +2,7 @@
 """Resumable per-state embedding backfill CLI (issue #142, Lane S / W3a).
 
 Embeds one vector per trajectory state (``states.text``) into the additive
-``lcm_trajectory_state_embeddings`` table via ``TrajectoryStore.
+``trove_trajectory_state_embeddings`` table via ``TrajectoryStore.
 build_state_semantic_index`` -- packed 32 items / 72K tokens per request, a
 chunked path for states over Voyage's per-document cap, resumable (a re-run
 embeds only the remainder), and metered. A JSONL spend ledger is appended after
@@ -12,7 +12,7 @@ run ABORTS if the projected total cost would exceed the cap.
 Usage (backfill a WORKING COPY -- never the frozen originals):
 
     VOYAGE_API_KEY=... python3 -m benchmarking.state_embedding_backfill \
-        --db /path/to/copy/lcm.db \
+        --db /path/to/copy/trove.db \
         --provider voyage --model voyage-4 \
         --ledger /path/to/artifacts/W3A-backfill-web-ledger.jsonl \
         --cost-cap 10.0
@@ -44,8 +44,8 @@ _FALLBACK_VOYAGE_USD_PER_MILLION_TOKENS = {
 
 
 def _bootstrap_package(repo_root: Path) -> Any:
-    """Register the plugin dir as the ``hermes_lcm`` package (mirrors conftest)."""
-    pkg = "hermes_lcm"
+    """Register the plugin dir as the ``hermes_trove`` package (mirrors conftest)."""
+    pkg = "hermes_trove"
     if pkg in sys.modules:
         return sys.modules[pkg]
     parent = str(repo_root.parent)
@@ -87,7 +87,7 @@ def _bootstrap_package(repo_root: Path) -> Any:
 
 def _voyage_pricing_table() -> dict[str, float]:
     try:
-        from hermes_lcm.command import _VOYAGE_USD_PER_MILLION_TOKENS
+        from hermes_trove.command import _VOYAGE_USD_PER_MILLION_TOKENS
     except Exception as exc:
         print(
             f"warning: canonical command.py pricing unavailable ({exc!r}); "
@@ -114,11 +114,11 @@ def _resolve_rate(model: str, assumed_rate: float | None) -> float:
 
 
 def _open_store(db_path: Path, asset_root: Path):
-    ts = sys.modules["hermes_lcm.trajectory_store"]
+    ts = sys.modules["hermes_trove.trajectory_store"]
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     identity_json = json.loads(
         conn.execute(
-            "SELECT identity_json FROM lcm_trajectory_corpora WHERE singleton=1"
+            "SELECT identity_json FROM trove_trajectory_corpora WHERE singleton=1"
         ).fetchone()[0]
     )
     conn.close()
@@ -136,7 +136,7 @@ def _open_store(db_path: Path, asset_root: Path):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", type=Path, required=True,
-                        help="WORKING-COPY lcm.db to backfill (never a frozen original)")
+                        help="WORKING-COPY trove.db to backfill (never a frozen original)")
     parser.add_argument("--asset-root", type=Path, default=None)
     parser.add_argument("--provider", default="voyage")
     parser.add_argument("--model", default="voyage-4")
@@ -161,7 +161,7 @@ def main() -> int:
         rate = _resolve_rate(args.model, args.assume_rate)
     except ValueError as exc:
         parser.error(str(exc))
-    ts = sys.modules["hermes_lcm.trajectory_store"]
+    ts = sys.modules["hermes_trove.trajectory_store"]
     asset_root = args.asset_root or args.db.parent
     store = _open_store(args.db, asset_root)
 

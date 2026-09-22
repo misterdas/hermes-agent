@@ -9,14 +9,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.evidence_pack import normalize_question_date
-from hermes_lcm.preanswer_evidence import build_preanswer_evidence
-from hermes_lcm.store import MessageStore
+from hermes_trove.config import TROVEConfig
+from hermes_trove.evidence_pack import normalize_question_date
+from hermes_trove.preanswer_evidence import build_preanswer_evidence
+from hermes_trove.store import MessageStore
 
 
 def _engine(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm.db"))
+    config = TROVEConfig(database_path=str(tmp_path / "trove.db"))
     store = MessageStore(config.database_path, ingest_protection_config=config)
     return SimpleNamespace(_config=config, _store=store, _assertions=None)
 
@@ -27,7 +27,7 @@ def _append(engine, content, *, observed_at=None, session_id="session-a"):
         message["timestamp"] = observed_at
     store_id = engine._store.append(session_id, message)
     return {
-        "exact_ref": f"lcm:{store_id}:0-{len(content)}",
+        "exact_ref": f"trove:{store_id}:0-{len(content)}",
         "quote": content,
     }
 
@@ -43,10 +43,10 @@ def _result(engine, question, *, refs=(), retrieve=None, **kwargs):
 
 
 def test_preanswer_feature_flag_defaults_off_and_parses_env(monkeypatch):
-    monkeypatch.delenv("LCM_PREANSWER_EVIDENCE_ENABLED", raising=False)
-    assert LCMConfig.from_env().preanswer_evidence_enabled is False
-    monkeypatch.setenv("LCM_PREANSWER_EVIDENCE_ENABLED", "true")
-    assert LCMConfig.from_env().preanswer_evidence_enabled is True
+    monkeypatch.delenv("TROVE_PREANSWER_EVIDENCE_ENABLED", raising=False)
+    assert TROVEConfig.from_env().preanswer_evidence_enabled is False
+    monkeypatch.setenv("TROVE_PREANSWER_EVIDENCE_ENABLED", "true")
+    assert TROVEConfig.from_env().preanswer_evidence_enabled is True
 
 
 def test_human_question_date_with_valid_weekday_reaches_product_planner(tmp_path):

@@ -1,7 +1,7 @@
-"""Backup and rotate maintenance operations for the LCM store.
+"""Backup and rotate maintenance operations for the TROVE store.
 
-These are the data-layer maintenance primitives behind ``/lcm backup`` and
-``/lcm rotate``: they flush the engine's SQLite connections and snapshot the
+These are the data-layer maintenance primitives behind ``/trove backup`` and
+``/trove rotate``: they flush the engine's SQLite connections and snapshot the
 store to a timestamped or rolling backup file. They are pure functions that
 take the engine so the command layer (``command.py``) keeps only the text
 formatting, and the store/dag/lifecycle connection handling lives in one place.
@@ -117,7 +117,7 @@ def backup_database(engine) -> dict[str, Any]:
 
 
 def rotate_backup_database(engine) -> dict[str, Any]:
-    """Write a rolling rotate-latest SQLite snapshot of the LCM store.
+    """Write a rolling rotate-latest SQLite snapshot of the TROVE store.
 
     Atomic via tmp-then-rename so the slot is never half-written. Unlike
     ``backup_database`` which produces timestamped files, this overwrites a

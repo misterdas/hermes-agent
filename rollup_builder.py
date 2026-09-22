@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from time import monotonic
 from typing import Callable, Sequence
 
-from .config import LCMConfig
+from .config import TROVEConfig
 from .dag import SummaryDAG
 from .escalation import _deterministic_truncate, summarize_with_escalation
 from .rollup_periods import CoverageNode, canonical_frontier, load_source_lineage
@@ -26,7 +26,7 @@ _FRONTIER_WORK_LIMIT = 4_096
 
 _PENDING_ROLLUPS_SQL = """
     SELECT period_kind, period_start
-    FROM lcm_rollups
+    FROM trove_rollups
     WHERE scope = ?
       AND status = 'stale'
       AND period_kind = 'day'
@@ -36,7 +36,7 @@ _PENDING_ROLLUPS_SQL = """
 
 _PENDING_AGGREGATES_SQL = """
     SELECT period_kind, period_start
-    FROM lcm_rollups
+    FROM trove_rollups
     WHERE scope = ?
       AND status = 'stale'
       AND period_kind IN ('week', 'month')
@@ -46,7 +46,7 @@ _PENDING_AGGREGATES_SQL = """
 
 _FAILED_ROLLUPS_SQL = """
     SELECT period_kind, period_start
-    FROM lcm_rollups
+    FROM trove_rollups
     WHERE scope = ?
       AND status = 'failed'
       AND period_kind = 'day'
@@ -57,7 +57,7 @@ _FAILED_ROLLUPS_SQL = """
 
 _FAILED_AGGREGATES_SQL = """
     SELECT period_kind, period_start
-    FROM lcm_rollups
+    FROM trove_rollups
     WHERE scope = ?
       AND status = 'failed'
       AND period_kind IN ('week', 'month')
@@ -134,13 +134,13 @@ def _scope_frontier_staged(
             return []
 
         connection.execute(
-            "CREATE TEMP TABLE IF NOT EXISTS lcm_scope_frontier_ids "
+            "CREATE TEMP TABLE IF NOT EXISTS trove_scope_frontier_ids "
             "(node_id INTEGER PRIMARY KEY) WITHOUT ROWID"
         )
-        connection.execute("DELETE FROM temp.lcm_scope_frontier_ids")
+        connection.execute("DELETE FROM temp.trove_scope_frontier_ids")
         try:
             connection.executemany(
-                "INSERT INTO temp.lcm_scope_frontier_ids(node_id) VALUES(?)",
+                "INSERT INTO temp.trove_scope_frontier_ids(node_id) VALUES(?)",
                 ((int(row[0]),) for row in id_rows),
             )
             # Any sort below is over a set already proven to contain at most
@@ -151,13 +151,13 @@ def _scope_frontier_staged(
                        node.source_type,
                        COALESCE(node.earliest_at, node.created_at) AS earliest_at,
                        COALESCE(node.latest_at, node.created_at) AS latest_at
-                FROM temp.lcm_scope_frontier_ids wanted
+                FROM temp.trove_scope_frontier_ids wanted
                 JOIN summary_nodes node ON node.node_id = wanted.node_id
                 ORDER BY COALESCE(node.latest_at, node.created_at), node.node_id
                 """
             ).fetchall()
         finally:
-            connection.execute("DELETE FROM temp.lcm_scope_frontier_ids")
+            connection.execute("DELETE FROM temp.trove_scope_frontier_ids")
 
         candidates: list[CoverageNode] = []
         meta: dict[int, dict[str, object]] = {}
@@ -243,7 +243,7 @@ def _daily_sources(dag: SummaryDAG, scope: str, day: date) -> list[dict[str, obj
     ]
 
 
-def _summary_controls(config: LCMConfig) -> dict[str, object]:
+def _summary_controls(config: TROVEConfig) -> dict[str, object]:
     return {
         "model": config.summary_model,
         "timeout": config.summary_timeout_ms / 1000.0,
@@ -258,7 +258,7 @@ def _summarize_capped(
     *,
     target_tokens: int,
     max_tokens: int,
-    config: LCMConfig,
+    config: TROVEConfig,
     summarizer: Summarizer,
     circuit_breaker: object | None,
     spend_guard: object | None,
@@ -299,14 +299,14 @@ def _mark_failed(
             # flip a newer ready/stale row to failed (maintainer #387 blocker 2).
             store.mark_failed(token, f"{type(exc).__name__}: {exc}")
         except Exception:
-            logger.debug("LCM temporal rollup failure state could not be persisted", exc_info=True)
-    logger.debug("LCM temporal rollup build failed", exc_info=True)
+            logger.debug("TROVE temporal rollup failure state could not be persisted", exc_info=True)
+    logger.debug("TROVE temporal rollup build failed", exc_info=True)
 
 
 def build_day(
     store: RollupStore,
     dag: SummaryDAG,
-    config: LCMConfig,
+    config: TROVEConfig,
     scope: str,
     period_date: date | str,
     *,
@@ -389,7 +389,7 @@ def _daily_statuses(
     rows = connection.execute(
         """
         SELECT period_start, status, source_fingerprint, summary, token_count, rollup_id
-        FROM lcm_rollups
+        FROM trove_rollups
         WHERE period_kind = 'day'
           AND period_start >= ?
           AND period_start <= ?
@@ -452,7 +452,7 @@ def _rollup_source_ids(store: RollupStore, rollup_ids: Sequence[int]) -> list[in
     rows = store.connection.execute(
         f"""
         SELECT DISTINCT node_id
-        FROM lcm_rollup_sources
+        FROM trove_rollup_sources
         WHERE rollup_id IN ({placeholders})
         ORDER BY node_id
         """,
@@ -491,13 +491,13 @@ def _canonical_aggregate_sources_staged(
         if connection is None:
             return []
         connection.execute(
-            "CREATE TEMP TABLE IF NOT EXISTS lcm_aggregate_source_ids "
+            "CREATE TEMP TABLE IF NOT EXISTS trove_aggregate_source_ids "
             "(node_id INTEGER PRIMARY KEY) WITHOUT ROWID"
         )
-        connection.execute("DELETE FROM temp.lcm_aggregate_source_ids")
+        connection.execute("DELETE FROM temp.trove_aggregate_source_ids")
         try:
             connection.executemany(
-                "INSERT INTO temp.lcm_aggregate_source_ids(node_id) VALUES(?)",
+                "INSERT INTO temp.trove_aggregate_source_ids(node_id) VALUES(?)",
                 ((node_id,) for node_id in unique_ids),
             )
             rows = connection.execute(
@@ -506,7 +506,7 @@ def _canonical_aggregate_sources_staged(
                        node.source_type,
                        COALESCE(node.earliest_at, node.created_at),
                        COALESCE(node.latest_at, node.created_at)
-                FROM temp.lcm_aggregate_source_ids wanted
+                FROM temp.trove_aggregate_source_ids wanted
                 JOIN summary_nodes node ON node.node_id = wanted.node_id
                 ORDER BY node.node_id
                 """
@@ -517,7 +517,7 @@ def _canonical_aggregate_sources_staged(
         except RuntimeError as exc:
             raise RollupWorkLimitExceeded(str(exc)) from exc
         finally:
-            connection.execute("DELETE FROM temp.lcm_aggregate_source_ids")
+            connection.execute("DELETE FROM temp.trove_aggregate_source_ids")
     candidates: list[CoverageNode] = []
     summaries: dict[int, str] = {}
     for row in rows:
@@ -548,7 +548,7 @@ def _build_aggregate(
     period_kind: str,
     store: RollupStore,
     dag: SummaryDAG,
-    config: LCMConfig,
+    config: TROVEConfig,
     scope: str,
     period_start: date | str,
     *,
@@ -643,7 +643,7 @@ def _build_aggregate(
 def build_week(
     store: RollupStore,
     dag: SummaryDAG,
-    config: LCMConfig,
+    config: TROVEConfig,
     scope: str,
     period_start: date | str,
     *,
@@ -662,7 +662,7 @@ def build_week(
 def build_month(
     store: RollupStore,
     dag: SummaryDAG,
-    config: LCMConfig,
+    config: TROVEConfig,
     scope: str,
     period_start: date | str,
     *,
@@ -714,7 +714,7 @@ def mark_stale_for_published_summary(
         store = RollupStore(dag.db_path)
         return store.drain_invalidations(event_limit=256, day_budget=256) * 3
     except Exception:
-        logger.debug("LCM temporal rollup publication staleness update failed", exc_info=True)
+        logger.debug("TROVE temporal rollup publication staleness update failed", exc_info=True)
         return 0
     finally:
         if store is not None:
@@ -730,7 +730,7 @@ def mark_stale_for_deleted_nodes(dag: SummaryDAG, node_ids: Sequence[int]) -> in
         drained = store.drain_invalidations(event_limit=256, day_budget=256)
         return drained if before else 0
     except Exception:
-        logger.debug("LCM temporal rollup deletion staleness update failed", exc_info=True)
+        logger.debug("TROVE temporal rollup deletion staleness update failed", exc_info=True)
         return 0
     finally:
         if store is not None:
@@ -739,7 +739,7 @@ def mark_stale_for_deleted_nodes(dag: SummaryDAG, node_ids: Sequence[int]) -> in
 
 def run_rollup_maintenance(
     dag: SummaryDAG,
-    config: LCMConfig,
+    config: TROVEConfig,
     scope: str,
     *,
     circuit_breaker: object | None = None,
@@ -817,7 +817,7 @@ def run_rollup_maintenance(
             builds_started += 1
         return builds_started
     except Exception:
-        logger.debug("LCM temporal rollup maintenance failed", exc_info=True)
+        logger.debug("TROVE temporal rollup maintenance failed", exc_info=True)
         return 0
     finally:
         if store is not None:

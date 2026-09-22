@@ -1,4 +1,4 @@
-"""Hook-level contract tests for LCM_PREANSWER_EVIDENCE_MODE=sufficiency_v1.
+"""Hook-level contract tests for TROVE_PREANSWER_EVIDENCE_MODE=sufficiency_v1.
 
 These reuse the packaging tests' plugin-entrypoint harness so the gate is
 exercised through the real ``pre_llm_call`` hook path, not just the module
@@ -21,9 +21,9 @@ def _sufficiency_module(monkeypatch, tmp_path, name: str):
     _ensure_agent_context_engine_importable(monkeypatch)
     module = _load_plugin_entrypoint_module(name)
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
-    monkeypatch.setenv("LCM_PREANSWER_EVIDENCE_ENABLED", "true")
-    monkeypatch.setenv("LCM_PREANSWER_EVIDENCE_MODE", "sufficiency_v1")
-    monkeypatch.setenv("LCM_EMBEDDINGS_ENABLED", "false")
+    monkeypatch.setenv("TROVE_PREANSWER_EVIDENCE_ENABLED", "true")
+    monkeypatch.setenv("TROVE_PREANSWER_EVIDENCE_MODE", "sufficiency_v1")
+    monkeypatch.setenv("TROVE_EMBEDDINGS_ENABLED", "false")
     return module
 
 
@@ -54,7 +54,7 @@ def _store_fact(ctx, content, observed_at):
 
 def _recall_hits(hits):
     def handle(tool, args, **_kwargs):
-        assert tool == "lcm_recall"
+        assert tool == "trove_recall"
         return json.dumps({"hits": hits})
 
     return handle
@@ -63,12 +63,12 @@ def _recall_hits(hits):
 def test_sufficiency_mode_answers_with_gate_verdict_on_validated_fact(
     tmp_path, monkeypatch
 ):
-    module = _sufficiency_module(monkeypatch, tmp_path, "hermes_lcm_packaging_suff_v1_ok")
+    module = _sufficiency_module(monkeypatch, tmp_path, "hermes_trove_packaging_suff_v1_ok")
     ctx, hook = _ctx_and_hook(module)
     fact = "You need 15 points to redeem the reward."
     fact_id = _store_fact(ctx, fact, 100.0)
     ctx.engine.handle_tool_call = _recall_hits(
-        [{"exact_ref": f"lcm:{fact_id}:0-{len(fact)}", "content": fact}]
+        [{"exact_ref": f"trove:{fact_id}:0-{len(fact)}", "content": fact}]
     )
     response = hook(
         session_id="active-session",
@@ -76,7 +76,7 @@ def test_sufficiency_mode_answers_with_gate_verdict_on_validated_fact(
         enabled_toolsets=["context_engine"],
     )
 
-    assert "lcm-answer-brief" in response["context"]
+    assert "trove-answer-brief" in response["context"]
     assert "15 point" in response["context"]
     trace = ctx.engine._last_preanswer_evidence_trace
     assert trace["sufficiency"]["state"] == "answer_sufficient"
@@ -87,7 +87,7 @@ def test_sufficiency_mode_answers_with_gate_verdict_on_validated_fact(
 
 def test_sufficiency_mode_annotates_when_no_fact_is_found(tmp_path, monkeypatch):
     module = _sufficiency_module(
-        monkeypatch, tmp_path, "hermes_lcm_packaging_suff_v1_miss"
+        monkeypatch, tmp_path, "hermes_trove_packaging_suff_v1_miss"
     )
     ctx, hook = _ctx_and_hook(module)
     ctx.engine.handle_tool_call = _recall_hits([])
@@ -100,7 +100,7 @@ def test_sufficiency_mode_annotates_when_no_fact_is_found(tmp_path, monkeypatch)
     trace = ctx.engine._last_preanswer_evidence_trace
     assert trace["sufficiency"]["state"] == "unknown"
     assert trace["sufficiency"]["policy_action"] == "annotate"
-    assert "lcm-sufficiency-disclosure" in response["context"]
+    assert "trove-sufficiency-disclosure" in response["context"]
     assert "state: unknown" in response["context"]
     ctx.engine.shutdown()
 
@@ -109,7 +109,7 @@ def test_sufficiency_mode_conflict_annotates_instead_of_answering(
     tmp_path, monkeypatch
 ):
     module = _sufficiency_module(
-        monkeypatch, tmp_path, "hermes_lcm_packaging_suff_v1_conflict"
+        monkeypatch, tmp_path, "hermes_trove_packaging_suff_v1_conflict"
     )
     ctx, hook = _ctx_and_hook(module)
     first = "You need 15 points to redeem the reward."
@@ -122,8 +122,8 @@ def test_sufficiency_mode_conflict_annotates_instead_of_answering(
     )
     ctx.engine.handle_tool_call = _recall_hits(
         [
-            {"exact_ref": f"lcm:{first_id}:0-{len(first)}", "content": first},
-            {"exact_ref": f"lcm:{second_id}:0-{len(second)}", "content": second},
+            {"exact_ref": f"trove:{first_id}:0-{len(first)}", "content": first},
+            {"exact_ref": f"trove:{second_id}:0-{len(second)}", "content": second},
         ]
     )
     response = hook(
@@ -135,14 +135,14 @@ def test_sufficiency_mode_conflict_annotates_instead_of_answering(
     trace = ctx.engine._last_preanswer_evidence_trace
     assert trace["sufficiency"]["state"] == "conflicted"
     assert trace["sufficiency"]["policy_action"] == "annotate"
-    assert "lcm-sufficiency-disclosure" in response["context"]
+    assert "trove-sufficiency-disclosure" in response["context"]
     assert "state: conflicted" in response["context"]
     ctx.engine.shutdown()
 
 
 def test_sufficiency_mode_no_claim_paths_stay_byte_identical(tmp_path, monkeypatch):
     module = _sufficiency_module(
-        monkeypatch, tmp_path, "hermes_lcm_packaging_suff_v1_noop"
+        monkeypatch, tmp_path, "hermes_trove_packaging_suff_v1_noop"
     )
     ctx, hook = _ctx_and_hook(module)
     policy = module.get_recall_policy()

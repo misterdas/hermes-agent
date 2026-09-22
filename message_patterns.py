@@ -1,4 +1,4 @@
-"""Message-content pattern helpers for LCM ingest filtering.
+"""Message-content pattern helpers for TROVE ingest filtering.
 
 Patterns are Python regex strings. Compilation is tolerant: an invalid
 pattern emits a warning and is skipped, leaving valid patterns in the
@@ -47,7 +47,7 @@ def compile_message_patterns(patterns: Iterable[str]) -> list[Any]:
         if not _MISSING_REGEX_WARNING_EMITTED:
             _MISSING_REGEX_WARNING_EMITTED = True
             logger.warning(
-                "LCM ignore_message_patterns configured but optional dependency 'regex' is not installed; "
+                "TROVE ignore_message_patterns configured but optional dependency 'regex' is not installed; "
                 "message-level regex filtering is disabled to avoid unbounded stdlib re matching"
             )
         return []
@@ -58,7 +58,7 @@ def compile_message_patterns(patterns: Iterable[str]) -> list[Any]:
             compiled.append(_regex_engine.compile(pattern))
         except _regex_engine.error as exc:
             logger.warning(
-                "LCM ignore_message_patterns: skipping invalid regex %r: %s",
+                "TROVE ignore_message_patterns: skipping invalid regex %r: %s",
                 pattern,
                 exc,
             )
@@ -75,7 +75,7 @@ def _warn_timeout_once(pattern: Any) -> None:
         return
     _TIMEOUT_WARNED_PATTERNS.add(label)
     logger.warning(
-        "LCM ignore_message_patterns: regex %r timed out after %.3gs; treating as no match",
+        "TROVE ignore_message_patterns: regex %r timed out after %.3gs; treating as no match",
         label,
         MESSAGE_PATTERN_MATCH_TIMEOUT_SECONDS,
     )
@@ -87,7 +87,7 @@ def _warn_timeout_unsupported_once(pattern: Any) -> None:
         return
     _TIMEOUT_UNSUPPORTED_WARNED_PATTERNS.add(label)
     logger.warning(
-        "LCM ignore_message_patterns: regex %r does not support timeout matching; treating as no match",
+        "TROVE ignore_message_patterns: regex %r does not support timeout matching; treating as no match",
         label,
     )
 

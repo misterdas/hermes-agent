@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.engine import LCMEngine
+from hermes_trove.config import TROVEConfig
+from hermes_trove.engine import TROVEEngine
 
 
 def _write_profile_config(home: Path, *, threshold: float, timeout: float) -> None:
@@ -48,7 +48,7 @@ def _load_plugin_module(name: str):
     return module
 
 
-def test_from_env_accepts_routed_home_without_mutating_process_environment(tmp_path, monkeypatch, _clean_lcm_db_env):
+def test_from_env_accepts_routed_home_without_mutating_process_environment(tmp_path, monkeypatch, _clean_trove_db_env):
     default_home = tmp_path / "default"
     profile_a = tmp_path / "profile-a"
     profile_b = tmp_path / "profile-b"
@@ -57,13 +57,13 @@ def test_from_env_accepts_routed_home_without_mutating_process_environment(tmp_p
     _write_profile_config(profile_b, threshold=0.79, timeout=79)
 
     monkeypatch.setenv("HERMES_HOME", str(default_home))
-    monkeypatch.delenv("LCM_CONTEXT_THRESHOLD", raising=False)
-    monkeypatch.delenv("LCM_SUMMARY_TIMEOUT_MS", raising=False)
-    monkeypatch.delenv("LCM_DATABASE_PATH", raising=False)
+    monkeypatch.delenv("TROVE_CONTEXT_THRESHOLD", raising=False)
+    monkeypatch.delenv("TROVE_SUMMARY_TIMEOUT_MS", raising=False)
+    monkeypatch.delenv("TROVE_DATABASE_PATH", raising=False)
     before = os.environ["HERMES_HOME"]
 
-    config_a = LCMConfig.from_env(hermes_home=str(profile_a))
-    config_b = LCMConfig.from_env(hermes_home=str(profile_b))
+    config_a = TROVEConfig.from_env(hermes_home=str(profile_a))
+    config_b = TROVEConfig.from_env(hermes_home=str(profile_b))
 
     assert config_a.context_threshold == 0.23
     assert config_b.context_threshold == 0.79
@@ -71,16 +71,16 @@ def test_from_env_accepts_routed_home_without_mutating_process_environment(tmp_p
     assert config_b.summary_timeout_ms == 79_000
     assert os.environ["HERMES_HOME"] == before
 
-    monkeypatch.setenv("LCM_SUMMARY_TIMEOUT_MS", "1234")
-    monkeypatch.setenv("LCM_DATABASE_PATH", str(tmp_path / "shared.db"))
-    override_a = LCMConfig.from_env(hermes_home=str(profile_a))
-    override_b = LCMConfig.from_env(hermes_home=str(profile_b))
+    monkeypatch.setenv("TROVE_SUMMARY_TIMEOUT_MS", "1234")
+    monkeypatch.setenv("TROVE_DATABASE_PATH", str(tmp_path / "shared.db"))
+    override_a = TROVEConfig.from_env(hermes_home=str(profile_a))
+    override_b = TROVEConfig.from_env(hermes_home=str(profile_b))
     assert override_a.summary_timeout_ms == 1234
     assert override_b.summary_timeout_ms == 1234
     assert override_a.database_path == override_b.database_path == str(tmp_path / "shared.db")
 
 
-def test_context_local_home_is_used_when_host_omits_lifecycle_home(tmp_path, monkeypatch, _clean_lcm_db_env):
+def test_context_local_home_is_used_when_host_omits_lifecycle_home(tmp_path, monkeypatch, _clean_trove_db_env):
     default_home = tmp_path / "default"
     profile_a = tmp_path / "profile-a"
     profile_b = tmp_path / "profile-b"
@@ -93,15 +93,15 @@ def test_context_local_home_is_used_when_host_omits_lifecycle_home(tmp_path, mon
     setattr(core, "get_hermes_home", lambda: active_home.get())
     monkeypatch.setitem(sys.modules, "hermes_constants", core)
     monkeypatch.setenv("HERMES_HOME", str(default_home))
-    monkeypatch.delenv("LCM_CONTEXT_THRESHOLD", raising=False)
-    monkeypatch.setenv("LCM_SUMMARY_SPEND_MAX_CALLS", "4")
-    monkeypatch.setenv("LCM_SUMMARY_SPEND_WINDOW_SECONDS", "10")
-    monkeypatch.setenv("LCM_SUMMARY_SPEND_BACKOFF_SECONDS", "20")
-    monkeypatch.setenv("LCM_SUMMARY_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "2")
-    monkeypatch.setenv("LCM_SUMMARY_CIRCUIT_BREAKER_COOLDOWN_SECONDS", "30")
+    monkeypatch.delenv("TROVE_CONTEXT_THRESHOLD", raising=False)
+    monkeypatch.setenv("TROVE_SUMMARY_SPEND_MAX_CALLS", "4")
+    monkeypatch.setenv("TROVE_SUMMARY_SPEND_WINDOW_SECONDS", "10")
+    monkeypatch.setenv("TROVE_SUMMARY_SPEND_BACKOFF_SECONDS", "20")
+    monkeypatch.setenv("TROVE_SUMMARY_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "2")
+    monkeypatch.setenv("TROVE_SUMMARY_CIRCUIT_BREAKER_COOLDOWN_SECONDS", "30")
 
-    engine = LCMEngine(
-        config=LCMConfig.from_env(hermes_home=str(profile_a)),
+    engine = TROVEEngine(
+        config=TROVEConfig.from_env(hermes_home=str(profile_a)),
         hermes_home=str(profile_a),
     )
     spend_guard = engine._summary_spend_guard
@@ -109,11 +109,11 @@ def test_context_local_home_is_used_when_host_omits_lifecycle_home(tmp_path, mon
     assert spend_guard.try_record_call(now=1.0) is True
     circuit_breaker.record_failure("test-model", now=1.0)
     try:
-        monkeypatch.setenv("LCM_SUMMARY_SPEND_MAX_CALLS", "9")
-        monkeypatch.setenv("LCM_SUMMARY_SPEND_WINDOW_SECONDS", "90")
-        monkeypatch.setenv("LCM_SUMMARY_SPEND_BACKOFF_SECONDS", "180")
-        monkeypatch.setenv("LCM_SUMMARY_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "5")
-        monkeypatch.setenv("LCM_SUMMARY_CIRCUIT_BREAKER_COOLDOWN_SECONDS", "300")
+        monkeypatch.setenv("TROVE_SUMMARY_SPEND_MAX_CALLS", "9")
+        monkeypatch.setenv("TROVE_SUMMARY_SPEND_WINDOW_SECONDS", "90")
+        monkeypatch.setenv("TROVE_SUMMARY_SPEND_BACKOFF_SECONDS", "180")
+        monkeypatch.setenv("TROVE_SUMMARY_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "5")
+        monkeypatch.setenv("TROVE_SUMMARY_CIRCUIT_BREAKER_COOLDOWN_SECONDS", "300")
         token = active_home.set(str(profile_b))
         try:
             engine.on_session_start("session-b")
@@ -121,7 +121,7 @@ def test_context_local_home_is_used_when_host_omits_lifecycle_home(tmp_path, mon
             active_home.reset(token)
         assert engine._config.context_threshold == 0.83
         assert engine._config.summary_timeout_ms == 83_000
-        assert engine._store.db_path == profile_b / "lcm.db"
+        assert engine._store.db_path == profile_b / "trove.db"
         assert spend_guard.max_calls == 9
         assert spend_guard.window_seconds == 90.0
         assert spend_guard.backoff_seconds == 180.0
@@ -135,7 +135,7 @@ def test_context_local_home_is_used_when_host_omits_lifecycle_home(tmp_path, mon
         finally:
             active_home.reset(token)
         assert engine._config.context_threshold == 0.29
-        assert engine._store.db_path == profile_a / "lcm.db"
+        assert engine._store.db_path == profile_a / "trove.db"
         assert engine._summary_spend_guard is spend_guard
         assert spend_guard._calls == [1.0]
         assert engine._summary_circuit_breaker is circuit_breaker
@@ -145,14 +145,14 @@ def test_context_local_home_is_used_when_host_omits_lifecycle_home(tmp_path, mon
 
 
 @pytest.fixture
-def _clean_lcm_db_env(monkeypatch):
+def _clean_trove_db_env(monkeypatch):
     """Profile-isolation tests resolve homes explicitly; the session-wide
-    LCM_DATABASE_PATH override (set by conftest to protect the host DB)
+    TROVE_DATABASE_PATH override (set by conftest to protect the host DB)
     would otherwise pin every engine to the shared session path."""
-    monkeypatch.delenv("LCM_DATABASE_PATH", raising=False)
+    monkeypatch.delenv("TROVE_DATABASE_PATH", raising=False)
 
 
-def test_plugin_registration_uses_context_local_home(tmp_path, monkeypatch, _clean_lcm_db_env):
+def test_plugin_registration_uses_context_local_home(tmp_path, monkeypatch, _clean_trove_db_env):
     default_home = tmp_path / "default"
     profile_b = tmp_path / "profile-b"
     _write_profile_config(default_home, threshold=0.17, timeout=17)
@@ -163,7 +163,7 @@ def test_plugin_registration_uses_context_local_home(tmp_path, monkeypatch, _cle
     setattr(core, "get_hermes_home", lambda: active_home.get())
     monkeypatch.setitem(sys.modules, "hermes_constants", core)
     monkeypatch.setenv("HERMES_HOME", str(default_home))
-    monkeypatch.delenv("LCM_CONTEXT_THRESHOLD", raising=False)
+    monkeypatch.delenv("TROVE_CONTEXT_THRESHOLD", raising=False)
 
     class Context:
         engine = None
@@ -174,7 +174,7 @@ def test_plugin_registration_uses_context_local_home(tmp_path, monkeypatch, _cle
     token = active_home.set(str(profile_b))
     ctx = Context()
     try:
-        _load_plugin_module("hermes_lcm_profile_registration").register(ctx)
+        _load_plugin_module("hermes_trove_profile_registration").register(ctx)
     finally:
         active_home.reset(token)
     engine = ctx.engine
@@ -182,30 +182,30 @@ def test_plugin_registration_uses_context_local_home(tmp_path, monkeypatch, _cle
     try:
         assert engine._config.context_threshold == 0.77
         assert engine._config.summary_timeout_ms == 77_000
-        assert engine._store.db_path == profile_b / "lcm.db"
+        assert engine._store.db_path == profile_b / "trove.db"
     finally:
         engine.shutdown()
 
 
-def test_constructor_reconciles_config_home_with_storage_home(tmp_path, monkeypatch, _clean_lcm_db_env):
+def test_constructor_reconciles_config_home_with_storage_home(tmp_path, monkeypatch, _clean_trove_db_env):
     profile_a = tmp_path / "profile-a"
     profile_b = tmp_path / "profile-b"
     _write_profile_config(profile_a, threshold=0.27, timeout=27)
     _write_profile_config(profile_b, threshold=0.73, timeout=73)
-    monkeypatch.delenv("LCM_CONTEXT_THRESHOLD", raising=False)
+    monkeypatch.delenv("TROVE_CONTEXT_THRESHOLD", raising=False)
 
-    config_a = LCMConfig.from_env(hermes_home=str(profile_a))
-    engine = LCMEngine(config=config_a, hermes_home=str(profile_b))
+    config_a = TROVEConfig.from_env(hermes_home=str(profile_a))
+    engine = TROVEEngine(config=config_a, hermes_home=str(profile_b))
     try:
         assert engine._config.context_threshold == 0.73
         assert engine._config.summary_timeout_ms == 73_000
         assert engine._config.config_hermes_home == str(profile_b)
-        assert engine._store.db_path == profile_b / "lcm.db"
+        assert engine._store.db_path == profile_b / "trove.db"
     finally:
         engine.shutdown()
 
 
-def test_distinct_context_local_profiles_can_rebind_concurrently(tmp_path, monkeypatch, _clean_lcm_db_env):
+def test_distinct_context_local_profiles_can_rebind_concurrently(tmp_path, monkeypatch, _clean_trove_db_env):
     profile_a = tmp_path / "profile-a"
     profile_b = tmp_path / "profile-b"
     _write_profile_config(profile_a, threshold=0.37, timeout=37)
@@ -215,9 +215,9 @@ def test_distinct_context_local_profiles_can_rebind_concurrently(tmp_path, monke
     core = ModuleType("hermes_constants")
     setattr(core, "get_hermes_home", lambda: active_home.get())
     monkeypatch.setitem(sys.modules, "hermes_constants", core)
-    monkeypatch.delenv("LCM_CONTEXT_THRESHOLD", raising=False)
-    prototype = LCMEngine(
-        config=LCMConfig.from_env(hermes_home=str(profile_a)),
+    monkeypatch.delenv("TROVE_CONTEXT_THRESHOLD", raising=False)
+    prototype = TROVEEngine(
+        config=TROVEConfig.from_env(hermes_home=str(profile_a)),
         hermes_home=str(profile_a),
     )
     clone_a = prototype.clone_for_agent()
@@ -225,7 +225,7 @@ def test_distinct_context_local_profiles_can_rebind_concurrently(tmp_path, monke
     barrier = threading.Barrier(2)
     seen: dict[str, tuple[float, Path]] = {}
 
-    def bind(name: str, engine: LCMEngine, home: Path) -> None:
+    def bind(name: str, engine: TROVEEngine, home: Path) -> None:
         token = active_home.set(str(home))
         try:
             barrier.wait(timeout=5)
@@ -245,8 +245,8 @@ def test_distinct_context_local_profiles_can_rebind_concurrently(tmp_path, monke
             thread.join(timeout=10)
         assert all(not thread.is_alive() for thread in threads)
         assert seen == {
-            "session-a": (0.37, profile_a / "lcm.db"),
-            "session-b": (0.71, profile_b / "lcm.db"),
+            "session-a": (0.37, profile_a / "trove.db"),
+            "session-b": (0.71, profile_b / "trove.db"),
         }
     finally:
         clone_a.shutdown()
@@ -255,16 +255,16 @@ def test_distinct_context_local_profiles_can_rebind_concurrently(tmp_path, monke
 
 
 def test_cloned_engine_rebinds_profile_config_storage_and_override_precedence(
-    tmp_path, monkeypatch, _clean_lcm_db_env
+    tmp_path, monkeypatch, _clean_trove_db_env
 ):
     profile_a = tmp_path / "profile-a"
     profile_b = tmp_path / "profile-b"
     _write_profile_config(profile_a, threshold=0.31, timeout=31)
     _write_profile_config(profile_b, threshold=0.67, timeout=67)
 
-    monkeypatch.delenv("LCM_CONTEXT_THRESHOLD", raising=False)
-    prototype = LCMEngine(
-        config=LCMConfig.from_env(hermes_home=str(profile_a)),
+    monkeypatch.delenv("TROVE_CONTEXT_THRESHOLD", raising=False)
+    prototype = TROVEEngine(
+        config=TROVEConfig.from_env(hermes_home=str(profile_a)),
         hermes_home=str(profile_a),
     )
     clone_a = prototype.clone_for_agent()
@@ -277,17 +277,17 @@ def test_cloned_engine_rebinds_profile_config_storage_and_override_precedence(
         assert clone_b._config.context_threshold == 0.67
         assert clone_a._config.summary_timeout_ms == 31_000
         assert clone_b._config.summary_timeout_ms == 67_000
-        assert clone_a._store.db_path == profile_a / "lcm.db"
-        assert clone_b._store.db_path == profile_b / "lcm.db"
+        assert clone_a._store.db_path == profile_a / "trove.db"
+        assert clone_b._store.db_path == profile_b / "trove.db"
         assert clone_a._store._hermes_home == str(profile_a)
         assert clone_b._store._hermes_home == str(profile_b)
         assert clone_a._config is not clone_b._config
 
-        monkeypatch.setenv("LCM_CONTEXT_THRESHOLD", "0.91")
+        monkeypatch.setenv("TROVE_CONTEXT_THRESHOLD", "0.91")
         clone_b.on_session_start("session-a-override", hermes_home=str(profile_a))
         clone_b.on_session_start("session-b-override", hermes_home=str(profile_b))
         assert clone_b._config.context_threshold == 0.91
-        assert clone_b._config.config_sources["context_threshold"] == "env:LCM_CONTEXT_THRESHOLD"
+        assert clone_b._config.config_sources["context_threshold"] == "env:TROVE_CONTEXT_THRESHOLD"
         assert clone_a._config.context_threshold == 0.31
     finally:
         clone_a.shutdown()

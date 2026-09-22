@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
-from hermes_lcm.answer_contract import compile_answer_contract
-from hermes_lcm.config import LCMConfig
+from hermes_trove.answer_contract import compile_answer_contract
+from hermes_trove.config import TROVEConfig
 
 
 def test_scalar_first_quantity_is_not_open_enumeration():
@@ -143,13 +143,13 @@ def test_strong_person_place_and_advice_shapes_remain_routable():
 
 
 def test_preanswer_mode_is_default_off_and_env_is_additive(monkeypatch):
-    monkeypatch.delenv("LCM_PREANSWER_EVIDENCE_ENABLED", raising=False)
-    monkeypatch.delenv("LCM_PREANSWER_EVIDENCE_MODE", raising=False)
-    assert LCMConfig.from_env().preanswer_evidence_enabled is False
-    assert LCMConfig.from_env().preanswer_evidence_mode == ""
+    monkeypatch.delenv("TROVE_PREANSWER_EVIDENCE_ENABLED", raising=False)
+    monkeypatch.delenv("TROVE_PREANSWER_EVIDENCE_MODE", raising=False)
+    assert TROVEConfig.from_env().preanswer_evidence_enabled is False
+    assert TROVEConfig.from_env().preanswer_evidence_mode == ""
 
-    monkeypatch.setenv("LCM_PREANSWER_EVIDENCE_ENABLED", "true")
-    monkeypatch.setenv("LCM_PREANSWER_EVIDENCE_MODE", "requirements_v1")
-    config = LCMConfig.from_env()
+    monkeypatch.setenv("TROVE_PREANSWER_EVIDENCE_ENABLED", "true")
+    monkeypatch.setenv("TROVE_PREANSWER_EVIDENCE_MODE", "requirements_v1")
+    config = TROVEConfig.from_env()
     assert config.preanswer_evidence_enabled is True
     assert config.preanswer_evidence_mode == "requirements_v1"

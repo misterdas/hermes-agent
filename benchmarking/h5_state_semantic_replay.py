@@ -9,7 +9,7 @@ per-state Voyage index that has been backfilled into the store copies.
 
 Key differences from the provider-free adjacency sweep:
   * Stores are opened over the BACKFILLED working copies (which carry the
-    ``lcm_trajectory_state_embeddings`` table), NOT the bare h31 db-copies.
+    ``trove_trajectory_state_embeddings`` table), NOT the bare h31 db-copies.
   * A real Voyage QUERY provider is attached so the state arm can embed the
     query and rank the per-state vectors. Query embeddings are CACHED (embedded
     once, off the timed path) exactly as source ranks are injected -- so the
@@ -60,7 +60,7 @@ class CachedVoyageQueryProvider:
     model_id = "voyage-4"
 
     def __init__(self, model: str = "voyage-4", timeout: float = 30.0) -> None:
-        from hermes_lcm.embedding_provider import EmbeddingSpendGuard, VoyageProvider
+        from hermes_trove.embedding_provider import EmbeddingSpendGuard, VoyageProvider
 
         # Disable the interactive per-minute call-rate guard: this offline sweep
         # embeds the 451 unique queries in a tight loop (each is cheap, ~cents
@@ -96,11 +96,11 @@ class StateReplayContext(ReplayContext):
         super().__init__(run_root, h1, h31)
 
     def _open_store(self, db_path, domain):  # noqa: ARG002
-        real_db = self._db_dir / f"{domain}.lcm.db"
+        real_db = self._db_dir / f"{domain}.trove.db"
         conn = sqlite3.connect(f"file:{real_db}?mode=ro", uri=True)
         identity_json = json.loads(
             conn.execute(
-                "SELECT identity_json FROM lcm_trajectory_corpora WHERE singleton=1"
+                "SELECT identity_json FROM trove_trajectory_corpora WHERE singleton=1"
             ).fetchone()[0]
         )
         conn.close()

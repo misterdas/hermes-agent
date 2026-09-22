@@ -1,9 +1,9 @@
-"""Hermes LCM Plugin — Lossless Context Management.
+"""Hermes TROVE Plugin — Lossless Context Management.
 
 Replaces the built-in ContextCompressor with a DAG-based context engine
 that persists every message and provides structured retrieval tools.
 
-Based on the LCM paper by Ehrlich & Blackman (Voltropy PBC, Feb 2026).
+Based on the TROVE paper by Ehrlich & Blackman (Voltropy PBC, Feb 2026).
 """
 
 import json
@@ -30,7 +30,7 @@ def _env_flag_enabled(name: str, default: bool = False) -> bool:
 
 
 def _make_wrapped_handler(tool_name: str, engine):
-    """Route a registered lcm_* tool through the engine dispatch path."""
+    """Route a registered trove_* tool through the engine dispatch path."""
     def _wrapped(args: dict, **kwargs) -> str:
         return engine.handle_tool_call(tool_name, args, **kwargs)
     return _wrapped
@@ -41,9 +41,9 @@ def _host_forwards_registered_tool_messages(ctx) -> bool:
 
     Hermes Agent's current registry dispatch passes task_id/user_task to
     plugin tools, but not the active conversation messages list. Registering
-    duplicate lcm_* tool names on that host makes the model call the registry
-    handler instead of the native context-engine dispatch branch, so LCM loses
-    current-turn ingest before lcm_grep/lcm_expand style recovery.
+    duplicate trove_* tool names on that host makes the model call the registry
+    handler instead of the native context-engine dispatch branch, so TROVE loses
+    current-turn ingest before trove_grep/trove_expand style recovery.
 
     Keep plugin-side tool registration opt-in until a host explicitly
     advertises that registered context-engine handlers receive messages.
@@ -58,7 +58,7 @@ def _host_forwards_registered_tool_messages(ctx) -> bool:
 
 
 def _engine_bound_session_id(engine) -> str:
-    """Return the lifecycle/ingest session bound on an LCM engine.
+    """Return the lifecycle/ingest session bound on an TROVE engine.
 
     ``current_session_id`` is an operator-facing foreground view and can differ
     from the bound ingest session while an auxiliary side channel is active.
@@ -122,7 +122,7 @@ def _answer_ready_baseline(active_engine, question: str, payload: dict):
     if isinstance(baseline_refs, (list, tuple)):
         return tuple(baseline_refs)
     raw = active_engine.handle_tool_call(
-        "lcm_recall",
+        "trove_recall",
         {
             "query": question,
             "include": "verbatim",
@@ -179,7 +179,7 @@ def _apply_hook_sufficiency_gate(config, result) -> None:
 
         apply_sufficiency_gate(result, enabled=True)
     except Exception as exc:  # noqa: BLE001 - policy must fail open
-        logger.warning("LCM sufficiency gate failed open: %s", exc)
+        logger.warning("TROVE sufficiency gate failed open: %s", exc)
 
 
 def _pre_llm_context(active_engine, recall_policy: str, payload: dict) -> dict:
@@ -216,7 +216,7 @@ def _pre_llm_context(active_engine, recall_policy: str, payload: dict) -> dict:
                 baseline_refs=baseline_refs,
                 question_as_of=question_date,
                 retrieve=lambda recall_args: active_engine.handle_tool_call(
-                    "lcm_recall", recall_args
+                    "trove_recall", recall_args
                 ),
                 enabled=True,
                 render_baseline_context=baseline_was_internal,
@@ -303,9 +303,9 @@ def _pre_llm_context(active_engine, recall_policy: str, payload: dict) -> dict:
                         enabled=True,
                     )
             except Exception as exc:
-                logger.warning("LCM selective compiler failed open: %s", exc)
+                logger.warning("TROVE selective compiler failed open: %s", exc)
     except Exception as exc:  # pragma: no cover - outer host safety net
-        logger.warning("LCM pre-answer evidence failed open: %s", exc)
+        logger.warning("TROVE pre-answer evidence failed open: %s", exc)
         return {"context": recall_policy}
     try:
         active_engine._last_preanswer_evidence_trace = (
@@ -344,11 +344,11 @@ def _session_context_value(name: str) -> str:
         # Once a concurrent host exposes task-local session context, never fall
         # back to process-global env after a read failure: it may name another
         # lane. Unbound is safer than cross-session command dispatch.
-        logger.debug("LCM plugin command could not read %s", name, exc_info=True)
+        logger.debug("TROVE plugin command could not read %s", name, exc_info=True)
         return ""
 
 
-def _command_engine_for_current_session(engine, resolve_active_lcm_engine):
+def _command_engine_for_current_session(engine, resolve_active_trove_engine):
     """Resolve the runtime serving the current plugin-command invocation.
 
     Gateway hosts bind task-local session/lane metadata before dispatching a
@@ -359,7 +359,7 @@ def _command_engine_for_current_session(engine, resolve_active_lcm_engine):
     session_id = _session_context_value("HERMES_SESSION_ID")
     conversation_id = _session_context_value("HERMES_SESSION_KEY")
     if session_id or conversation_id:
-        active_engine = resolve_active_lcm_engine(
+        active_engine = resolve_active_trove_engine(
             session_id=session_id,
             conversation_id=conversation_id,
             allow_foreground=True,
@@ -369,13 +369,13 @@ def _command_engine_for_current_session(engine, resolve_active_lcm_engine):
     return engine
 
 
-def _make_command_handler(handle_lcm_command, engine, resolve_active_lcm_engine):
+def _make_command_handler(handle_trove_command, engine, resolve_active_trove_engine):
     def _handler(raw_args: str):
-        return handle_lcm_command(
+        return handle_trove_command(
             raw_args,
             _command_engine_for_current_session(
                 engine,
-                resolve_active_lcm_engine,
+                resolve_active_trove_engine,
             ),
         )
 
@@ -383,33 +383,33 @@ def _make_command_handler(handle_lcm_command, engine, resolve_active_lcm_engine)
 
 
 def register(ctx):
-    """Plugin entry point — register the LCM context engine and tools."""
-    from .config import LCMConfig, _resolve_hermes_home
-    from .engine import LCMEngine, resolve_active_lcm_engine
+    """Plugin entry point — register the TROVE context engine and tools."""
+    from .config import TROVEConfig, _resolve_hermes_home
+    from .engine import TROVEEngine, resolve_active_trove_engine
     from .schemas import (
-        LCM_GREP,
-        LCM_RECALL,
-        LCM_QUERY_STATE,
-        LCM_COMPUTE,
-        LCM_COMPILE_EVIDENCE,
-        LCM_EVIDENCE_PACK,
-        LCM_RETRIEVE,
-        LCM_RECENT,
-        LCM_LOAD_SESSION,
-        LCM_DESCRIBE,
-        LCM_EXPAND,
-        LCM_EXPAND_QUERY,
-        LCM_STATUS,
-        LCM_INSPECT,
-        LCM_DOCTOR,
+        TROVE_GREP,
+        TROVE_RECALL,
+        TROVE_QUERY_STATE,
+        TROVE_COMPUTE,
+        TROVE_COMPILE_EVIDENCE,
+        TROVE_EVIDENCE_PACK,
+        TROVE_RETRIEVE,
+        TROVE_RECENT,
+        TROVE_LOAD_SESSION,
+        TROVE_DESCRIBE,
+        TROVE_EXPAND,
+        TROVE_EXPAND_QUERY,
+        TROVE_STATUS,
+        TROVE_INSPECT,
+        TROVE_DOCTOR,
     )
 
     # Resolve the context-local routed home without mutating process-global env.
     hermes_home = str(_resolve_hermes_home())
 
-    config = LCMConfig.from_env(hermes_home=hermes_home or None)
+    config = TROVEConfig.from_env(hermes_home=hermes_home or None)
 
-    engine = LCMEngine(config=config, hermes_home=hermes_home)
+    engine = TROVEEngine(config=config, hermes_home=hermes_home)
 
     # Register as the context engine (replaces ContextCompressor)
     ctx.register_context_engine(engine)
@@ -418,27 +418,27 @@ def register(ctx):
     # registration (explicit qualified loads) and the installer's ordinary
     # profile skill link (normal discovery). Older hosts simply lack this
     # capability and keep their existing schema-driven behavior.
-    skill_root = Path(__file__).resolve().parent / "skills" / "hermes-lcm"
+    skill_root = Path(__file__).resolve().parent / "skills" / "hermes-trove"
     register_skill = getattr(ctx, "register_skill", None)
     if callable(register_skill):
         try:
             register_skill(
-                "hermes-lcm",
+                "hermes-trove",
                 skill_root,
                 description=(
                     "Use, configure, diagnose, and recall exact evidence "
-                    "with the Hermes-LCM lossless context plugin."
+                    "with the Hermes-TROVE lossless context plugin."
                 ),
             )
         except Exception as exc:
             logger.warning(
-                "LCM bundled skill registration did not complete; normal "
+                "TROVE bundled skill registration did not complete; normal "
                 "profile skill discovery may still be available: %s",
                 exc,
             )
 
     # Subscribe to the host's explicit subagent lifecycle events when available.
-    # These carry the child_session_id/parent_session_id linkage directly, so LCM
+    # These carry the child_session_id/parent_session_id linkage directly, so TROVE
     # can identify a subagent session from the host's own signal instead of
     # walking the call stack and reading private agent attributes. Hosts without
     # a plugin hook bus simply skip this and fall back to the legacy frame walk.
@@ -450,13 +450,13 @@ def register(ctx):
             register_hook("subagent_stop", lambda **payload: record_subagent_stop(payload))
         except Exception as exc:
             logger.info(
-                "LCM explicit subagent-lineage hooks unavailable on this Hermes "
+                "TROVE explicit subagent-lineage hooks unavailable on this Hermes "
                 "host; auxiliary detection uses the legacy frame-walk fallback: %s",
                 exc,
             )
 
         # Hermes invokes this hook after the context engine has received
-        # on_session_start(). Resolve through LCM's own registry so merely
+        # on_session_start(). Resolve through TROVE's own registry so merely
         # loading the plugin cannot inject guidance when another context
         # engine is serving the turn. Capture one validated policy value for
         # deterministic, byte-stable injection across eligible turns.
@@ -470,45 +470,45 @@ def register(ctx):
                     or payload.get("gateway_session_key")
                     or ""
                 )
-                active_engine = resolve_active_lcm_engine(
+                active_engine = resolve_active_trove_engine(
                     session_id=session_id,
                     conversation_id=conversation_id,
                 )
-                if active_engine is None or getattr(active_engine, "name", None) != "lcm":
+                if active_engine is None or getattr(active_engine, "name", None) != "trove":
                     return None
                 return _pre_llm_context(active_engine, recall_policy, payload)
 
             register_hook("pre_llm_call", _on_pre_llm_call)
         except Exception as exc:
             logger.warning(
-                "LCM recall-policy hook registration did not complete; "
+                "TROVE recall-policy hook registration did not complete; "
                 "tool schemas remain available: %s",
                 exc,
             )
 
     # Register tools via the plugin registry only on hosts that preserve the
     # active messages=... contract for registered context-engine tools.
-    # Older/current Hermes hosts already expose lcm_* correctly through the
+    # Older/current Hermes hosts already expose trove_* correctly through the
     # native context-engine schema/dispatch path (Path B). Registering duplicate
     # names through the plugin registry (Path A) on message-blind hosts would
     # shadow Path B and lose current-turn ingest, so the Path B fallback is the
     # expected healthy behavior there.
     _TOOLS = [
-        ("lcm_grep", LCM_GREP, "🔍"),
-        ("lcm_recall", LCM_RECALL, "🧠"),
-        ("lcm_query_state", LCM_QUERY_STATE, "🧾"),
-        ("lcm_compute", LCM_COMPUTE, "🧮"),
-        ("lcm_compile_evidence", LCM_COMPILE_EVIDENCE, "🧷"),
-        ("lcm_evidence_pack", LCM_EVIDENCE_PACK, "📦"),
-        ("lcm_retrieve", LCM_RETRIEVE, "🧭"),
-        ("lcm_recent", LCM_RECENT, "🕒"),
-        ("lcm_load_session", LCM_LOAD_SESSION, "📋"),
-        ("lcm_describe", LCM_DESCRIBE, "📊"),
-        ("lcm_expand", LCM_EXPAND, "🔎"),
-        ("lcm_expand_query", LCM_EXPAND_QUERY, "❓"),
-        ("lcm_status", LCM_STATUS, "💚"),
-        ("lcm_inspect", LCM_INSPECT, "🧭"),
-        ("lcm_doctor", LCM_DOCTOR, "🏥"),
+        ("trove_grep", TROVE_GREP, "🔍"),
+        ("trove_recall", TROVE_RECALL, "🧠"),
+        ("trove_query_state", TROVE_QUERY_STATE, "🧾"),
+        ("trove_compute", TROVE_COMPUTE, "🧮"),
+        ("trove_compile_evidence", TROVE_COMPILE_EVIDENCE, "🧷"),
+        ("trove_evidence_pack", TROVE_EVIDENCE_PACK, "📦"),
+        ("trove_retrieve", TROVE_RETRIEVE, "🧭"),
+        ("trove_recent", TROVE_RECENT, "🕒"),
+        ("trove_load_session", TROVE_LOAD_SESSION, "📋"),
+        ("trove_describe", TROVE_DESCRIBE, "📊"),
+        ("trove_expand", TROVE_EXPAND, "🔎"),
+        ("trove_expand_query", TROVE_EXPAND_QUERY, "❓"),
+        ("trove_status", TROVE_STATUS, "💚"),
+        ("trove_inspect", TROVE_INSPECT, "🧭"),
+        ("trove_doctor", TROVE_DOCTOR, "🏥"),
     ]
     register_tool = getattr(ctx, "register_tool", None)
     if callable(register_tool) and _host_forwards_registered_tool_messages(ctx):
@@ -524,21 +524,21 @@ def register(ctx):
                 )
             except Exception as exc:
                 logger.warning(
-                    "LCM plugin-registry tool registration for %s did not complete; "
-                    "LCM tools remain available through context-engine schemas: %s",
+                    "TROVE plugin-registry tool registration for %s did not complete; "
+                    "TROVE tools remain available through context-engine schemas: %s",
                     name,
                     exc,
                 )
     elif callable(register_tool):
         logger.info(
-            "LCM tools are available through context-engine schemas "
+            "TROVE tools are available through context-engine schemas "
             "(expected Path B fallback on this Hermes host). Standalone "
             "plugin-registry tool registration (Path A) requires message-aware "
             "handlers and is not required here."
         )
     else:
         logger.info(
-            "LCM tools are available through context-engine schemas (Path B); "
+            "TROVE tools are available through context-engine schemas (Path B); "
             "plugin-registry tool registration is unavailable on this Hermes "
             "host and is not required."
         )
@@ -547,26 +547,26 @@ def register(ctx):
     config = getattr(engine, "_config", None)
     slash_enabled = bool(getattr(config, "slash_commands_enabled", False))
     if callable(register_command) and slash_enabled:
-        from .command import handle_lcm_command
+        from .command import handle_trove_command
 
         register_command(
-            "lcm",
+            "trove",
             _make_command_handler(
-                handle_lcm_command,
+                handle_trove_command,
                 engine,
-                resolve_active_lcm_engine,
+                resolve_active_trove_engine,
             ),
-            description="LCM status and diagnostics",
+            description="TROVE status and diagnostics",
         )
     elif callable(register_command):
-        logger.info("LCM slash command registration disabled (set LCM_ENABLE_SLASH_COMMAND=1 to enable /lcm)")
+        logger.info("TROVE slash command registration disabled (set TROVE_ENABLE_SLASH_COMMAND=1 to enable /trove)")
     else:
-        logger.info("LCM slash command registration unavailable on this Hermes host; continuing without /lcm")
+        logger.info("TROVE slash command registration unavailable on this Hermes host; continuing without /trove")
 
     # Register a post_llm_call hook so every completed turn is persisted to
     # the durable store, regardless of whether compression triggers.  Without
     # this, short WebUI conversations (which never expire and may never hit
-    # the compression threshold) are invisible to LCM forever.
+    # the compression threshold) are invisible to TROVE forever.
     #
     # The hook fires once per turn after the tool-calling loop completes and
     # receives conversation_history including the assistant response.  The
@@ -583,7 +583,7 @@ def register(ctx):
             active_engine = kwargs.get("context_compressor")
             if not (
                 active_engine is not None
-                and getattr(active_engine, "name", None) == "lcm"
+                and getattr(active_engine, "name", None) == "trove"
                 and hasattr(active_engine, "ingest")
             ):
                 active_engine = None
@@ -597,7 +597,7 @@ def register(ctx):
             platform = str(kwargs.get("platform") or "")
 
             if active_engine is None:
-                active_engine = resolve_active_lcm_engine(
+                active_engine = resolve_active_trove_engine(
                     session_id=session_id,
                     conversation_id=conversation_id,
                 ) or engine
@@ -615,11 +615,11 @@ def register(ctx):
                 )
                 active_engine.ingest(history)
             except Exception as exc:
-                logger.debug("LCM post_llm_call ingest error: %s", exc)
+                logger.debug("TROVE post_llm_call ingest error: %s", exc)
 
         _mgr._hooks.setdefault("post_llm_call", []).append(_on_post_llm_call)
-        logger.debug("LCM registered post_llm_call hook for per-turn ingest")
+        logger.debug("TROVE registered post_llm_call hook for per-turn ingest")
     except Exception as exc:
-        logger.debug("LCM could not register post_llm_call hook: %s", exc)
+        logger.debug("TROVE could not register post_llm_call hook: %s", exc)
 
-    logger.info("LCM plugin loaded — lossless context management active")
+    logger.info("TROVE plugin loaded — lossless context management active")

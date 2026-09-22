@@ -20,12 +20,12 @@ from .evidence_compiler import (
     compile_evidence,
     prepare_evidence_selector,
 )
-from .model_routing import apply_lcm_model_route
+from .model_routing import apply_trove_model_route
 
 
 HOST_EVIDENCE_VERSION = "host-supplied-evidence-v1"
 _REASONING_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
-_EXACT_REF_RE = re.compile(r"^lcm:[1-9]\d*:\d+-\d+$")
+_EXACT_REF_RE = re.compile(r"^trove:[1-9]\d*:\d+-\d+$")
 
 
 def _usage_value(usage: Any, *names: str) -> int:
@@ -52,7 +52,7 @@ def build_selector_prompt(request: Mapping[str, Any]) -> str:
             {
                 "claim_id": "unique-id",
                 "facet": "one requested facet",
-                "exact_ref": "exact allowed lcm ref",
+                "exact_ref": "exact allowed trove ref",
                 "quote": "the exact quote covered by that ref",
                 "entity": "optional exact entity",
                 "date": "optional grounded date",
@@ -228,7 +228,7 @@ def prepare_host_evidence_selector(
         "request": prepared["request"],
         "budgets": prepared["budgets"],
         "provenance": {
-            "envelope_owner": "hermes_lcm_product_code",
+            "envelope_owner": "hermes_trove_product_code",
             "selector_output_semantics_only": True,
             "registered_tool_transport_used": False,
         },
@@ -252,7 +252,7 @@ def call_auxiliary_selector(
         "max_tokens": 4_000,
         "timeout": timeout_seconds,
     }
-    apply_lcm_model_route(call_kwargs, model)
+    apply_trove_model_route(call_kwargs, model)
     started = time.perf_counter()
     response = call_llm(**call_kwargs)
     latency_ms = round((time.perf_counter() - started) * 1_000.0, 3)
@@ -330,7 +330,7 @@ def _render_context(result: Mapping[str, Any], *, max_chars: int) -> str | None:
     encoded = json.dumps(
         payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     )
-    context = f'<lcm-compiled-evidence version="{HOST_EVIDENCE_VERSION}">{encoded}</lcm-compiled-evidence>'
+    context = f'<trove-compiled-evidence version="{HOST_EVIDENCE_VERSION}">{encoded}</trove-compiled-evidence>'
     return context if len(context) <= max_chars else None
 
 
@@ -398,7 +398,7 @@ def build_host_supplied_evidence(
     result["baseline_retained"] = True
     result["provenance"].update(
         {
-            "envelope_owner": "hermes_lcm_product_code",
+            "envelope_owner": "hermes_trove_product_code",
             "registered_tool_transport_used": False,
             "selector_output_semantics_only": True,
             "retrieval_stage": (

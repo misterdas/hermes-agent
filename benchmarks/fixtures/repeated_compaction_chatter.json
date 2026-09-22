@@ -2,7 +2,7 @@
   "name": "repeated_compaction_chatter",
   "tags": ["compaction_chatter", "synthetic"],
   "messages": [
-    {"role": "system", "content": "You are a deterministic LCM benchmark agent."},
+    {"role": "system", "content": "You are a deterministic TROVE benchmark agent."},
     {"role": "user", "content": "CANARY_CHATTER = VALUE_CHATTER. This fact anchors the chatter replay."},
     {"role": "assistant", "content": "Acknowledged chatter anchor."},
     {"role": "user", "content": "Large-ish but deterministic backlog segment one. filler filler filler filler filler filler filler filler filler filler."},

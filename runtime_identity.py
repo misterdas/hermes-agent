@@ -1,4 +1,4 @@
-"""Plugin and git runtime-identity helpers for LCM status/doctor surfaces.
+"""Plugin and git runtime-identity helpers for TROVE status/doctor surfaces.
 
 Isolated from ``engine.py`` (WS5 seam): resolving the plugin's own name/version
 from its manifest and probing best-effort git identity for source checkouts are
@@ -32,7 +32,7 @@ def _plugin_metadata() -> dict[str, str]:
     """
     global _PLUGIN_METADATA
 
-    metadata = {"name": "hermes-lcm", "version": "unknown"}
+    metadata = {"name": "hermes-trove", "version": "unknown"}
     manifest = _PLUGIN_ROOT / "plugin.yaml"
     try:
         for line in manifest.read_text(encoding="utf-8").splitlines():
@@ -45,7 +45,7 @@ def _plugin_metadata() -> dict[str, str]:
         _PLUGIN_METADATA = metadata
         return dict(metadata)
     except OSError:
-        logger.debug("LCM plugin manifest not readable at %s", manifest)
+        logger.debug("TROVE plugin manifest not readable at %s", manifest)
 
     if _PLUGIN_METADATA is not None:
         return dict(_PLUGIN_METADATA)
@@ -77,7 +77,7 @@ def _git_runtime_identity(root: Path) -> dict[str, Any]:
                 timeout=1,
             )
         except (OSError, subprocess.SubprocessError) as exc:
-            logger.debug("LCM git identity probe failed at %s: %s", root, exc)
+            logger.debug("TROVE git identity probe failed at %s: %s", root, exc)
             return None
         if result.returncode != 0:
             return None

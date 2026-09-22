@@ -6,10 +6,10 @@ from datetime import datetime, timezone
 
 import pytest
 
-from hermes_lcm.assertion_extraction import parse_assertion_extraction
-from hermes_lcm.assertion_state import query_assertion_state
-from hermes_lcm.assertion_store import AssertionStore
-from hermes_lcm.store import MessageStore
+from hermes_trove.assertion_extraction import parse_assertion_extraction
+from hermes_trove.assertion_state import query_assertion_state
+from hermes_trove.assertion_store import AssertionStore
+from hermes_trove.store import MessageStore
 
 
 def _source(messages, assertions, content, observed_at, *, role="user"):
@@ -85,7 +85,7 @@ def _relation(snapshot, quote, *, relation_type, target_id):
 
 @pytest.fixture
 def state_db(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     messages = MessageStore(db_path)
     assertions = AssertionStore(db_path)
     try:

@@ -1,21 +1,21 @@
-"""Tests for /lcm rotate command surface and engine rotate path."""
+"""Tests for /trove rotate command surface and engine rotate path."""
 
 import importlib
 import os
 import re
 from pathlib import Path
 
-from hermes_lcm.command import handle_lcm_command
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.engine import LCMEngine
+from hermes_trove.command import handle_trove_command
+from hermes_trove.config import TROVEConfig
+from hermes_trove.engine import TROVEEngine
 
 
-def _build_engine(tmp_path, *, fresh_tail_count: int = 3) -> LCMEngine:
-    config = LCMConfig()
-    config.database_path = str(tmp_path / "lcm_rotate_test.db")
+def _build_engine(tmp_path, *, fresh_tail_count: int = 3) -> TROVEEngine:
+    config = TROVEConfig()
+    config.database_path = str(tmp_path / "trove_rotate_test.db")
     config.fresh_tail_count = fresh_tail_count
     hermes_home = tmp_path / "hermes_home"
-    engine = LCMEngine(config=config, hermes_home=str(hermes_home))
+    engine = TROVEEngine(config=config, hermes_home=str(hermes_home))
     engine._session_id = "live-session"
     engine._session_platform = "telegram"
     engine._conversation_id = "live-session"
@@ -25,7 +25,7 @@ def _build_engine(tmp_path, *, fresh_tail_count: int = 3) -> LCMEngine:
     return engine
 
 
-def _seed_messages(engine: LCMEngine, count: int) -> None:
+def _seed_messages(engine: TROVEEngine, count: int) -> None:
     for index in range(count):
         engine._store.append(
             engine._session_id,
@@ -48,9 +48,9 @@ def test_rotate_preview_reports_planned_frontier_without_mutating(tmp_path):
     engine = _build_engine(tmp_path, fresh_tail_count=3)
     _seed_messages(engine, count=10)
 
-    result = handle_lcm_command("rotate", engine)
+    result = handle_trove_command("rotate", engine)
 
-    assert "LCM rotate" in result
+    assert "TROVE rotate" in result
     assert "status: preview" in result
     assert "total_message_count: 10" in result
     assert "fresh_tail_count: 3" in result
@@ -74,7 +74,7 @@ def test_rotate_preview_reports_noop_when_total_messages_within_tail(tmp_path):
     engine = _build_engine(tmp_path, fresh_tail_count=5)
     _seed_messages(engine, count=3)
 
-    result = handle_lcm_command("rotate", engine)
+    result = handle_trove_command("rotate", engine)
 
     assert "status: noop" in result
     assert "reason: no_pre_tail_content" in result
@@ -85,9 +85,9 @@ def test_rotate_apply_advances_frontier_and_writes_rolling_backup(tmp_path):
     engine = _build_engine(tmp_path, fresh_tail_count=3)
     _seed_messages(engine, count=10)
 
-    result = handle_lcm_command("rotate apply", engine)
+    result = handle_trove_command("rotate apply", engine)
 
-    assert "LCM rotate apply" in result
+    assert "TROVE rotate apply" in result
     assert "status: ok" in result
     assert "previous_frontier_store_id: 0" in result
     assert "new_frontier_store_id: 7" in result
@@ -117,7 +117,7 @@ def test_rotate_apply_preserves_raw_messages_for_lossless_recovery(tmp_path):
     engine = _build_engine(tmp_path, fresh_tail_count=2)
     _seed_messages(engine, count=8)
 
-    handle_lcm_command("rotate apply", engine)
+    handle_trove_command("rotate apply", engine)
 
     # All 8 raw messages remain in the store after rotate — frontier only
     # changes the bootstrap replay boundary, never deletes raw history.
@@ -130,14 +130,14 @@ def test_rotate_apply_rerun_is_idempotent_and_preserves_existing_backup(tmp_path
     engine = _build_engine(tmp_path, fresh_tail_count=3)
     _seed_messages(engine, count=10)
 
-    first = handle_lcm_command("rotate apply", engine)
+    first = handle_trove_command("rotate apply", engine)
     assert "status: ok" in first
     first_backup = Path(_extract_field(first, "rotate_backup_path"))
     assert first_backup.exists()
     first_size = first_backup.stat().st_size
     first_mtime = first_backup.stat().st_mtime
 
-    second = handle_lcm_command("rotate apply", engine)
+    second = handle_trove_command("rotate apply", engine)
     assert "status: noop" in second
     assert "reason: frontier_already_ahead" in second
     assert (
@@ -161,7 +161,7 @@ def test_rotate_apply_rolling_backup_overwrites_prior_slot_on_actual_rotate(tmp_
     engine = _build_engine(tmp_path, fresh_tail_count=3)
     _seed_messages(engine, count=10)
 
-    first = handle_lcm_command("rotate apply", engine)
+    first = handle_trove_command("rotate apply", engine)
     assert "status: ok" in first
     first_backup = Path(_extract_field(first, "rotate_backup_path"))
     assert first_backup.exists()
@@ -176,7 +176,7 @@ def test_rotate_apply_rolling_backup_overwrites_prior_slot_on_actual_rotate(tmp_
     older = first_mtime - 5.0
     os.utime(first_backup, (older, older))
 
-    second = handle_lcm_command("rotate apply", engine)
+    second = handle_trove_command("rotate apply", engine)
     assert "status: ok" in second
     second_backup = Path(_extract_field(second, "rotate_backup_path"))
     assert second_backup == first_backup, "rotate should reuse the rolling slot, not create a new file"
@@ -192,7 +192,7 @@ def test_rotate_refuses_on_ignored_session(tmp_path):
     _seed_messages(engine, count=8)
     engine._session_ignored = True
 
-    result = handle_lcm_command("rotate", engine)
+    result = handle_trove_command("rotate", engine)
 
     assert "status: refused" in result
     assert "reason: session_ignored" in result
@@ -203,7 +203,7 @@ def test_rotate_refuses_on_stateless_session(tmp_path):
     _seed_messages(engine, count=8)
     engine._session_stateless = True
 
-    result = handle_lcm_command("rotate", engine)
+    result = handle_trove_command("rotate", engine)
 
     assert "status: refused" in result
     assert "reason: session_stateless" in result
@@ -214,7 +214,7 @@ def test_rotate_apply_refuses_on_ignored_session_without_writing_backup(tmp_path
     _seed_messages(engine, count=8)
     engine._session_ignored = True
 
-    result = handle_lcm_command("rotate apply", engine)
+    result = handle_trove_command("rotate apply", engine)
 
     assert "status: refused" in result
     assert "reason: session_ignored" in result
@@ -227,7 +227,7 @@ def test_rotate_apply_refuses_on_stateless_session_without_writing_backup(tmp_pa
     _seed_messages(engine, count=8)
     engine._session_stateless = True
 
-    result = handle_lcm_command("rotate apply", engine)
+    result = handle_trove_command("rotate apply", engine)
 
     assert "status: refused" in result
     assert "reason: session_stateless" in result
@@ -239,7 +239,7 @@ def test_rotate_refuses_when_no_session_bound(tmp_path):
     engine._session_id = ""
     engine._conversation_id = ""
 
-    result = handle_lcm_command("rotate", engine)
+    result = handle_trove_command("rotate", engine)
 
     assert "status: refused" in result
     assert "reason: no_active_session" in result
@@ -248,7 +248,7 @@ def test_rotate_refuses_when_no_session_bound(tmp_path):
 def test_rotate_help_rejects_unknown_subcommand(tmp_path):
     engine = _build_engine(tmp_path, fresh_tail_count=3)
 
-    result = handle_lcm_command("rotate something-else", engine)
+    result = handle_trove_command("rotate something-else", engine)
 
     # Soft assertion — exact wording may evolve; verify the help text
     # mentions rotate and rejects the bogus subcommand.
@@ -256,16 +256,16 @@ def test_rotate_help_rejects_unknown_subcommand(tmp_path):
     assert "apply" in result
 
 
-def test_lcm_status_reports_last_rotate_at_after_apply(tmp_path):
+def test_trove_status_reports_last_rotate_at_after_apply(tmp_path):
     engine = _build_engine(tmp_path, fresh_tail_count=3)
     _seed_messages(engine, count=10)
 
-    before = handle_lcm_command("status", engine)
+    before = handle_trove_command("status", engine)
     assert "last_rotate_at: (never)" in before
 
-    handle_lcm_command("rotate apply", engine)
+    handle_trove_command("rotate apply", engine)
 
-    after = handle_lcm_command("status", engine)
+    after = handle_trove_command("status", engine)
     # Pin the format: UTC ISO-8601 with seconds precision and +00:00 offset.
     assert re.search(
         r"last_rotate_at: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00", after
@@ -277,18 +277,18 @@ def test_lcm_status_reports_last_rotate_at_after_apply(tmp_path):
     assert "rotate_backup_path:" in after
 
 
-def test_lcm_help_lists_rotate_subcommands(tmp_path):
+def test_trove_help_lists_rotate_subcommands(tmp_path):
     engine = _build_engine(tmp_path, fresh_tail_count=3)
-    result = handle_lcm_command("help", engine)
-    assert "/lcm rotate" in result
-    assert "/lcm rotate apply" in result
+    result = handle_trove_command("help", engine)
+    assert "/trove rotate" in result
+    assert "/trove rotate apply" in result
 
 
 def test_rotate_handles_session_with_exactly_fresh_tail_count_messages(tmp_path):
     engine = _build_engine(tmp_path, fresh_tail_count=3)
     _seed_messages(engine, count=3)
 
-    result = handle_lcm_command("rotate", engine)
+    result = handle_trove_command("rotate", engine)
 
     assert "status: noop" in result
     assert "reason: no_pre_tail_content" in result
@@ -309,7 +309,7 @@ def test_rotate_empty_tail_branch_returns_noop_shape_without_keyerror(tmp_path):
     original_get_session_tail = engine._store.get_session_tail
     try:
         engine._store.get_session_tail = lambda session_id, limit=1000: []  # type: ignore[method-assign]
-        result = handle_lcm_command("rotate", engine)
+        result = handle_trove_command("rotate", engine)
     finally:
         engine._store.get_session_tail = original_get_session_tail  # type: ignore[method-assign]
 
@@ -336,14 +336,14 @@ def test_rotate_apply_aborts_and_preserves_state_when_backup_write_fails(tmp_pat
     backup_dir.write_text("not a directory")
 
     try:
-        result = handle_lcm_command("rotate apply", engine)
+        result = handle_trove_command("rotate apply", engine)
     finally:
         # Clean up the sentinel file so later tests in the same tmp_path do
         # not interfere — though pytest gives each test its own tmp_path.
         if backup_dir.exists() and backup_dir.is_file():
             backup_dir.unlink()
 
-    assert "LCM rotate apply" in result
+    assert "TROVE rotate apply" in result
     assert "status: error" in result
     assert "error: backup failed:" in result
     assert "note: rotate apply aborted before any lifecycle mutation" in result
@@ -368,7 +368,7 @@ def test_rotate_apply_reports_stale_lifecycle_state_when_session_drifts(tmp_path
     engine._lifecycle.bind_session("other-session", conversation_id=engine._conversation_id)
     # Engine's local _session_id stays on the original "live-session".
 
-    result = handle_lcm_command("rotate apply", engine)
+    result = handle_trove_command("rotate apply", engine)
 
     assert "status: refused" in result
     assert "reason: stale_lifecycle_state" in result
@@ -384,7 +384,7 @@ def test_rotate_apply_reports_stale_lifecycle_state_when_session_drifts(tmp_path
 def test_rotate_apply_does_not_corrupt_source_lineage_on_next_compress(tmp_path, monkeypatch):
     """Regression for the issue Tosko4 surfaced on PR #176.
 
-    After /lcm rotate apply, the in-memory active context still holds the
+    After /trove rotate apply, the in-memory active context still holds the
     pre-rotate raw messages until the host rebuilds it. A normal compress()
     later in the same process must produce a DAG node whose source_ids
     reference the same raw rows it summarized — not just the post-rotate
@@ -392,12 +392,12 @@ def test_rotate_apply_does_not_corrupt_source_lineage_on_next_compress(tmp_path,
     cause _get_store_ids_for_messages to filter out the pre-rotate rows,
     producing a poisoned node (text covers msg-0..msg-7, source_ids = [9]).
     """
-    config = LCMConfig()
-    config.database_path = str(tmp_path / "lcm_rotate_lineage.db")
+    config = TROVEConfig()
+    config.database_path = str(tmp_path / "trove_rotate_lineage.db")
     config.fresh_tail_count = 3
     config.leaf_chunk_tokens = 10
     config.context_threshold = 0.001
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._session_id = "live-session"
     engine._session_platform = "telegram"
     engine._conversation_id = "live-session"
@@ -437,9 +437,9 @@ def test_rotate_apply_does_not_corrupt_source_lineage_on_next_compress(tmp_path,
 
     # Stub the summarizer so the test is deterministic and we can verify
     # exactly which raw messages get compacted.
-    lcm_engine_module = importlib.import_module("hermes_lcm.engine")
+    trove_engine_module = importlib.import_module("hermes_trove.engine")
     monkeypatch.setattr(
-        lcm_engine_module,
+        trove_engine_module,
         "summarize_with_escalation",
         lambda **kwargs: ("Summary of pre-tail messages.\nExpand for details about: msg-0..msg-7", 1),
     )
@@ -474,16 +474,16 @@ def test_rotate_apply_does_not_corrupt_source_lineage_on_next_compress(tmp_path,
 
 def test_rotate_backup_path_falls_back_to_db_sibling_when_hermes_home_unset(tmp_path):
     """The hermes_home-unset branch in rotate_backup_path puts the rolling
-    backup beside the LCM database. Cover the branch so a regression there
+    backup beside the TROVE database. Cover the branch so a regression there
     is visible.
     """
-    config = LCMConfig()
-    config.database_path = str(tmp_path / "lcm_no_home.db")
+    config = TROVEConfig()
+    config.database_path = str(tmp_path / "trove_no_home.db")
     config.fresh_tail_count = 3
-    engine = LCMEngine(config=config, hermes_home="")
+    engine = TROVEEngine(config=config, hermes_home="")
     try:
         path = engine.rotate_backup_path()
-        assert path == tmp_path / "backups" / "lcm" / "lcm_no_home-rotate-latest.sqlite3"
-        assert engine.backup_dir() == tmp_path / "backups" / "lcm"
+        assert path == tmp_path / "backups" / "trove" / "trove_no_home-rotate-latest.sqlite3"
+        assert engine.backup_dir() == tmp_path / "backups" / "trove"
     finally:
         engine.shutdown()

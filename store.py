@@ -33,7 +33,7 @@ from .db_bootstrap import (
     run_message_identity_migration,
     run_versioned_migrations,
 )
-from .config import LCMConfig
+from .config import TROVEConfig
 from .ingest_protection import protect_message_for_ingest, protect_messages_for_ingest
 from .search_query import (
     build_snippet,
@@ -171,7 +171,7 @@ def _normalize_observed_at(value: Any) -> float | None:
 
     Numeric Unix seconds and timezone-aware ISO-8601 strings are accepted.
     Naive wall-clock strings, booleans, non-finite values, and non-positive
-    values are rejected so LCM write time is never silently relabelled as
+    values are rejected so TROVE write time is never silently relabelled as
     source observation time.
     """
     if value is None or isinstance(value, bool):
@@ -351,7 +351,7 @@ class MessageStore:
         self._is_memory_database = str(self.db_path) == ":memory:"
         if not self._is_memory_database:
             _prepare_private_sqlite_storage(self.db_path)
-        self._ingest_protection_config = ingest_protection_config or LCMConfig(database_path=str(self.db_path))
+        self._ingest_protection_config = ingest_protection_config or TROVEConfig(database_path=str(self.db_path))
         self._hermes_home = hermes_home or str(self.db_path.parent)
         self._conn: Optional[sqlite3.Connection] = None
         # ``self._conn`` is shared across threads (the connection is opened with
@@ -464,7 +464,7 @@ class MessageStore:
     def _ensure_time_contract_columns(self) -> None:
         """Add the backward-compatible V4.2 source-time sidecar columns.
 
-        ``timestamp`` remains the historical LCM write timestamp. Existing
+        ``timestamp`` remains the historical TROVE write timestamp. Existing
         rows receive only an ``ingested_at`` copy; their ``observed_at`` stays
         NULL because no source timestamp can be recovered honestly.
         """
@@ -916,7 +916,7 @@ class MessageStore:
         time_from: float | None = None,
         time_to: float | None = None,
     ) -> int:
-        """Count messages matching the lcm_load_session filter contract."""
+        """Count messages matching the trove_load_session filter contract."""
         where, args = self._session_load_where(
             session_id,
             roles=roles,
@@ -1080,7 +1080,7 @@ class MessageStore:
 
     def scan_session_cleanup_stats(self) -> List[tuple]:
         """Per-session ``(session_id, message_count, token_total, node_count)``
-        rows across messages and summary nodes, for ``/lcm doctor clean``
+        rows across messages and summary nodes, for ``/trove doctor clean``
         candidate scanning. Callers own the pattern/protection policy."""
         return self._conn.execute(
             """
@@ -1114,7 +1114,7 @@ class MessageStore:
 
     def scan_session_retention_stats(self, session_id: str) -> List[tuple]:
         """Per-session activity/token stats for one session (messages + summary
-        nodes), for ``/lcm doctor retention`` scanning. Callers own the
+        nodes), for ``/trove doctor retention`` scanning. Callers own the
         staleness/protection policy."""
         return self._conn.execute(
             """

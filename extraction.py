@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .model_routing import apply_lcm_model_route
+from .model_routing import apply_trove_model_route
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ def _call_extraction_llm(prompt: str, model: str = "",
             "temperature": 0.2,
             "max_tokens": 2000,
         }
-        apply_lcm_model_route(call_kwargs, model)
+        apply_trove_model_route(call_kwargs, model)
         if timeout is not None:
             call_kwargs["timeout"] = timeout
         response = call_llm(**call_kwargs)

@@ -1,17 +1,17 @@
 import json
 import time
 
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.dag import SummaryNode
-from hermes_lcm.engine import LCMEngine
+from hermes_trove.config import TROVEConfig
+from hermes_trove.dag import SummaryNode
+from hermes_trove.engine import TROVEEngine
 
 
 def test_compression_boundary_carries_summaries_without_moving_raw_messages(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         large_output_externalization_path=str(tmp_path / "externalized"),
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     try:
         engine.on_session_start(
             "parent-session",

@@ -4,8 +4,8 @@ import sqlite3
 
 import pytest
 
-import hermes_lcm.vector_store as vector_store_module
-from hermes_lcm.vector_store import EmbeddingIdentity, VectorStore
+import hermes_trove.vector_store as vector_store_module
+from hermes_trove.vector_store import EmbeddingIdentity, VectorStore
 
 MODEL = "voyage-context-4"
 PROVIDER = "voyage"
@@ -44,7 +44,7 @@ def _chunk_identity():
 
 @pytest.fixture
 def store(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _seed_messages(
         db_path,
         [
@@ -113,7 +113,7 @@ class TestChunkWriteAndKnn:
         assert {row[0] for row in result} == {"12:0"}
 
     def test_bounded_coverage(self, tmp_path):
-        db_path = tmp_path / "lcm.db"
+        db_path = tmp_path / "trove.db"
         _seed_messages(
             db_path,
             [(i, "s", "history", "user", "m", float(i)) for i in range(5)],
@@ -157,7 +157,7 @@ class TestArchiveOnPurge:
         assert {row[0] for row in result} == {"11:0"}
 
     def test_archive_noop_without_schema(self, tmp_path):
-        db_path = tmp_path / "lcm.db"
+        db_path = tmp_path / "trove.db"
         _seed_messages(db_path, [(1, "s", "", "user", "m", 1.0)])
         vs = VectorStore(db_path)
         try:

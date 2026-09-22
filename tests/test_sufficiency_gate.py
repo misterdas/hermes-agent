@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import json
 
-from hermes_lcm.preanswer_evidence import build_preanswer_evidence
-from hermes_lcm.store import MessageStore
+from hermes_trove.preanswer_evidence import build_preanswer_evidence
+from hermes_trove.store import MessageStore
 
 from types import SimpleNamespace
 
-from hermes_lcm.config import LCMConfig
+from hermes_trove.config import TROVEConfig
 
 
 def _engine(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm.db"))
+    config = TROVEConfig(database_path=str(tmp_path / "trove.db"))
     store = MessageStore(config.database_path, ingest_protection_config=config)
     return SimpleNamespace(_config=config, _store=store, _assertions=None)
 
@@ -24,7 +24,7 @@ def _append(engine, content, *, observed_at=None, session_id="session-a"):
         message["timestamp"] = observed_at
     store_id = engine._store.append(session_id, message)
     return {
-        "exact_ref": f"lcm:{store_id}:0-{len(content)}",
+        "exact_ref": f"trove:{store_id}:0-{len(content)}",
         "quote": content,
     }
 
@@ -134,7 +134,7 @@ def test_delivered_state_outranks_no_claim_reason_code():
     state (e.g. ``answer_sufficient``) must outrank the reason-code tables,
     even if a stale/future code collides with the no-claim set.
     """
-    from hermes_lcm.sufficiency_gate import apply_sufficiency_gate
+    from hermes_trove.sufficiency_gate import apply_sufficiency_gate
 
     result = {
         "status": "compiled",
@@ -168,8 +168,8 @@ def test_gate_failure_is_atomic_and_wrapper_fails_open(
     ``build_preanswer_evidence`` wrapper fails open to the legacy result."""
     import pytest
 
-    import hermes_lcm.preanswer_evidence as pe
-    from hermes_lcm import sufficiency_gate as sg
+    import hermes_trove.preanswer_evidence as pe
+    from hermes_trove import sufficiency_gate as sg
 
     # (a) Classification crash: zero mutation, zero partial marking.
     broken = {
@@ -302,8 +302,8 @@ def test_gate_keeps_metrics_and_trace_digest_rederivable(tmp_path):
     ``compile_preanswer_evidence`` directly and applies the gate to its
     finished result, mirroring the hook wiring.
     """
-    from hermes_lcm import requirements_compiler as rc
-    from hermes_lcm import sufficiency_gate as sg
+    from hermes_trove import requirements_compiler as rc
+    from hermes_trove import sufficiency_gate as sg
 
     engine = _engine(tmp_path)
     bali = _append(
@@ -406,7 +406,7 @@ def test_open_cardinality_partial_discloses_from_stored_fields_only(tmp_path):
     assert section["state"] == "partial"
     assert section["policy_action"] == "answer_with_disclosure"
     disclosure = section["disclosure_context"]
-    assert "<lcm-sufficiency-disclosure>" in disclosure
+    assert "<trove-sufficiency-disclosure>" in disclosure
     assert "state: partial" in disclosure
     assert "open_cardinality" in disclosure
     # The disclosure block is the only authored text; every other value is a

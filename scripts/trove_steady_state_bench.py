@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Measure the per-turn ingest/preflight hot path at a range of history sizes.
 
-Unlike lcm_benchmark.py (which times compaction), this replays turns *without*
+Unlike trove_benchmark.py (which times compaction), this replays turns *without*
 compacting and reports how per-turn ingest/preflight latency scales with
 conversation length. Use it as a regression guard: the per-turn cost should stay
 roughly flat as history grows, not scale with it.
@@ -51,7 +51,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str]) -> int:
     args = _parse_args(argv)
     history_sizes = tuple(args.history_size) if args.history_size else DEFAULT_HISTORY_SIZES
-    run_dir = Path(args.output) if args.output else Path(tempfile.mkdtemp(prefix="lcm-steady-"))
+    run_dir = Path(args.output) if args.output else Path(tempfile.mkdtemp(prefix="trove-steady-"))
 
     report = run_steady_state(
         run_dir,

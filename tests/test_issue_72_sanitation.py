@@ -12,16 +12,16 @@ from unittest.mock import Mock
 
 import pytest
 
-import hermes_lcm.engine as lcm_engine
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.dag import SummaryNode
-from hermes_lcm.engine import LCMEngine
-from hermes_lcm.externalize import _externalized_summary
-from hermes_lcm.tokens import count_messages_tokens
+import hermes_trove.engine as trove_engine
+from hermes_trove.config import TROVEConfig
+from hermes_trove.dag import SummaryNode
+from hermes_trove.engine import TROVEEngine
+from hermes_trove.externalize import _externalized_summary
+from hermes_trove.tokens import count_messages_tokens
 
 
-def _engine(tmp_path, name: str, **overrides) -> LCMEngine:
-    config = LCMConfig(
+def _engine(tmp_path, name: str, **overrides) -> TROVEEngine:
+    config = TROVEConfig(
         database_path=str(tmp_path / f"{name}.db"),
         large_output_externalization_path=str(tmp_path / f"{name}-externalized"),
         fresh_tail_count=2,
@@ -37,7 +37,7 @@ def _engine(tmp_path, name: str, **overrides) -> LCMEngine:
     )
     for key, value in overrides.items():
         setattr(config, key, value)
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / f"{name}-home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / f"{name}-home"))
     engine.on_session_start(
         f"{name}-session",
         platform="synthetic",
@@ -63,7 +63,7 @@ def test_should_compress_overflow_precedes_cooldown_for_public_gates(
     assert engine.should_compress(1_000) is True
     assert engine.should_compress(100) is False
 
-    monkeypatch.setattr(engine, "_bypasses_lcm_context_management", lambda: True)
+    monkeypatch.setattr(engine, "_bypasses_trove_context_management", lambda: True)
     assert engine.should_compress(1_000) is True
     assert engine.should_compress(100) is False
 
@@ -331,7 +331,7 @@ def test_claimed_sanitation_returns_exact_opaque_claim_once(tmp_path, monkeypatc
         {"role": "assistant", "content": "fresh answer"},
     ]
     monkeypatch.setattr(
-        lcm_engine,
+        trove_engine,
         "summarize_with_escalation",
         Mock(side_effect=AssertionError("sanitation must not summarize")),
     )
@@ -654,7 +654,7 @@ def test_auxiliary_preflight_does_not_invalidate_foreground_sanitation_claim(tmp
             self._subagent_id = session_id
             self._delegate_depth = 1
 
-        def on_session_start(self, engine: LCMEngine) -> None:
+        def on_session_start(self, engine: TROVEEngine) -> None:
             engine.on_session_start(
                 self.session_id,
                 hermes_home=self._hermes_home,
@@ -662,7 +662,7 @@ def test_auxiliary_preflight_does_not_invalidate_foreground_sanitation_claim(tmp
                 context_length=100_000,
             )
 
-        def should_compress_preflight(self, engine: LCMEngine, messages):
+        def should_compress_preflight(self, engine: TROVEEngine, messages):
             return engine.should_compress_preflight(messages)
 
     engine = _engine(tmp_path, "claim-auxiliary-preflight-shared-engine")
@@ -726,7 +726,7 @@ def test_auxiliary_prepare_preserves_foreground_sanitation_claim(
             self._subagent_id = session_id
             self._delegate_depth = 1
 
-        def on_session_start(self, engine: LCMEngine) -> None:
+        def on_session_start(self, engine: TROVEEngine) -> None:
             engine.on_session_start(
                 self.session_id,
                 hermes_home=self._hermes_home,
@@ -734,7 +734,7 @@ def test_auxiliary_prepare_preserves_foreground_sanitation_claim(
                 context_length=100_000,
             )
 
-        def prepare(self, engine: LCMEngine, messages, *, generation: int):
+        def prepare(self, engine: TROVEEngine, messages, *, generation: int):
             assert engine.should_compress_preflight(messages) is True
             return engine.prepare_compression_operation(
                 messages,
@@ -751,7 +751,7 @@ def test_auxiliary_prepare_preserves_foreground_sanitation_claim(
         }
     ]
     monkeypatch.setattr(
-        lcm_engine,
+        trove_engine,
         "summarize_with_escalation",
         Mock(side_effect=AssertionError("claimed sanitation must not summarize")),
     )
@@ -842,7 +842,7 @@ def test_auxiliary_compress_bypass_preserves_foreground_sanitation_claim(
             self._subagent_id = session_id
             self._delegate_depth = 1
 
-        def on_session_start(self, engine: LCMEngine) -> None:
+        def on_session_start(self, engine: TROVEEngine) -> None:
             engine.on_session_start(
                 self.session_id,
                 hermes_home=self._hermes_home,
@@ -850,7 +850,7 @@ def test_auxiliary_compress_bypass_preserves_foreground_sanitation_claim(
                 context_length=100_000,
             )
 
-        def compress(self, engine: LCMEngine, messages, **kwargs):
+        def compress(self, engine: TROVEEngine, messages, **kwargs):
             return engine.compress(messages, **kwargs)
 
     engine = _engine(tmp_path, "claim-auxiliary-compress-shared-engine", fresh_tail_count=1)
@@ -865,7 +865,7 @@ def test_auxiliary_compress_bypass_preserves_foreground_sanitation_claim(
         {"role": "assistant", "content": "fresh follow-up"},
     ]
     monkeypatch.setattr(
-        lcm_engine,
+        trove_engine,
         "summarize_with_escalation",
         Mock(side_effect=AssertionError("claimed sanitation must not summarize")),
     )
@@ -989,7 +989,7 @@ def test_force_and_overflow_never_echo_sanitation_claim(
             lambda **_kwargs: True,
         )
     monkeypatch.setattr(
-        lcm_engine,
+        trove_engine,
         "summarize_with_escalation",
         Mock(return_value=("summary", 1)),
     )
@@ -1032,7 +1032,7 @@ def test_direct_exact_preflight_consumes_sanitation_without_claim_echo(
         {"role": "user", "content": "fresh"},
     ]
     monkeypatch.setattr(
-        lcm_engine,
+        trove_engine,
         "summarize_with_escalation",
         Mock(side_effect=AssertionError("direct sanitation must not summarize")),
     )
@@ -1065,7 +1065,7 @@ def test_direct_handoff_message_mismatch_remains_generic(tmp_path, monkeypatch):
         {"role": "user", "content": "fresh"},
     ]
     summary_spy = Mock(return_value=("generic mismatch summary", 1))
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
 
     assert engine.should_compress_preflight(deepcopy(cleanup_messages)) is True
     result = engine.compress(
@@ -1131,7 +1131,7 @@ def test_direct_handoff_session_change_remains_generic(tmp_path, monkeypatch):
         {"role": "user", "content": "fresh"},
     ]
     summary_spy = Mock(return_value=("next-session summary", 1))
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
 
     assert engine.should_compress_preflight(deepcopy(cleanup_messages)) is True
     engine.on_session_start(
@@ -1173,7 +1173,7 @@ def test_direct_handoff_compaction_trigger_remains_generic(
     ]
     rough = count_messages_tokens(messages)
     summary_spy = Mock(return_value=(f"{mode} summary", 1))
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
 
     assert engine.should_compress_preflight(deepcopy(messages)) is True
     if mode == "threshold":
@@ -1209,7 +1209,7 @@ def test_below_floor_replay_cleanup_is_pure_sanitation(tmp_path, monkeypatch):
         {"role": "assistant", "content": "fresh answer"},
     ]
     summary_spy = Mock(side_effect=AssertionError("sanitation must not summarize"))
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
 
     assert count_messages_tokens(messages) < engine.threshold_tokens
     assert engine.should_compress_preflight(deepcopy(messages)) is True
@@ -1255,7 +1255,7 @@ def test_no_leaf_scaffold_reassembly_has_distinct_status(tmp_path, monkeypatch):
     engine._ingest_cursor = 3
     engine._ingest_cursor_needs_reconcile = False
     monkeypatch.setattr(
-        lcm_engine,
+        trove_engine,
         "summarize_with_escalation",
         Mock(side_effect=AssertionError("reassembly must not summarize")),
     )
@@ -1384,7 +1384,7 @@ def test_replay_cleanup_does_not_swallow_critical_leaf_compaction(
         },
     ]
     summary_spy = Mock(return_value=("critical summary", 1))
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
 
     rough = count_messages_tokens(messages)
     assert engine._critical_budget_pressure_reached(
@@ -1437,7 +1437,7 @@ def test_cleanup_critical_partial_leaf_is_not_classified_sanitation_only(
         lambda *_args, **_kwargs: False,
     )
     summary_spy = Mock(return_value=("critical partial leaf summary", 1))
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
 
     assert engine.should_compress_preflight(deepcopy(messages)) is True
     assert (
@@ -1490,7 +1490,7 @@ def test_sanitation_shrink_preserves_original_critical_pressure_operation(
 
     monkeypatch.setattr(engine, "_ingest_messages", capture_replay)
     summary_spy = Mock(return_value=("critical shrink summary", 1))
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
 
     assert rough >= critical_floor
     assert engine.should_compress_preflight(deepcopy(messages)) is True
@@ -1557,7 +1557,7 @@ def test_cooldown_allows_critical_partial_threshold_sweep_leaf(
         lambda *_args, **_kwargs: False,
     )
     summary_spy = Mock(return_value=("critical partial sweep summary", 1))
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
 
     assert engine.should_compress_preflight(deepcopy(messages)) is True
     result = engine.compress(deepcopy(messages), current_tokens=rough)
@@ -1683,7 +1683,7 @@ def test_cooldown_cleanup_handoff_above_threshold_stays_sanitation_only(
             "cooldown-authorized sanitation must not summarize"
         )
     )
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
 
     assert engine.should_compress_preflight(deepcopy(messages)) is True
     assert engine._preflight_cleanup_only is True
@@ -1770,7 +1770,7 @@ def test_direct_compress_without_current_tokens_preserves_cleanup_pressure_for_d
         deferred_maintenance_due,
     )
     summary_spy = Mock(return_value=("direct no-current summary", 1))
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
 
     assert rough >= critical_floor
     assert engine.should_compress_preflight(deepcopy(messages)) is True
@@ -1814,7 +1814,7 @@ def test_cleanup_state_is_cleared_before_fallible_ingest_and_cannot_hijack_force
 
     summary_spy = Mock(return_value=("manual summary", 1))
     monkeypatch.setattr(engine, "_ingest_messages", real_ingest)
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
     engine.compress(deepcopy(messages), current_tokens=100, force=True)
 
     assert engine.last_compression_status == "compacted"
@@ -1840,7 +1840,7 @@ def test_cleanup_handoff_cannot_sanitize_an_interleaved_message_set(
         {"role": "user", "content": "unrelated fresh question"},
     ]
     summary_spy = Mock(return_value=("unrelated summary", 1))
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
 
     assert engine.should_compress_preflight(deepcopy(cleanup_messages)) is True
     assert engine._preflight_cleanup_only is True
@@ -1875,7 +1875,7 @@ def test_cleanup_handoff_cannot_cross_session_boundaries(
         {"role": "user", "content": "next-session fresh question"},
     ]
     summary_spy = Mock(return_value=("next-session summary", 1))
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
 
     assert engine.should_compress_preflight(deepcopy(cleanup_messages)) is True
     assert engine._preflight_cleanup_only is True
@@ -1922,7 +1922,7 @@ def test_cleanup_handoff_cannot_sanitize_an_interleaved_threshold_call(
     threshold_tokens = count_messages_tokens(threshold_messages)
     engine.threshold_tokens = threshold_tokens
     summary_spy = Mock(return_value=("threshold summary", 1))
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
 
     engine.threshold_tokens = 90_000
     assert engine.should_compress_preflight(deepcopy(cleanup_messages)) is True
@@ -1968,11 +1968,11 @@ def test_full_sanitation_round_trip_converges_without_leakage(
         "sk-synthetic-second-adjacent-00000000",
     ]
     valid_quoted_placeholder = (
-        "[LCM sensitive redaction: name=api_key; chars=32; bytes=32; "
+        "[TROVE sensitive redaction: name=api_key; chars=32; bytes=32; "
         "sha256=0123456789abcdef]"
     )
     malformed_quoted_placeholder = (
-        "[LCM sensitive redaction: name=api_key; chars=bogus; bytes=32]"
+        "[TROVE sensitive redaction: name=api_key; chars=bogus; bytes=32]"
     )
     messages = [
         {"role": "system", "content": "stable system"},
@@ -2018,7 +2018,7 @@ def test_full_sanitation_round_trip_converges_without_leakage(
         {"role": "user", "content": "fresh follow-up"},
     ]
     monkeypatch.setattr(
-        lcm_engine,
+        trove_engine,
         "summarize_with_escalation",
         Mock(side_effect=AssertionError("sanitation must not summarize")),
     )
@@ -2038,7 +2038,7 @@ def test_full_sanitation_round_trip_converges_without_leakage(
     adopted_tool_result = next(
         message for message in adopted if message.get("role") == "tool"
     )
-    assert "[LCM sensitive redaction:" in str(adopted_tool_result.get("content"))
+    assert "[TROVE sensitive redaction:" in str(adopted_tool_result.get("content"))
     durable_tool_content = engine._store._conn.execute(
         "SELECT content FROM messages WHERE role = 'tool' ORDER BY store_id DESC LIMIT 1"
     ).fetchone()[0]
@@ -2127,16 +2127,16 @@ def test_positive_preflight_and_manual_force_logs_are_reason_coded_and_content_f
     decisions = [
         record.getMessage()
         for record in caplog.records
-        if "LCM preflight decision" in record.getMessage()
+        if "TROVE preflight decision" in record.getMessage()
     ]
     assert decisions == [
-        "LCM preflight decision operation=sanitize reason=redaction_sanitation"
+        "TROVE preflight decision operation=sanitize reason=redaction_sanitation"
     ]
     assert marker not in caplog.text
 
     caplog.clear()
     summary_spy = Mock(return_value=("manual summary", 1))
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", summary_spy)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", summary_spy)
     with caplog.at_level(logging.INFO):
         engine.compress(
             [
@@ -2269,7 +2269,7 @@ def test_stale_auxiliary_session_end_preserves_reused_foreground_claim(tmp_path)
             self._subagent_id = session_id
             self._delegate_depth = 1
 
-        def end(self, engine: LCMEngine, messages) -> None:
+        def end(self, engine: TROVEEngine, messages) -> None:
             engine.on_session_end(self.session_id, messages)
 
     engine = _engine(tmp_path, "claim-stale-aux-reused-end")
@@ -2325,7 +2325,7 @@ def test_session_end_does_not_block_behind_unclaimed_summarization(
         assert release_summarization.wait(10)
         return ("slow summary", 1)
 
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", gated_summarization)
+    monkeypatch.setattr(trove_engine, "summarize_with_escalation", gated_summarization)
 
     results = {}
     compressor = threading.Thread(
@@ -2464,7 +2464,7 @@ def test_tool_call_ingest_is_serialized_with_claimed_compression(tmp_path, monke
         target=lambda: results.setdefault(
             "tool_response",
             engine.handle_tool_call(
-                "lcm_grep",
+                "trove_grep",
                 {"query": "unrelated"},
                 messages=deepcopy(later_messages),
             ),
@@ -2556,7 +2556,7 @@ def test_load_externalized_payload_returns_none_on_non_utf8_sidecar(tmp_path):
         (storage / "bad-bom-less.json").write_bytes(b'{"a": "\xff\xfe"}')
         for name in ("bad.json", "bad-bom-less.json"):
             assert engine.load_externalized_payload_sidecar(name) is None, name
-            from hermes_lcm.externalize import load_externalized_payload
+            from hermes_trove.externalize import load_externalized_payload
 
             assert (
                 load_externalized_payload(
@@ -2588,7 +2588,7 @@ def test_replay_identity_distinguishes_absent_content_from_empty_string(tmp_path
     content stays bare, and a live value that already starts with the
     sentinel is escaped so the encoding is unambiguous.
     """
-    from hermes_lcm.reconcile import (
+    from hermes_trove.reconcile import (
         _REPLAY_IDENTITY_ABSENT_CONTENT_PREFIX,
         _REPLAY_IDENTITY_ABSENT_CONTENT_ESCAPE_PREFIX,
         _strip_replay_identity_shape_tag,
@@ -2659,7 +2659,7 @@ def test_no_new_message_ingest_bumps_revision_only_when_replay_refresh_changes_s
         replay = [dict(msg) for msg in replay]
         replay[0] = dict(replay[0])
         replay[0]["content"] = replay[0]["content"] + (
-            "\n[LCM persisted-output file generation: size=10; mtime_ns=1; ctime_ns=1]"
+            "\n[TROVE persisted-output file generation: size=10; mtime_ns=1; ctime_ns=1]"
         )
         return replay
 
@@ -2695,7 +2695,7 @@ def test_no_new_message_ingest_bumps_revision_only_when_replay_refresh_changes_s
             self._subagent_id = session_id
             self._delegate_depth = 1
 
-        def end(self, bound_engine: LCMEngine, bound_messages) -> None:
+        def end(self, bound_engine: TROVEEngine, bound_messages) -> None:
             bound_engine.on_session_end(self.session_id, bound_messages)
 
     StaleAuxiliaryFrame(engine.bound_session_id).end(
@@ -2825,7 +2825,7 @@ def test_generation_mismatch_rejection_warns_with_session_identity(
 
     engine._compression_attempt_generation = 43
 
-    with caplog.at_level(logging.WARNING, logger="hermes_lcm.compaction"):
+    with caplog.at_level(logging.WARNING, logger="hermes_trove.compaction"):
         assert (
             engine.prepare_compression_operation(
                 deepcopy(messages),

@@ -1,4 +1,4 @@
-"""Shared SQLite bootstrap helpers for hermes-lcm.
+"""Shared SQLite bootstrap helpers for hermes-trove.
 
 This module keeps startup DB initialization in one place so store/DAG use the
 same schema-version marker, PRAGMA settings, and FTS repair behavior.
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class SchemaVersionTooNewError(RuntimeError):
-    """Raised when a database was written by a newer LCM schema than this build.
+    """Raised when a database was written by a newer TROVE schema than this build.
 
     Opening and migrating such a database with older code risks silently
     corrupting data written under semantics this build does not understand, so
@@ -41,15 +41,15 @@ class SchemaVersionTooNewError(RuntimeError):
 # embedding tables, fully openable by a base build, and leaves the numeric
 # counter free for the temporal train so neither collides on a v6.
 SCHEMA_VERSION = 5
-SQLITE_BUSY_TIMEOUT_MS = int(os.environ.get("LCM_BUSY_TIMEOUT_MS", "30000"))
-SQLITE_BUSY_TIMEOUT_SECONDS = float(os.environ.get("LCM_BUSY_TIMEOUT_SECONDS", str(SQLITE_BUSY_TIMEOUT_MS / 1000.0)))
+SQLITE_BUSY_TIMEOUT_MS = int(os.environ.get("TROVE_BUSY_TIMEOUT_MS", "30000"))
+SQLITE_BUSY_TIMEOUT_SECONDS = float(os.environ.get("TROVE_BUSY_TIMEOUT_SECONDS", str(SQLITE_BUSY_TIMEOUT_MS / 1000.0)))
 _MIN_DISK_SPACE_BYTES = 50 * 1024 * 1024
 REQUIRED_CORE_TABLES = (
     "messages",
     "metadata",
     "summary_nodes",
-    "lcm_lifecycle_state",
-    "lcm_migration_state",
+    "trove_lifecycle_state",
+    "trove_migration_state",
     "messages_fts",
     "nodes_fts",
 )
@@ -103,7 +103,7 @@ def configure_connection(conn: sqlite3.Connection) -> None:
 
     In a multi-agent deployment (gateway process + CLI sessions + sub-agents),
     every process opens its own sqlite3.Connection pointing at the same
-    lcm.db file.  These settings improve committed-write durability and WAL
+    trove.db file.  These settings improve committed-write durability and WAL
     hygiene, but do NOT make sibling processes safe from an unexpected process
     death.  Abnormal exit still depends on normal SQLite WAL recovery;
     application-level checkpoints only run during graceful shutdown (see
@@ -130,13 +130,13 @@ def configure_connection(conn: sqlite3.Connection) -> None:
     - mmap_size=268435456 (256 MiB)        : memory-map reads so concurrent
                                               readers cache WAL pages in RAM.
     """
-    busy_timeout = int(os.environ.get("LCM_BUSY_TIMEOUT_MS", str(SQLITE_BUSY_TIMEOUT_MS)))
+    busy_timeout = int(os.environ.get("TROVE_BUSY_TIMEOUT_MS", str(SQLITE_BUSY_TIMEOUT_MS)))
     conn.execute(f"PRAGMA busy_timeout={busy_timeout}")
     _execute_wal_conversion_with_lock_retry(conn)
     conn.execute("PRAGMA synchronous=FULL")
     conn.execute("PRAGMA wal_autocheckpoint=500")
     conn.execute("PRAGMA journal_size_limit=67108864")
-    mmap_env = os.environ.get("LCM_MMAP_SIZE")
+    mmap_env = os.environ.get("TROVE_MMAP_SIZE")
     if mmap_env is not None:
         try:
             mmap_size = int(mmap_env)
@@ -190,7 +190,7 @@ def add_column_if_missing(
     """Idempotently add a column, tolerating a concurrent process that won the race.
 
     In the multi-agent deployment (gateway + CLI sessions + sub-agents) every
-    process opens its own connection to the same ``lcm.db`` and runs startup
+    process opens its own connection to the same ``trove.db`` and runs startup
     migrations concurrently.  A plain check-``PRAGMA table_info``-then-``ALTER``
     races: two processes both observe the column as absent (each within its own
     connection snapshot) and both issue ``ALTER TABLE ... ADD COLUMN``.  The loser
@@ -259,18 +259,18 @@ def refuse_schema_version_too_new(conn: sqlite3.Connection) -> None:
         return
     if classify_version_mismatch(conn) == VERSION_MISMATCH_INTERIM_STAMP:
         raise SchemaVersionTooNewError(
-            f"LCM database is stamped schema_version {current_version}, but its "
+            f"TROVE database is stamped schema_version {current_version}, but its "
             f"actual schema is the v{SCHEMA_VERSION} shape plus named feature "
             f"markers — the signature of an interim development build that "
             f"recorded a numeric version it never migrated to. There is no newer "
-            f"hermes-lcm to upgrade to; do NOT upgrade the plugin. Run "
-            f"`/lcm doctor repair schema-stamp` to preview a backup-first reset "
+            f"hermes-trove to upgrade to; do NOT upgrade the plugin. Run "
+            f"`/trove doctor repair schema-stamp` to preview a backup-first reset "
             f"of the stamp to v{SCHEMA_VERSION} (add `apply` to execute)."
         )
     raise SchemaVersionTooNewError(
-        f"LCM database schema version {current_version} is newer than this "
+        f"TROVE database schema version {current_version} is newer than this "
         f"build supports (v{SCHEMA_VERSION}). Refusing to open to avoid "
-        f"corrupting data written by a newer hermes-lcm. Upgrade the plugin "
+        f"corrupting data written by a newer hermes-trove. Upgrade the plugin "
         f"or restore a pre-upgrade backup (.db/-wal/-shm)."
     )
 
@@ -301,8 +301,8 @@ _V5_CORE_TABLE_COLUMNS: dict[str, frozenset[str]] = {
         "earliest_at", "latest_at", "expand_hint",
     }),
     "metadata": frozenset({"key", "value"}),
-    "lcm_migration_state": frozenset({"step_name", "completed_at"}),
-    "lcm_lifecycle_state": frozenset({
+    "trove_migration_state": frozenset({"step_name", "completed_at"}),
+    "trove_lifecycle_state": frozenset({
         "conversation_id", "current_session_id", "last_finalized_session_id",
         "current_frontier_store_id", "last_finalized_frontier_store_id",
         "debt_kind", "debt_size_estimate", "current_bound_at",
@@ -328,12 +328,12 @@ _V5_CORE_PRESENCE_ONLY = ("messages_fts", "nodes_fts")
 # trajectory) or are FTS5 shadow tables of the core FTS indexes. Anything else
 # means a newer build owns the schema.
 _KNOWN_FEATURE_TABLE_PREFIXES = (
-    "lcm_rollup",
-    "lcm_embedding",
-    "lcm_chunk",
-    "lcm_assertion",
-    "lcm_query",
-    "lcm_trajectory",
+    "trove_rollup",
+    "trove_embedding",
+    "trove_chunk",
+    "trove_assertion",
+    "trove_query",
+    "trove_trajectory",
 )
 
 # The known opt-in feature families whose derived tables an interim build may
@@ -345,46 +345,46 @@ _KNOWN_FEATURE_TABLE_PREFIXES = (
 _INTERIM_FEATURE_FAMILIES: tuple[dict[str, str], ...] = (
     {
         "name": "temporal_rollup",
-        "prefix": "lcm_rollup",
-        "rebuild_hint": "derived rollup cache — rebuild via `/lcm rollups rebuild`",
+        "prefix": "trove_rollup",
+        "rebuild_hint": "derived rollup cache — rebuild via `/trove rollups rebuild`",
     },
     {
         "name": "embedding",
-        "prefix": "lcm_embedding",
-        "rebuild_hint": "derived embedding cache — re-run `/lcm embed backfill --apply`",
+        "prefix": "trove_embedding",
+        "rebuild_hint": "derived embedding cache — re-run `/trove embed backfill --apply`",
     },
     {
         "name": "chunk",
-        "prefix": "lcm_chunk",
-        "rebuild_hint": "derived chunk cache — re-run `/lcm embed backfill --corpus chunks --apply`",
+        "prefix": "trove_chunk",
+        "rebuild_hint": "derived chunk cache — re-run `/trove embed backfill --corpus chunks --apply`",
     },
     {
         "name": "assertion",
-        "prefix": "lcm_assertion",
+        "prefix": "trove_assertion",
         "rebuild_hint": "derived assertion state — re-run the bounded assertion rebuild workflow",
     },
 )
 
-_PRESERVED_FEATURE_FAMILIES = ("lcm_query", "lcm_trajectory")
+_PRESERVED_FEATURE_FAMILIES = ("trove_query", "trove_trajectory")
 
 
 def _family_verifier(prefix: str):
     """Return the final-shape verifier for a feature-family prefix, or ``None``
     when the family has no verifier (its early variants cannot be judged, so it
     is left untouched)."""
-    if prefix == "lcm_rollup":
+    if prefix == "trove_rollup":
         return verify_temporal_rollup_schema
-    if prefix == "lcm_embedding":
+    if prefix == "trove_embedding":
         return verify_embedding_schema
-    if prefix == "lcm_chunk":
+    if prefix == "trove_chunk":
         return verify_chunk_schema
-    if prefix == "lcm_assertion":
+    if prefix == "trove_assertion":
         return verify_assertion_schema
-    if prefix == "lcm_query":
+    if prefix == "trove_query":
         from .query_view_store import _verify_query_view_schema
 
         return _verify_query_view_schema
-    if prefix == "lcm_trajectory":
+    if prefix == "trove_trajectory":
         from .trajectory_store import _verify_trajectory_schema
 
         return _verify_trajectory_schema
@@ -426,7 +426,7 @@ def _family_reports_newer_shape(
 ) -> bool:
     """True when verifier findings cannot be safely treated as an early shape."""
     prefixes = _NEWER_BUILD_FINDING_PREFIXES
-    if family_prefix == "lcm_assertion":
+    if family_prefix == "trove_assertion":
         prefixes += _ASSERTION_NEWER_BUILD_FINDING_PREFIXES
     return any(str(finding).startswith(prefixes) for finding in findings)
 
@@ -599,7 +599,7 @@ def remediate_interim_schema_stamp(
     (2) rewrites ``metadata.schema_version`` to ``SCHEMA_VERSION``. Refuses —
     never mutates — a ``genuinely_newer`` DB. Callers are responsible for taking
     a backup before ``apply`` (see
-    :func:`hermes_lcm.maintenance.backup_database`).
+    :func:`hermes_trove.maintenance.backup_database`).
     """
     current_version = read_existing_schema_version(conn)
     result: dict[str, object] = {
@@ -650,7 +650,7 @@ def remediate_interim_schema_stamp(
 def ensure_migration_state_table(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS lcm_migration_state (
+        CREATE TABLE IF NOT EXISTS trove_migration_state (
             step_name TEXT PRIMARY KEY,
             completed_at REAL NOT NULL
         )
@@ -661,7 +661,7 @@ def ensure_migration_state_table(conn: sqlite3.Connection) -> None:
 def ensure_lifecycle_state_table(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS lcm_lifecycle_state (
+        CREATE TABLE IF NOT EXISTS trove_lifecycle_state (
             conversation_id TEXT PRIMARY KEY,
             current_session_id TEXT,
             last_finalized_session_id TEXT,
@@ -680,41 +680,41 @@ def ensure_lifecycle_state_table(conn: sqlite3.Connection) -> None:
         """
     )
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_lcm_lifecycle_current_session ON lcm_lifecycle_state(current_session_id)"
+        "CREATE INDEX IF NOT EXISTS idx_trove_lifecycle_current_session ON trove_lifecycle_state(current_session_id)"
     )
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_lcm_lifecycle_last_finalized_session ON lcm_lifecycle_state(last_finalized_session_id)"
+        "CREATE INDEX IF NOT EXISTS idx_trove_lifecycle_last_finalized_session ON trove_lifecycle_state(last_finalized_session_id)"
     )
 
 
 def ensure_lifecycle_state_columns(conn: sqlite3.Connection) -> None:
     ensure_lifecycle_state_table(conn)
     columns = {
-        row[1] for row in conn.execute("PRAGMA table_info(lcm_lifecycle_state)").fetchall()
+        row[1] for row in conn.execute("PRAGMA table_info(trove_lifecycle_state)").fetchall()
     }
     add_column_if_missing(
         conn, columns, "debt_kind",
-        "ALTER TABLE lcm_lifecycle_state ADD COLUMN debt_kind TEXT",
+        "ALTER TABLE trove_lifecycle_state ADD COLUMN debt_kind TEXT",
     )
     add_column_if_missing(
         conn, columns, "debt_size_estimate",
-        "ALTER TABLE lcm_lifecycle_state ADD COLUMN debt_size_estimate INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE trove_lifecycle_state ADD COLUMN debt_size_estimate INTEGER NOT NULL DEFAULT 0",
     )
     add_column_if_missing(
         conn, columns, "debt_updated_at",
-        "ALTER TABLE lcm_lifecycle_state ADD COLUMN debt_updated_at REAL",
+        "ALTER TABLE trove_lifecycle_state ADD COLUMN debt_updated_at REAL",
     )
     add_column_if_missing(
         conn, columns, "last_maintenance_attempt_at",
-        "ALTER TABLE lcm_lifecycle_state ADD COLUMN last_maintenance_attempt_at REAL",
+        "ALTER TABLE trove_lifecycle_state ADD COLUMN last_maintenance_attempt_at REAL",
     )
     add_column_if_missing(
         conn, columns, "last_rollover_at",
-        "ALTER TABLE lcm_lifecycle_state ADD COLUMN last_rollover_at REAL",
+        "ALTER TABLE trove_lifecycle_state ADD COLUMN last_rollover_at REAL",
     )
     add_column_if_missing(
         conn, columns, "last_reset_at",
-        "ALTER TABLE lcm_lifecycle_state ADD COLUMN last_reset_at REAL",
+        "ALTER TABLE trove_lifecycle_state ADD COLUMN last_reset_at REAL",
     )
 
 
@@ -748,11 +748,11 @@ def ensure_temporal_rollup_tables(conn: sqlite3.Connection) -> None:
 
     ``generation`` is an optimistic-concurrency counter bumped on every
     invalidation; ``lease_expires_at`` bounds a ``building`` row so a crashed
-    build can be reclaimed. See :mod:`hermes_lcm.rollup_store`.
+    build can be reclaimed. See :mod:`hermes_trove.rollup_store`.
     """
     conn.executescript(
         """
-        CREATE TABLE IF NOT EXISTS lcm_rollups (
+        CREATE TABLE IF NOT EXISTS trove_rollups (
             rollup_id INTEGER PRIMARY KEY AUTOINCREMENT,
             period_kind TEXT NOT NULL CHECK (period_kind IN ('day', 'week', 'month')),
             period_start TEXT NOT NULL,
@@ -771,7 +771,7 @@ def ensure_temporal_rollup_tables(conn: sqlite3.Connection) -> None:
             UNIQUE(period_kind, period_start, scope)
         );
 
-        CREATE TABLE IF NOT EXISTS lcm_rollup_sources (
+        CREATE TABLE IF NOT EXISTS trove_rollup_sources (
             rollup_id INTEGER NOT NULL,
             node_id INTEGER NOT NULL,
             PRIMARY KEY(rollup_id, node_id)
@@ -779,10 +779,10 @@ def ensure_temporal_rollup_tables(conn: sqlite3.Connection) -> None:
 
         -- The (rollup_id, node_id) PK cannot serve purge's node_id lookup; add a
         -- dedicated index so purging by deleted source node is not a full scan.
-        CREATE INDEX IF NOT EXISTS idx_lcm_rollup_sources_node
-            ON lcm_rollup_sources(node_id);
+        CREATE INDEX IF NOT EXISTS idx_trove_rollup_sources_node
+            ON trove_rollup_sources(node_id);
 
-        CREATE TABLE IF NOT EXISTS lcm_rollup_invalidations (
+        CREATE TABLE IF NOT EXISTS trove_rollup_invalidations (
             event_id INTEGER PRIMARY KEY AUTOINCREMENT,
             node_id INTEGER,
             scope TEXT NOT NULL,
@@ -793,61 +793,61 @@ def ensure_temporal_rollup_tables(conn: sqlite3.Connection) -> None:
             created_at REAL NOT NULL DEFAULT (strftime('%s','now'))
         );
 
-        CREATE INDEX IF NOT EXISTS idx_lcm_rollup_invalidations_pending
-            ON lcm_rollup_invalidations(event_id);
+        CREATE INDEX IF NOT EXISTS idx_trove_rollup_invalidations_pending
+            ON trove_rollup_invalidations(event_id);
 
-        CREATE INDEX IF NOT EXISTS idx_lcm_rollup_invalidations_scope_event
-            ON lcm_rollup_invalidations(scope, event_id);
+        CREATE INDEX IF NOT EXISTS idx_trove_rollup_invalidations_scope_event
+            ON trove_rollup_invalidations(scope, event_id);
 
-        CREATE INDEX IF NOT EXISTS idx_lcm_rollup_invalidations_scope_coverage
-            ON lcm_rollup_invalidations(scope, covered_start, covered_end, event_id);
+        CREATE INDEX IF NOT EXISTS idx_trove_rollup_invalidations_scope_coverage
+            ON trove_rollup_invalidations(scope, covered_start, covered_end, event_id);
         """
     )
     # Backfill the generation/lease columns for a table created by an earlier
     # lazy revision that predates optimistic concurrency.
     rollup_columns = {
-        row[1] for row in conn.execute("PRAGMA table_info(lcm_rollups)").fetchall()
+        row[1] for row in conn.execute("PRAGMA table_info(trove_rollups)").fetchall()
     }
     add_column_if_missing(
         conn, rollup_columns, "generation",
-        "ALTER TABLE lcm_rollups ADD COLUMN generation INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE trove_rollups ADD COLUMN generation INTEGER NOT NULL DEFAULT 0",
     )
     add_column_if_missing(
         conn, rollup_columns, "lease_expires_at",
-        "ALTER TABLE lcm_rollups ADD COLUMN lease_expires_at TEXT",
+        "ALTER TABLE trove_rollups ADD COLUMN lease_expires_at TEXT",
     )
     add_column_if_missing(
         conn, rollup_columns, "lease_nonce",
-        "ALTER TABLE lcm_rollups ADD COLUMN lease_nonce TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE trove_rollups ADD COLUMN lease_nonce TEXT NOT NULL DEFAULT ''",
     )
     add_column_if_missing(
         conn, rollup_columns, "failed_at",
-        "ALTER TABLE lcm_rollups ADD COLUMN failed_at TEXT",
+        "ALTER TABLE trove_rollups ADD COLUMN failed_at TEXT",
     )
     for column, ddl in (
-        ("summary", "ALTER TABLE lcm_rollups ADD COLUMN summary TEXT"),
-        ("token_count", "ALTER TABLE lcm_rollups ADD COLUMN token_count INTEGER"),
-        ("built_at", "ALTER TABLE lcm_rollups ADD COLUMN built_at TEXT"),
-        ("source_fingerprint", "ALTER TABLE lcm_rollups ADD COLUMN source_fingerprint TEXT"),
-        ("error", "ALTER TABLE lcm_rollups ADD COLUMN error TEXT"),
+        ("summary", "ALTER TABLE trove_rollups ADD COLUMN summary TEXT"),
+        ("token_count", "ALTER TABLE trove_rollups ADD COLUMN token_count INTEGER"),
+        ("built_at", "ALTER TABLE trove_rollups ADD COLUMN built_at TEXT"),
+        ("source_fingerprint", "ALTER TABLE trove_rollups ADD COLUMN source_fingerprint TEXT"),
+        ("error", "ALTER TABLE trove_rollups ADD COLUMN error TEXT"),
     ):
         add_column_if_missing(conn, rollup_columns, column, ddl)
 
     invalidation_columns = {
         row[1]
         for row in conn.execute(
-            "PRAGMA table_info(lcm_rollup_invalidations)"
+            "PRAGMA table_info(trove_rollup_invalidations)"
         ).fetchall()
     }
     add_column_if_missing(
         conn,
         invalidation_columns,
         "next_day",
-        "ALTER TABLE lcm_rollup_invalidations ADD COLUMN next_day TEXT",
+        "ALTER TABLE trove_rollup_invalidations ADD COLUMN next_day TEXT",
     )
     conn.execute(
         """
-        UPDATE lcm_rollup_invalidations
+        UPDATE trove_rollup_invalidations
         SET covered_start = MIN(covered_start, covered_end),
             covered_end = MAX(covered_start, covered_end)
         WHERE covered_start > covered_end
@@ -868,78 +868,78 @@ def ensure_temporal_rollup_tables(conn: sqlite3.Connection) -> None:
         conn.execute(create_sql)
 
     ensure_index(
-        "idx_lcm_rollups_ready_period",
-        "CREATE INDEX idx_lcm_rollups_ready_period "
-        "ON lcm_rollups(scope, period_kind, period_start DESC) "
+        "idx_trove_rollups_ready_period",
+        "CREATE INDEX idx_trove_rollups_ready_period "
+        "ON trove_rollups(scope, period_kind, period_start DESC) "
         "WHERE status = 'ready'",
     )
     ensure_index(
-        "idx_lcm_rollups_pending",
-        "CREATE INDEX idx_lcm_rollups_pending "
-        "ON lcm_rollups(scope, status, failed_at, period_start) "
+        "idx_trove_rollups_pending",
+        "CREATE INDEX idx_trove_rollups_pending "
+        "ON trove_rollups(scope, status, failed_at, period_start) "
         "WHERE status IN ('stale', 'failed')",
     )
     ensure_index(
-        "idx_lcm_rollups_expired_lease",
-        "CREATE INDEX idx_lcm_rollups_expired_lease "
-        "ON lcm_rollups(lease_expires_at, rollup_id) "
+        "idx_trove_rollups_expired_lease",
+        "CREATE INDEX idx_trove_rollups_expired_lease "
+        "ON trove_rollups(lease_expires_at, rollup_id) "
         "WHERE status = 'building'",
     )
     ensure_index(
-        "idx_lcm_rollups_stale_day",
-        "CREATE INDEX idx_lcm_rollups_stale_day "
-        "ON lcm_rollups(scope, period_start) "
+        "idx_trove_rollups_stale_day",
+        "CREATE INDEX idx_trove_rollups_stale_day "
+        "ON trove_rollups(scope, period_start) "
         "WHERE status = 'stale' AND period_kind = 'day'",
     )
     ensure_index(
-        "idx_lcm_rollups_stale_aggregate",
-        "CREATE INDEX idx_lcm_rollups_stale_aggregate "
-        "ON lcm_rollups(scope, period_start, period_kind) "
+        "idx_trove_rollups_stale_aggregate",
+        "CREATE INDEX idx_trove_rollups_stale_aggregate "
+        "ON trove_rollups(scope, period_start, period_kind) "
         "WHERE status = 'stale' AND period_kind IN ('week', 'month')",
     )
     ensure_index(
-        "idx_lcm_rollups_failed_day",
-        "CREATE INDEX idx_lcm_rollups_failed_day "
-        "ON lcm_rollups(scope, failed_at, period_start) "
+        "idx_trove_rollups_failed_day",
+        "CREATE INDEX idx_trove_rollups_failed_day "
+        "ON trove_rollups(scope, failed_at, period_start) "
         "WHERE status = 'failed' AND period_kind = 'day'",
     )
     ensure_index(
-        "idx_lcm_rollups_failed_aggregate",
-        "CREATE INDEX idx_lcm_rollups_failed_aggregate "
-        "ON lcm_rollups(scope, failed_at, period_start, period_kind) "
+        "idx_trove_rollups_failed_aggregate",
+        "CREATE INDEX idx_trove_rollups_failed_aggregate "
+        "ON trove_rollups(scope, failed_at, period_start, period_kind) "
         "WHERE status = 'failed' AND period_kind IN ('week', 'month')",
     )
     ensure_index(
-        "idx_lcm_rollup_invalidations_pending",
-        "CREATE INDEX idx_lcm_rollup_invalidations_pending "
-        "ON lcm_rollup_invalidations(event_id)",
+        "idx_trove_rollup_invalidations_pending",
+        "CREATE INDEX idx_trove_rollup_invalidations_pending "
+        "ON trove_rollup_invalidations(event_id)",
     )
     ensure_index(
-        "idx_lcm_rollup_invalidations_scope_event",
-        "CREATE INDEX idx_lcm_rollup_invalidations_scope_event "
-        "ON lcm_rollup_invalidations(scope, event_id)",
+        "idx_trove_rollup_invalidations_scope_event",
+        "CREATE INDEX idx_trove_rollup_invalidations_scope_event "
+        "ON trove_rollup_invalidations(scope, event_id)",
     )
     ensure_index(
-        "idx_lcm_rollup_invalidations_scope_coverage",
-        "CREATE INDEX idx_lcm_rollup_invalidations_scope_coverage "
-        "ON lcm_rollup_invalidations(scope, covered_start, covered_end, event_id)",
+        "idx_trove_rollup_invalidations_scope_coverage",
+        "CREATE INDEX idx_trove_rollup_invalidations_scope_coverage "
+        "ON trove_rollup_invalidations(scope, covered_start, covered_end, event_id)",
     )
     # Cursor state is keyed per (period_kind, scope) so multiple scopes sharing a
     # database do not clobber one another's build cursor. A pre-scope table (from
     # an earlier revision) only cached vestigial introspection data, so recreate
     # it rather than attempt an unsupported PRIMARY KEY migration.
     state_exists = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='lcm_rollup_state'"
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='trove_rollup_state'"
     ).fetchone()
     if state_exists:
         state_columns = {
-            row[1] for row in conn.execute("PRAGMA table_info(lcm_rollup_state)").fetchall()
+            row[1] for row in conn.execute("PRAGMA table_info(trove_rollup_state)").fetchall()
         }
         if "scope" not in state_columns:
-            conn.execute("DROP TABLE lcm_rollup_state")
+            conn.execute("DROP TABLE trove_rollup_state")
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS lcm_rollup_state (
+        CREATE TABLE IF NOT EXISTS trove_rollup_state (
             period_kind TEXT NOT NULL,
             scope TEXT NOT NULL DEFAULT '',
             last_build_cursor TEXT,
@@ -958,10 +958,10 @@ def ensure_temporal_rollup_invalidation_triggers(conn: sqlite3.Connection) -> No
     ).fetchone() is None:
         return
     trigger_sql = {
-        "lcm_rollup_node_insert": """
-            CREATE TRIGGER lcm_rollup_node_insert
+        "trove_rollup_node_insert": """
+            CREATE TRIGGER trove_rollup_node_insert
             AFTER INSERT ON summary_nodes BEGIN
-                INSERT INTO lcm_rollup_invalidations(
+                INSERT INTO trove_rollup_invalidations(
                     node_id, scope, covered_start, covered_end, operation
                 ) VALUES(
                     new.node_id, new.session_id,
@@ -972,10 +972,10 @@ def ensure_temporal_rollup_invalidation_triggers(conn: sqlite3.Connection) -> No
                 );
             END
         """,
-        "lcm_rollup_node_delete": """
-            CREATE TRIGGER lcm_rollup_node_delete
+        "trove_rollup_node_delete": """
+            CREATE TRIGGER trove_rollup_node_delete
             BEFORE DELETE ON summary_nodes BEGIN
-                INSERT INTO lcm_rollup_invalidations(
+                INSERT INTO trove_rollup_invalidations(
                     node_id, scope, covered_start, covered_end, operation
                 ) VALUES(
                     old.node_id, old.session_id,
@@ -986,12 +986,12 @@ def ensure_temporal_rollup_invalidation_triggers(conn: sqlite3.Connection) -> No
                 );
             END
         """,
-        "lcm_rollup_node_update": """
-            CREATE TRIGGER lcm_rollup_node_update
+        "trove_rollup_node_update": """
+            CREATE TRIGGER trove_rollup_node_update
             AFTER UPDATE OF session_id, depth, summary, token_count,
                             source_token_count, source_ids, source_type, created_at,
                             earliest_at, latest_at, expand_hint ON summary_nodes BEGIN
-                INSERT INTO lcm_rollup_invalidations(
+                INSERT INTO trove_rollup_invalidations(
                     node_id, scope, covered_start, covered_end, operation
                 ) VALUES(
                     old.node_id, old.session_id,
@@ -1000,7 +1000,7 @@ def ensure_temporal_rollup_invalidation_triggers(conn: sqlite3.Connection) -> No
                     MAX(COALESCE(old.earliest_at, old.created_at),
                         COALESCE(old.latest_at, old.created_at)), 'update'
                 );
-                INSERT INTO lcm_rollup_invalidations(
+                INSERT INTO trove_rollup_invalidations(
                     node_id, scope, covered_start, covered_end, operation
                 ) VALUES(
                     new.node_id, new.session_id,
@@ -1029,23 +1029,23 @@ def ensure_temporal_rollup_invalidation_triggers(conn: sqlite3.Connection) -> No
 
 
 REQUIRED_TEMPORAL_ROLLUP_TABLES = (
-    "lcm_rollups",
-    "lcm_rollup_sources",
-    "lcm_rollup_state",
-    "lcm_rollup_invalidations",
+    "trove_rollups",
+    "trove_rollup_sources",
+    "trove_rollup_state",
+    "trove_rollup_invalidations",
 )
 REQUIRED_TEMPORAL_ROLLUP_INDEXES = (
-    "idx_lcm_rollups_ready_period",
-    "idx_lcm_rollups_pending",
-    "idx_lcm_rollups_expired_lease",
-    "idx_lcm_rollups_stale_day",
-    "idx_lcm_rollups_stale_aggregate",
-    "idx_lcm_rollups_failed_day",
-    "idx_lcm_rollups_failed_aggregate",
-    "idx_lcm_rollup_sources_node",
-    "idx_lcm_rollup_invalidations_pending",
-    "idx_lcm_rollup_invalidations_scope_event",
-    "idx_lcm_rollup_invalidations_scope_coverage",
+    "idx_trove_rollups_ready_period",
+    "idx_trove_rollups_pending",
+    "idx_trove_rollups_expired_lease",
+    "idx_trove_rollups_stale_day",
+    "idx_trove_rollups_stale_aggregate",
+    "idx_trove_rollups_failed_day",
+    "idx_trove_rollups_failed_aggregate",
+    "idx_trove_rollup_sources_node",
+    "idx_trove_rollup_invalidations_pending",
+    "idx_trove_rollup_invalidations_scope_event",
+    "idx_trove_rollup_invalidations_scope_coverage",
 )
 
 
@@ -1076,7 +1076,7 @@ def verify_temporal_rollup_schema(conn: sqlite3.Connection) -> list[str]:
         if row is None:
             missing.append(f"index:{name}")
     expected_column_shapes = {
-        "lcm_rollups": {
+        "trove_rollups": {
             "rollup_id": ("INTEGER", 0, None, 1),
             "period_kind": ("TEXT", 1, None, 0),
             "period_start": ("TEXT", 1, None, 0),
@@ -1092,17 +1092,17 @@ def verify_temporal_rollup_schema(conn: sqlite3.Connection) -> list[str]:
             "lease_nonce": ("TEXT", 1, "''", 0),
             "failed_at": ("TEXT", 0, None, 0),
         },
-        "lcm_rollup_sources": {
+        "trove_rollup_sources": {
             "rollup_id": ("INTEGER", 1, None, 1),
             "node_id": ("INTEGER", 1, None, 2),
         },
-        "lcm_rollup_state": {
+        "trove_rollup_state": {
             "period_kind": ("TEXT", 1, None, 1),
             "scope": ("TEXT", 1, "''", 2),
             "last_build_cursor": ("TEXT", 0, None, 0),
             "last_built_at": ("TEXT", 0, None, 0),
         },
-        "lcm_rollup_invalidations": {
+        "trove_rollup_invalidations": {
             "event_id": ("INTEGER", 0, None, 1),
             "node_id": ("INTEGER", 0, None, 0),
             "scope": ("TEXT", 1, None, 0),
@@ -1133,8 +1133,8 @@ def verify_temporal_rollup_schema(conn: sqlite3.Connection) -> list[str]:
 
     # These keys are correctness-bearing, not optional query accelerators.
     for table, expected_pk in (
-        ("lcm_rollup_sources", ["rollup_id", "node_id"]),
-        ("lcm_rollup_state", ["period_kind", "scope"]),
+        ("trove_rollup_sources", ["rollup_id", "node_id"]),
+        ("trove_rollup_state", ["period_kind", "scope"]),
     ):
         if f"table:{table}" in missing:
             continue
@@ -1148,9 +1148,9 @@ def verify_temporal_rollup_schema(conn: sqlite3.Connection) -> list[str]:
         ]
         if pk != expected_pk:
             missing.append(f"primary-key:{table}")
-    if "table:lcm_rollups" not in missing:
+    if "table:trove_rollups" not in missing:
         unique_ok = False
-        for index in conn.execute("PRAGMA index_list(lcm_rollups)").fetchall():
+        for index in conn.execute("PRAGMA index_list(trove_rollups)").fetchall():
             if not int(index[2] or 0):
                 continue
             columns = [
@@ -1161,14 +1161,14 @@ def verify_temporal_rollup_schema(conn: sqlite3.Connection) -> list[str]:
                 unique_ok = True
                 break
         if not unique_ok:
-            missing.append("unique:lcm_rollups.period_kind,period_start,scope")
+            missing.append("unique:trove_rollups.period_kind,period_start,scope")
 
     table_checks = {
-        "lcm_rollups": (
+        "trove_rollups": (
             "check(period_kindin('day','week','month'))",
             "check(statusin('building','ready','stale','failed'))",
         ),
-        "lcm_rollup_invalidations": (
+        "trove_rollup_invalidations": (
             "check(operationin('insert','delete','update'))",
         ),
     }
@@ -1183,56 +1183,56 @@ def verify_temporal_rollup_schema(conn: sqlite3.Connection) -> list[str]:
                 break
 
     expected_indexes = {
-        "idx_lcm_rollups_ready_period": (
-            "lcm_rollups",
+        "idx_trove_rollups_ready_period": (
+            "trove_rollups",
             [("scope", 0), ("period_kind", 0), ("period_start", 1)],
             "where status = 'ready'",
         ),
-        "idx_lcm_rollups_pending": (
-            "lcm_rollups",
+        "idx_trove_rollups_pending": (
+            "trove_rollups",
             [("scope", 0), ("status", 0), ("failed_at", 0), ("period_start", 0)],
             "where status in ('stale', 'failed')",
         ),
-        "idx_lcm_rollups_expired_lease": (
-            "lcm_rollups",
+        "idx_trove_rollups_expired_lease": (
+            "trove_rollups",
             [("lease_expires_at", 0), ("rollup_id", 0)],
             "where status = 'building'",
         ),
-        "idx_lcm_rollups_stale_day": (
-            "lcm_rollups",
+        "idx_trove_rollups_stale_day": (
+            "trove_rollups",
             [("scope", 0), ("period_start", 0)],
             "where status = 'stale' and period_kind = 'day'",
         ),
-        "idx_lcm_rollups_stale_aggregate": (
-            "lcm_rollups",
+        "idx_trove_rollups_stale_aggregate": (
+            "trove_rollups",
             [("scope", 0), ("period_start", 0), ("period_kind", 0)],
             "where status = 'stale' and period_kind in ('week', 'month')",
         ),
-        "idx_lcm_rollups_failed_day": (
-            "lcm_rollups",
+        "idx_trove_rollups_failed_day": (
+            "trove_rollups",
             [("scope", 0), ("failed_at", 0), ("period_start", 0)],
             "where status = 'failed' and period_kind = 'day'",
         ),
-        "idx_lcm_rollups_failed_aggregate": (
-            "lcm_rollups",
+        "idx_trove_rollups_failed_aggregate": (
+            "trove_rollups",
             [
                 ("scope", 0), ("failed_at", 0), ("period_start", 0),
                 ("period_kind", 0),
             ],
             "where status = 'failed' and period_kind in ('week', 'month')",
         ),
-        "idx_lcm_rollup_sources_node": (
-            "lcm_rollup_sources", [("node_id", 0)], ""
+        "idx_trove_rollup_sources_node": (
+            "trove_rollup_sources", [("node_id", 0)], ""
         ),
-        "idx_lcm_rollup_invalidations_pending": (
-            "lcm_rollup_invalidations", [("event_id", 0)], ""
+        "idx_trove_rollup_invalidations_pending": (
+            "trove_rollup_invalidations", [("event_id", 0)], ""
         ),
-        "idx_lcm_rollup_invalidations_scope_event": (
-            "lcm_rollup_invalidations",
+        "idx_trove_rollup_invalidations_scope_event": (
+            "trove_rollup_invalidations",
             [("scope", 0), ("event_id", 0)], ""
         ),
-        "idx_lcm_rollup_invalidations_scope_coverage": (
-            "lcm_rollup_invalidations",
+        "idx_trove_rollup_invalidations_scope_coverage": (
+            "trove_rollup_invalidations",
             [
                 ("scope", 0), ("covered_start", 0), ("covered_end", 0),
                 ("event_id", 0),
@@ -1292,7 +1292,7 @@ def verify_temporal_rollup_schema(conn: sqlite3.Connection) -> list[str]:
                     source_ids TEXT, source_type TEXT, created_at REAL,
                     earliest_at REAL, latest_at REAL, expand_hint TEXT
                 );
-                CREATE TABLE lcm_rollup_invalidations(
+                CREATE TABLE trove_rollup_invalidations(
                     node_id INTEGER, scope TEXT, covered_start REAL,
                     covered_end REAL, operation TEXT
                 );
@@ -1336,7 +1336,7 @@ def ensure_embedding_tables(conn: sqlite3.Connection) -> None:
     """
     conn.executescript(
         """
-        CREATE TABLE IF NOT EXISTS lcm_embedding_profile (
+        CREATE TABLE IF NOT EXISTS trove_embedding_profile (
             identity_hash TEXT PRIMARY KEY,
             provider TEXT NOT NULL,
             model_name TEXT NOT NULL,
@@ -1351,10 +1351,10 @@ def ensure_embedding_tables(conn: sqlite3.Connection) -> None:
             data_version INTEGER NOT NULL DEFAULT 0
         );
 
-        CREATE INDEX IF NOT EXISTS idx_lcm_embedding_profile_model
-            ON lcm_embedding_profile(model_name, provider);
+        CREATE INDEX IF NOT EXISTS idx_trove_embedding_profile_model
+            ON trove_embedding_profile(model_name, provider);
 
-        CREATE TABLE IF NOT EXISTS lcm_embedding_meta (
+        CREATE TABLE IF NOT EXISTS trove_embedding_meta (
             embedded_id TEXT,
             embedded_kind TEXT CHECK(embedded_kind IN ('summary')),
             identity_hash TEXT,
@@ -1364,18 +1364,18 @@ def ensure_embedding_tables(conn: sqlite3.Connection) -> None:
             PRIMARY KEY(embedded_id, embedded_kind, identity_hash)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_lcm_embedding_meta_identity_embedded_at
-            ON lcm_embedding_meta(identity_hash, embedded_at DESC)
+        CREATE INDEX IF NOT EXISTS idx_trove_embedding_meta_identity_embedded_at
+            ON trove_embedding_meta(identity_hash, embedded_at DESC)
             WHERE archived = 0;
 
-        CREATE TABLE IF NOT EXISTS lcm_embedding_vectors (
+        CREATE TABLE IF NOT EXISTS trove_embedding_vectors (
             embedded_id TEXT,
             identity_hash TEXT,
             vec BLOB NOT NULL,
             PRIMARY KEY(embedded_id, identity_hash)
         );
 
-        CREATE TABLE IF NOT EXISTS lcm_embedding_binary (
+        CREATE TABLE IF NOT EXISTS trove_embedding_binary (
             embedded_id TEXT,
             identity_hash TEXT,
             bits BLOB NOT NULL,
@@ -1391,22 +1391,22 @@ def ensure_embedding_tables(conn: sqlite3.Connection) -> None:
 # (e.g. a table was dropped after the marker was written), so init re-ensures and
 # confirms these objects exist rather than assuming the marker implies them.
 _REQUIRED_EMBEDDING_TABLES = (
-    "lcm_embedding_profile",
-    "lcm_embedding_meta",
-    "lcm_embedding_vectors",
+    "trove_embedding_profile",
+    "trove_embedding_meta",
+    "trove_embedding_vectors",
     # Sign-bit prescreen for the two-stage KNN. Present on every embedding
     # schema (empty for float32 identities), populated only for int8 identities.
-    "lcm_embedding_binary",
+    "trove_embedding_binary",
 )
 _REQUIRED_EMBEDDING_INDEXES = (
-    "idx_lcm_embedding_profile_model",
-    "idx_lcm_embedding_meta_identity_embedded_at",
+    "idx_trove_embedding_profile_model",
+    "idx_trove_embedding_meta_identity_embedded_at",
 )
 
 _EMBEDDING_TABLE_SHAPES: dict[
     str, tuple[tuple[str, str, int, int, str | None], ...]
 ] = {
-    "lcm_embedding_profile": (
+    "trove_embedding_profile": (
         ("identity_hash", "TEXT", 0, 1, None),
         ("provider", "TEXT", 1, 0, None),
         ("model_name", "TEXT", 1, 0, None),
@@ -1420,7 +1420,7 @@ _EMBEDDING_TABLE_SHAPES: dict[
         ("archived_at", "TEXT", 0, 0, None),
         ("data_version", "INTEGER", 1, 0, "0"),
     ),
-    "lcm_embedding_meta": (
+    "trove_embedding_meta": (
         ("embedded_id", "TEXT", 0, 1, None),
         ("embedded_kind", "TEXT", 0, 2, None),
         ("identity_hash", "TEXT", 0, 3, None),
@@ -1428,12 +1428,12 @@ _EMBEDDING_TABLE_SHAPES: dict[
         ("source_token_count", "INTEGER", 0, 0, None),
         ("archived", "INTEGER", 0, 0, "0"),
     ),
-    "lcm_embedding_vectors": (
+    "trove_embedding_vectors": (
         ("embedded_id", "TEXT", 0, 1, None),
         ("identity_hash", "TEXT", 0, 2, None),
         ("vec", "BLOB", 1, 0, None),
     ),
-    "lcm_embedding_binary": (
+    "trove_embedding_binary": (
         ("embedded_id", "TEXT", 0, 1, None),
         ("identity_hash", "TEXT", 0, 2, None),
         ("bits", "BLOB", 1, 0, None),
@@ -1443,23 +1443,23 @@ _EMBEDDING_TABLE_SHAPES: dict[
 _EMBEDDING_INDEX_SHAPES: dict[
     str, tuple[str, tuple[tuple[str, int], ...], str | None]
 ] = {
-    "idx_lcm_embedding_profile_model": (
-        "lcm_embedding_profile",
+    "idx_trove_embedding_profile_model": (
+        "trove_embedding_profile",
         (("model_name", 0), ("provider", 0)),
         None,
     ),
-    "idx_lcm_embedding_meta_identity_embedded_at": (
-        "lcm_embedding_meta",
+    "idx_trove_embedding_meta_identity_embedded_at": (
+        "trove_embedding_meta",
         (("identity_hash", 0), ("embedded_at", 1)),
         "archived=0",
     ),
 }
 
 _EMBEDDING_CHECKS = {
-    "lcm_embedding_profile": {"dimbetween1and4096"},
-    "lcm_embedding_meta": {"embedded_kindin('summary')"},
-    "lcm_embedding_vectors": set(),
-    "lcm_embedding_binary": set(),
+    "trove_embedding_profile": {"dimbetween1and4096"},
+    "trove_embedding_meta": {"embedded_kindin('summary')"},
+    "trove_embedding_vectors": set(),
+    "trove_embedding_binary": set(),
 }
 
 
@@ -1593,7 +1593,7 @@ def ensure_chunk_tables(conn: sqlite3.Connection) -> None:
     install that never runs ``embed backfill --corpus chunks`` stays at
     schema_version 5 with none of them and remains openable by a base build.
 
-    Chunk profiles live in the SHARED ``lcm_embedding_profile`` table under
+    Chunk profiles live in the SHARED ``trove_embedding_profile`` table under
     ``task='chunk'`` (coexisting with summary profiles), so ``ensure_embedding_tables``
     must have run first. These two tables hold only the per-chunk metadata and
     vectors, keyed on ``(chunk_id, identity_hash)`` where ``chunk_id`` is
@@ -1601,7 +1601,7 @@ def ensure_chunk_tables(conn: sqlite3.Connection) -> None:
     """
     conn.executescript(
         """
-        CREATE TABLE IF NOT EXISTS lcm_chunk_meta (
+        CREATE TABLE IF NOT EXISTS trove_chunk_meta (
             chunk_id TEXT,
             identity_hash TEXT,
             store_id INTEGER,
@@ -1614,21 +1614,21 @@ def ensure_chunk_tables(conn: sqlite3.Connection) -> None:
             PRIMARY KEY(chunk_id, identity_hash)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_lcm_chunk_meta_identity_embedded_at
-            ON lcm_chunk_meta(identity_hash, embedded_at DESC)
+        CREATE INDEX IF NOT EXISTS idx_trove_chunk_meta_identity_embedded_at
+            ON trove_chunk_meta(identity_hash, embedded_at DESC)
             WHERE archived = 0;
 
-        CREATE INDEX IF NOT EXISTS idx_lcm_chunk_meta_store
-            ON lcm_chunk_meta(store_id);
+        CREATE INDEX IF NOT EXISTS idx_trove_chunk_meta_store
+            ON trove_chunk_meta(store_id);
 
-        CREATE TABLE IF NOT EXISTS lcm_chunk_vectors (
+        CREATE TABLE IF NOT EXISTS trove_chunk_vectors (
             chunk_id TEXT,
             identity_hash TEXT,
             vec BLOB NOT NULL,
             PRIMARY KEY(chunk_id, identity_hash)
         );
 
-        CREATE TABLE IF NOT EXISTS lcm_chunk_binary (
+        CREATE TABLE IF NOT EXISTS trove_chunk_binary (
             chunk_id TEXT,
             identity_hash TEXT,
             bits BLOB NOT NULL,
@@ -1643,21 +1643,21 @@ def ensure_chunk_tables(conn: sqlite3.Connection) -> None:
 # the same discipline as the embedding schema: a set marker over a dropped table
 # is repaired rather than believed.
 _REQUIRED_CHUNK_TABLES = (
-    "lcm_chunk_meta",
-    "lcm_chunk_vectors",
+    "trove_chunk_meta",
+    "trove_chunk_vectors",
     # Sign-bit prescreen for the two-stage chunk KNN. Present on every chunk
     # schema (empty for float32 identities), populated only for int8 identities.
-    "lcm_chunk_binary",
+    "trove_chunk_binary",
 )
 _REQUIRED_CHUNK_INDEXES = (
-    "idx_lcm_chunk_meta_identity_embedded_at",
-    "idx_lcm_chunk_meta_store",
+    "idx_trove_chunk_meta_identity_embedded_at",
+    "idx_trove_chunk_meta_store",
 )
 
 _CHUNK_TABLE_SHAPES: dict[
     str, tuple[tuple[str, str, int, int, str | None], ...]
 ] = {
-    "lcm_chunk_meta": (
+    "trove_chunk_meta": (
         ("chunk_id", "TEXT", 0, 1, None),
         ("identity_hash", "TEXT", 0, 2, None),
         ("store_id", "INTEGER", 0, 0, None),
@@ -1668,12 +1668,12 @@ _CHUNK_TABLE_SHAPES: dict[
         ("embedded_at", "TEXT", 0, 0, None),
         ("archived", "INTEGER", 0, 0, "0"),
     ),
-    "lcm_chunk_vectors": (
+    "trove_chunk_vectors": (
         ("chunk_id", "TEXT", 0, 1, None),
         ("identity_hash", "TEXT", 0, 2, None),
         ("vec", "BLOB", 1, 0, None),
     ),
-    "lcm_chunk_binary": (
+    "trove_chunk_binary": (
         ("chunk_id", "TEXT", 0, 1, None),
         ("identity_hash", "TEXT", 0, 2, None),
         ("bits", "BLOB", 1, 0, None),
@@ -1683,13 +1683,13 @@ _CHUNK_TABLE_SHAPES: dict[
 _CHUNK_INDEX_SHAPES: dict[
     str, tuple[str, tuple[tuple[str, int], ...], str | None]
 ] = {
-    "idx_lcm_chunk_meta_identity_embedded_at": (
-        "lcm_chunk_meta",
+    "idx_trove_chunk_meta_identity_embedded_at": (
+        "trove_chunk_meta",
         (("identity_hash", 0), ("embedded_at", 1)),
         "archived=0",
     ),
-    "idx_lcm_chunk_meta_store": (
-        "lcm_chunk_meta",
+    "idx_trove_chunk_meta_store": (
+        "trove_chunk_meta",
         (("store_id", 0),),
         None,
     ),
@@ -1788,13 +1788,13 @@ ASSERTION_EPISTEMIC_VALUES = frozenset({
 ASSERTION_QUOTE_HASH_ALGORITHM = "sha256"
 
 _ASSERTION_TABLE_COLUMNS: dict[str, frozenset[str]] = {
-    "lcm_assertion_sources": frozenset({
+    "trove_assertion_sources": frozenset({
         "source_store_id", "extraction_version", "source_content_sha256",
         "source_session_id", "source_role", "source_name", "source_timestamp",
         "candidate_digest", "assertion_count", "relation_count", "processed_at",
         "invalidated_at", "invalidation_reason",
     }),
-    "lcm_assertions": frozenset({
+    "trove_assertions": frozenset({
         "assertion_id", "source_store_id", "extraction_version",
         "source_content_sha256", "subject_key", "predicate_key", "object_json",
         "value_text", "kind", "polarity", "strength", "scope_key",
@@ -1803,7 +1803,7 @@ _ASSERTION_TABLE_COLUMNS: dict[str, frozenset[str]] = {
         "source_quote_hash", "epistemic", "confidence",
         "created_at",
     }),
-    "lcm_assertion_relations": frozenset({
+    "trove_assertion_relations": frozenset({
         "relation_id", "source_store_id", "extraction_version",
         "source_content_sha256", "from_assertion_id", "relation_type",
         "to_assertion_id", "source_span_start", "source_span_end",
@@ -1815,15 +1815,15 @@ _ASSERTION_INDEX_SHAPES: dict[
     str,
     tuple[str, tuple[tuple[str, int], ...], int, int, str | None],
 ] = {
-    "idx_lcm_assertion_sources_current": (
-        "lcm_assertion_sources",
+    "idx_trove_assertion_sources_current": (
+        "trove_assertion_sources",
         (("source_store_id", 0), ("extraction_version", 0)),
         1,
         1,
         "invalidated_atisnull",
     ),
-    "idx_lcm_assertions_source": (
-        "lcm_assertions",
+    "idx_trove_assertions_source": (
+        "trove_assertions",
         (
             ("source_store_id", 0),
             ("extraction_version", 0),
@@ -1833,8 +1833,8 @@ _ASSERTION_INDEX_SHAPES: dict[
         0,
         None,
     ),
-    "idx_lcm_assertions_state": (
-        "lcm_assertions",
+    "idx_trove_assertions_state": (
+        "trove_assertions",
         (
             ("subject_key", 0),
             ("predicate_key", 0),
@@ -1846,8 +1846,8 @@ _ASSERTION_INDEX_SHAPES: dict[
         0,
         None,
     ),
-    "idx_lcm_assertion_relations_source": (
-        "lcm_assertion_relations",
+    "idx_trove_assertion_relations_source": (
+        "trove_assertion_relations",
         (
             ("source_store_id", 0),
             ("extraction_version", 0),
@@ -1857,15 +1857,15 @@ _ASSERTION_INDEX_SHAPES: dict[
         0,
         None,
     ),
-    "idx_lcm_assertion_relations_from": (
-        "lcm_assertion_relations",
+    "idx_trove_assertion_relations_from": (
+        "trove_assertion_relations",
         (("from_assertion_id", 0), ("relation_type", 0)),
         0,
         0,
         None,
     ),
-    "idx_lcm_assertion_relations_to": (
-        "lcm_assertion_relations",
+    "idx_trove_assertion_relations_to": (
+        "trove_assertion_relations",
         (("to_assertion_id", 0), ("relation_type", 0)),
         0,
         0,
@@ -1874,49 +1874,49 @@ _ASSERTION_INDEX_SHAPES: dict[
 }
 
 _ASSERTION_TRIGGER_FRAGMENTS: dict[str, tuple[str, ...]] = {
-    "lcm_assertion_source_insert_guard": (
-        "before insert on lcm_assertion_sources",
+    "trove_assertion_source_insert_guard": (
+        "before insert on trove_assertion_sources",
         "from messages",
         "coalesce(m.observed_at, m.timestamp) = new.source_timestamp",
         "raise(abort, 'assertion source row is missing or metadata changed')",
     ),
-    "lcm_assertion_row_insert_guard": (
-        "before insert on lcm_assertions",
-        "join lcm_assertion_sources",
+    "trove_assertion_row_insert_guard": (
+        "before insert on trove_assertions",
+        "join trove_assertion_sources",
         "substr(coalesce(m.content, ''), new.source_span_start + 1",
         "raise(abort, 'assertion source provenance mismatch')",
     ),
-    "lcm_assertion_relation_insert_guard": (
-        "before insert on lcm_assertion_relations",
-        "from lcm_assertions",
-        "join lcm_assertion_sources",
+    "trove_assertion_relation_insert_guard": (
+        "before insert on trove_assertion_relations",
+        "from trove_assertions",
+        "join trove_assertion_sources",
         "raise(abort, 'assertion relation provenance mismatch')",
     ),
-    "lcm_assertion_message_update": (
+    "trove_assertion_message_update": (
         "after update of content on messages",
         "invalidation_reason = 'source_updated'",
     ),
-    "lcm_assertion_message_delete": (
+    "trove_assertion_message_delete": (
         "after delete on messages",
         "invalidation_reason = 'source_deleted'",
     ),
-    "lcm_assertion_source_delete": (
-        "after delete on lcm_assertion_sources",
-        "delete from lcm_assertion_relations",
-        "delete from lcm_assertions",
+    "trove_assertion_source_delete": (
+        "after delete on trove_assertion_sources",
+        "delete from trove_assertion_relations",
+        "delete from trove_assertions",
     ),
 }
 
 
 def ensure_assertion_tables(conn: sqlite3.Connection) -> None:
-    """Materialize the opt-in V4 assertion family in the existing ``lcm.db``."""
+    """Materialize the opt-in V4 assertion family in the existing ``trove.db``."""
     # This guard is owned by the rebuildable assertion family. Recreate it so
     # databases opened after the optional source-time migration compare the
     # derived observation time, with the legacy write timestamp as fallback.
-    conn.execute("DROP TRIGGER IF EXISTS lcm_assertion_source_insert_guard")
+    conn.execute("DROP TRIGGER IF EXISTS trove_assertion_source_insert_guard")
     conn.executescript(
         """
-        CREATE TABLE IF NOT EXISTS lcm_assertion_sources (
+        CREATE TABLE IF NOT EXISTS trove_assertion_sources (
             source_store_id INTEGER NOT NULL,
             extraction_version TEXT NOT NULL
                 CHECK(length(trim(extraction_version)) BETWEEN 1 AND 128),
@@ -1939,11 +1939,11 @@ def ensure_assertion_tables(conn: sqlite3.Connection) -> None:
             )
         );
 
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_lcm_assertion_sources_current
-            ON lcm_assertion_sources(source_store_id, extraction_version)
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_trove_assertion_sources_current
+            ON trove_assertion_sources(source_store_id, extraction_version)
             WHERE invalidated_at IS NULL;
 
-        CREATE TABLE IF NOT EXISTS lcm_assertions (
+        CREATE TABLE IF NOT EXISTS trove_assertions (
             assertion_id TEXT PRIMARY KEY CHECK(length(assertion_id) = 64),
             source_store_id INTEGER NOT NULL,
             extraction_version TEXT NOT NULL,
@@ -1979,12 +1979,12 @@ def ensure_assertion_tables(conn: sqlite3.Connection) -> None:
             CHECK(valid_from IS NULL OR valid_to IS NULL OR valid_to > valid_from)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_lcm_assertions_source
-            ON lcm_assertions(source_store_id, extraction_version, source_content_sha256);
-        CREATE INDEX IF NOT EXISTS idx_lcm_assertions_state
-            ON lcm_assertions(subject_key, predicate_key, kind, scope_key, observed_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_trove_assertions_source
+            ON trove_assertions(source_store_id, extraction_version, source_content_sha256);
+        CREATE INDEX IF NOT EXISTS idx_trove_assertions_state
+            ON trove_assertions(subject_key, predicate_key, kind, scope_key, observed_at DESC);
 
-        CREATE TABLE IF NOT EXISTS lcm_assertion_relations (
+        CREATE TABLE IF NOT EXISTS trove_assertion_relations (
             relation_id TEXT PRIMARY KEY CHECK(length(relation_id) = 64),
             source_store_id INTEGER NOT NULL,
             extraction_version TEXT NOT NULL,
@@ -2007,15 +2007,15 @@ def ensure_assertion_tables(conn: sqlite3.Connection) -> None:
             CHECK(from_assertion_id <> to_assertion_id)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_lcm_assertion_relations_source
-            ON lcm_assertion_relations(source_store_id, extraction_version, source_content_sha256);
-        CREATE INDEX IF NOT EXISTS idx_lcm_assertion_relations_from
-            ON lcm_assertion_relations(from_assertion_id, relation_type);
-        CREATE INDEX IF NOT EXISTS idx_lcm_assertion_relations_to
-            ON lcm_assertion_relations(to_assertion_id, relation_type);
+        CREATE INDEX IF NOT EXISTS idx_trove_assertion_relations_source
+            ON trove_assertion_relations(source_store_id, extraction_version, source_content_sha256);
+        CREATE INDEX IF NOT EXISTS idx_trove_assertion_relations_from
+            ON trove_assertion_relations(from_assertion_id, relation_type);
+        CREATE INDEX IF NOT EXISTS idx_trove_assertion_relations_to
+            ON trove_assertion_relations(to_assertion_id, relation_type);
 
-        CREATE TRIGGER IF NOT EXISTS lcm_assertion_source_insert_guard
-        BEFORE INSERT ON lcm_assertion_sources
+        CREATE TRIGGER IF NOT EXISTS trove_assertion_source_insert_guard
+        BEFORE INSERT ON trove_assertion_sources
         WHEN NOT EXISTS (
             SELECT 1 FROM messages AS m
             WHERE m.store_id = NEW.source_store_id
@@ -2028,12 +2028,12 @@ def ensure_assertion_tables(conn: sqlite3.Connection) -> None:
             SELECT RAISE(ABORT, 'assertion source row is missing or metadata changed');
         END;
 
-        CREATE TRIGGER IF NOT EXISTS lcm_assertion_row_insert_guard
-        BEFORE INSERT ON lcm_assertions
+        CREATE TRIGGER IF NOT EXISTS trove_assertion_row_insert_guard
+        BEFORE INSERT ON trove_assertions
         WHEN NOT EXISTS (
             SELECT 1
             FROM messages AS m
-            JOIN lcm_assertion_sources AS s
+            JOIN trove_assertion_sources AS s
               ON s.source_store_id = NEW.source_store_id
              AND s.extraction_version = NEW.extraction_version
              AND s.source_content_sha256 = NEW.source_content_sha256
@@ -2050,12 +2050,12 @@ def ensure_assertion_tables(conn: sqlite3.Connection) -> None:
             SELECT RAISE(ABORT, 'assertion source provenance mismatch');
         END;
 
-        CREATE TRIGGER IF NOT EXISTS lcm_assertion_relation_insert_guard
-        BEFORE INSERT ON lcm_assertion_relations
+        CREATE TRIGGER IF NOT EXISTS trove_assertion_relation_insert_guard
+        BEFORE INSERT ON trove_assertion_relations
         WHEN NOT EXISTS (
             SELECT 1
             FROM messages AS m
-            JOIN lcm_assertion_sources AS s
+            JOIN trove_assertion_sources AS s
               ON s.source_store_id = NEW.source_store_id
              AND s.extraction_version = NEW.extraction_version
              AND s.source_content_sha256 = NEW.source_content_sha256
@@ -2069,8 +2069,8 @@ def ensure_assertion_tables(conn: sqlite3.Connection) -> None:
                   ) = NEW.source_quote
               AND EXISTS (
                     SELECT 1
-                    FROM lcm_assertions AS endpoint
-                    JOIN lcm_assertion_sources AS endpoint_source
+                    FROM trove_assertions AS endpoint
+                    JOIN trove_assertion_sources AS endpoint_source
                       ON endpoint_source.source_store_id = endpoint.source_store_id
                      AND endpoint_source.extraction_version = endpoint.extraction_version
                      AND endpoint_source.source_content_sha256 = endpoint.source_content_sha256
@@ -2079,8 +2079,8 @@ def ensure_assertion_tables(conn: sqlite3.Connection) -> None:
                   )
               AND EXISTS (
                     SELECT 1
-                    FROM lcm_assertions AS endpoint
-                    JOIN lcm_assertion_sources AS endpoint_source
+                    FROM trove_assertions AS endpoint
+                    JOIN trove_assertion_sources AS endpoint_source
                       ON endpoint_source.source_store_id = endpoint.source_store_id
                      AND endpoint_source.extraction_version = endpoint.extraction_version
                      AND endpoint_source.source_content_sha256 = endpoint.source_content_sha256
@@ -2092,49 +2092,49 @@ def ensure_assertion_tables(conn: sqlite3.Connection) -> None:
             SELECT RAISE(ABORT, 'assertion relation provenance mismatch');
         END;
 
-        CREATE TRIGGER IF NOT EXISTS lcm_assertion_message_update
+        CREATE TRIGGER IF NOT EXISTS trove_assertion_message_update
         AFTER UPDATE OF content ON messages
         WHEN OLD.content IS NOT NEW.content
         BEGIN
-            UPDATE lcm_assertion_sources
+            UPDATE trove_assertion_sources
                SET invalidated_at = CAST(strftime('%s','now') AS REAL),
                    invalidation_reason = 'source_updated'
              WHERE source_store_id = OLD.store_id
                AND invalidated_at IS NULL;
         END;
 
-        CREATE TRIGGER IF NOT EXISTS lcm_assertion_message_delete
+        CREATE TRIGGER IF NOT EXISTS trove_assertion_message_delete
         AFTER DELETE ON messages
         BEGIN
-            UPDATE lcm_assertion_sources
+            UPDATE trove_assertion_sources
                SET invalidated_at = CAST(strftime('%s','now') AS REAL),
                    invalidation_reason = 'source_deleted'
              WHERE source_store_id = OLD.store_id
                AND invalidated_at IS NULL;
         END;
 
-        CREATE TRIGGER IF NOT EXISTS lcm_assertion_source_delete
-        AFTER DELETE ON lcm_assertion_sources
+        CREATE TRIGGER IF NOT EXISTS trove_assertion_source_delete
+        AFTER DELETE ON trove_assertion_sources
         BEGIN
-            DELETE FROM lcm_assertion_relations
+            DELETE FROM trove_assertion_relations
              WHERE (
                     source_store_id = OLD.source_store_id
                 AND extraction_version = OLD.extraction_version
                 AND source_content_sha256 = OLD.source_content_sha256
              )
                 OR from_assertion_id IN (
-                    SELECT assertion_id FROM lcm_assertions
+                    SELECT assertion_id FROM trove_assertions
                      WHERE source_store_id = OLD.source_store_id
                        AND extraction_version = OLD.extraction_version
                        AND source_content_sha256 = OLD.source_content_sha256
                 )
                 OR to_assertion_id IN (
-                    SELECT assertion_id FROM lcm_assertions
+                    SELECT assertion_id FROM trove_assertions
                      WHERE source_store_id = OLD.source_store_id
                        AND extraction_version = OLD.extraction_version
                        AND source_content_sha256 = OLD.source_content_sha256
                 );
-            DELETE FROM lcm_assertions
+            DELETE FROM trove_assertions
              WHERE source_store_id = OLD.source_store_id
                AND extraction_version = OLD.extraction_version
                AND source_content_sha256 = OLD.source_content_sha256;
@@ -2176,15 +2176,15 @@ def _migrate_assertion_quote_anchors(conn: sqlite3.Connection) -> None:
 
     Rebuilds the two rebuildable quote tables (copy out, drop, recreate via
     this build's own DDL, copy back with per-row hash backfill) while every
-    ``lcm_assertion_sources`` row — including invalidation history — is
+    ``trove_assertion_sources`` row — including invalidation history — is
     preserved untouched. Databases already in final shape are untouched.
     The row/relation insert guards are temporarily dropped for the copy so
     assertions of already-invalidated sources stay visible; they are
     recreated before this function returns.
     """
     _OLD_NAMES = {
-        "lcm_assertions": "_lcm_amr_old_assertions",
-        "lcm_assertion_relations": "_lcm_amr_old_relations",
+        "trove_assertions": "_trove_amr_old_assertions",
+        "trove_assertion_relations": "_trove_amr_old_relations",
     }
 
     def _table_exists(table: str) -> bool:
@@ -2212,12 +2212,12 @@ def _migrate_assertion_quote_anchors(conn: sqlite3.Connection) -> None:
     # would make the IF NOT EXISTS index DDL below no-ops; drop them first.
     conn.executescript(
         """
-        DROP INDEX IF EXISTS idx_lcm_assertion_sources_current;
-        DROP INDEX IF EXISTS idx_lcm_assertions_source;
-        DROP INDEX IF EXISTS idx_lcm_assertions_state;
-        DROP INDEX IF EXISTS idx_lcm_assertion_relations_source;
-        DROP INDEX IF EXISTS idx_lcm_assertion_relations_from;
-        DROP INDEX IF EXISTS idx_lcm_assertion_relations_to;
+        DROP INDEX IF EXISTS idx_trove_assertion_sources_current;
+        DROP INDEX IF EXISTS idx_trove_assertions_source;
+        DROP INDEX IF EXISTS idx_trove_assertions_state;
+        DROP INDEX IF EXISTS idx_trove_assertion_relations_source;
+        DROP INDEX IF EXISTS idx_trove_assertion_relations_from;
+        DROP INDEX IF EXISTS idx_trove_assertion_relations_to;
         """
     )
     try:
@@ -2230,8 +2230,8 @@ def _migrate_assertion_quote_anchors(conn: sqlite3.Connection) -> None:
         # The insert guards reject re-inserting assertions whose source is
         # already invalidated; the copy must preserve those rows, so the
         # guards come down for the copy and are recreated below.
-        conn.execute("DROP TRIGGER IF EXISTS lcm_assertion_row_insert_guard")
-        conn.execute("DROP TRIGGER IF EXISTS lcm_assertion_relation_insert_guard")
+        conn.execute("DROP TRIGGER IF EXISTS trove_assertion_row_insert_guard")
+        conn.execute("DROP TRIGGER IF EXISTS trove_assertion_relation_insert_guard")
         for table, old in _OLD_NAMES.items():
             if not _table_exists(old):
                 continue
@@ -2267,8 +2267,8 @@ def _migrate_assertion_quote_anchors(conn: sqlite3.Connection) -> None:
             conn.execute(f"DROP TABLE {old}")
         ensure_assertion_tables(conn)
     finally:
-        conn.execute("DROP TABLE IF EXISTS _lcm_amr_old_assertions")
-        conn.execute("DROP TABLE IF EXISTS _lcm_amr_old_relations")
+        conn.execute("DROP TABLE IF EXISTS _trove_amr_old_assertions")
+        conn.execute("DROP TABLE IF EXISTS _trove_amr_old_relations")
 
 
 @lru_cache(maxsize=1)
@@ -2320,7 +2320,7 @@ def _expected_assertion_schema_contract() -> tuple[
             str(row[0]): re.sub(r"\s+", "", str(row[1] or "").lower()).rstrip(";")
             for row in scratch.execute(
                 "SELECT name, sql FROM sqlite_master "
-                "WHERE type='trigger' AND name LIKE 'lcm_assertion%'"
+                "WHERE type='trigger' AND name LIKE 'trove_assertion%'"
             )
         }
         return table_shapes, table_checks, trigger_sql
@@ -2338,21 +2338,21 @@ def verify_assertion_schema(conn: sqlite3.Connection) -> list[str]:
         str(row[0])
         for row in conn.execute(
             "SELECT name FROM sqlite_master "
-            "WHERE type='table' AND name LIKE 'lcm_assertion%'"
+            "WHERE type='table' AND name LIKE 'trove_assertion%'"
         )
     }
     present_assertion_indexes = {
         str(row[0])
         for row in conn.execute(
             "SELECT name FROM sqlite_master "
-            "WHERE type='index' AND name LIKE 'idx_lcm_assertion%'"
+            "WHERE type='index' AND name LIKE 'idx_trove_assertion%'"
         )
     }
     present_assertion_triggers = {
         str(row[0])
         for row in conn.execute(
             "SELECT name FROM sqlite_master "
-            "WHERE type='trigger' AND name LIKE 'lcm_assertion%'"
+            "WHERE type='trigger' AND name LIKE 'trove_assertion%'"
         )
     }
     for table in sorted(present_assertion_tables - set(_ASSERTION_TABLE_COLUMNS)):
@@ -2480,7 +2480,7 @@ def ensure_message_identity_index(conn: sqlite3.Connection) -> None:
 def _has_named_migration_step(conn: sqlite3.Connection, step_name: str) -> bool:
     ensure_migration_state_table(conn)
     row = conn.execute(
-        "SELECT 1 FROM lcm_migration_state WHERE step_name = ?", (step_name,)
+        "SELECT 1 FROM trove_migration_state WHERE step_name = ?", (step_name,)
     ).fetchone()
     return row is not None
 
@@ -2534,7 +2534,7 @@ def dedup_message_identity_clusters(conn: sqlite3.Connection) -> int:
     index does not protect (documented limitation).
 
     Precondition (checked, not assumed): no row about to be deleted is
-    referenced by ``lcm_chunk_meta.store_id``, any ``summary_nodes``
+    referenced by ``trove_chunk_meta.store_id``, any ``summary_nodes``
     ``source_ids`` JSON leaf, or a lifecycle frontier. Keeping the
     earliest row makes existing references remain valid; the newest
     (re-stamped) copies are the ones with nothing pointing at them.
@@ -2556,12 +2556,12 @@ def dedup_message_identity_clusters(conn: sqlite3.Connection) -> int:
     if not _observed_present:
         return 0
     has_chunks = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='lcm_chunk_meta'"
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='trove_chunk_meta'"
     ).fetchone()
     if has_chunks:
         dangling_chunks = conn.execute(
             f"""
-            SELECT COUNT(*) FROM lcm_chunk_meta cm
+            SELECT COUNT(*) FROM trove_chunk_meta cm
             WHERE cm.store_id IS NOT NULL
               AND NOT EXISTS (
                   SELECT 1 FROM messages m
@@ -2572,7 +2572,7 @@ def dedup_message_identity_clusters(conn: sqlite3.Connection) -> int:
         ).fetchone()[0]
         if dangling_chunks:
             raise RuntimeError(
-                "refusing identity dedup: %d lcm_chunk_meta rows reference "
+                "refusing identity dedup: %d trove_chunk_meta rows reference "
                 "non-earliest cluster members (investigate before re-running)"
                 % dangling_chunks
             )
@@ -2597,16 +2597,16 @@ def dedup_message_identity_clusters(conn: sqlite3.Connection) -> int:
                 "non-earliest cluster members (investigate before re-running)"
             )
     has_lifecycle = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='lcm_lifecycle_state'"
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='trove_lifecycle_state'"
     ).fetchone()
     if has_lifecycle:
         dangling_frontier = conn.execute(
             f"""
             SELECT COUNT(DISTINCT lf.store_id)
             FROM (
-                SELECT current_frontier_store_id AS store_id FROM lcm_lifecycle_state
+                SELECT current_frontier_store_id AS store_id FROM trove_lifecycle_state
                 UNION
-                SELECT last_finalized_frontier_store_id AS store_id FROM lcm_lifecycle_state
+                SELECT last_finalized_frontier_store_id AS store_id FROM trove_lifecycle_state
             ) lf
             WHERE lf.store_id IS NOT NULL
               AND lf.store_id != 0
@@ -2653,7 +2653,7 @@ def mark_migration_step_complete(conn: sqlite3.Connection, step_name: str) -> No
     ensure_migration_state_table(conn)
     conn.execute(
         """
-        INSERT INTO lcm_migration_state(step_name, completed_at)
+        INSERT INTO trove_migration_state(step_name, completed_at)
         VALUES(?, strftime('%s','now'))
         ON CONFLICT(step_name) DO UPDATE SET completed_at = excluded.completed_at
         """,
@@ -2698,13 +2698,13 @@ def _database_path_for_connection(conn: sqlite3.Connection | None, fallback: str
     return fallback
 
 
-def inspect_lcm_schema_health(
+def inspect_trove_schema_health(
     conn: sqlite3.Connection | None,
     *,
     database_path: str = "",
     required_tables: Iterable[str] = REQUIRED_CORE_TABLES,
 ) -> dict[str, object]:
-    """Return read-only health metadata for the core hermes-lcm SQLite schema."""
+    """Return read-only health metadata for the core hermes-trove SQLite schema."""
     required = tuple(required_tables)
     resolved_path = _database_path_for_connection(conn, database_path)
     detail: dict[str, object] = {
@@ -2714,7 +2714,7 @@ def inspect_lcm_schema_health(
         "missing_tables": [],
     }
     if conn is None:
-        detail["error"] = "LCM store connection is not initialized"
+        detail["error"] = "TROVE store connection is not initialized"
         return detail
 
     try:
@@ -2803,7 +2803,7 @@ def _fts_needs_rebuild_structural(conn: sqlite3.Connection, spec: ExternalConten
     return False
 
 
-INTEGRITY_CHECK_INTERVAL_ENV = "LCM_FTS_INTEGRITY_CHECK_INTERVAL_HOURS"
+INTEGRITY_CHECK_INTERVAL_ENV = "TROVE_FTS_INTEGRITY_CHECK_INTERVAL_HOURS"
 DEFAULT_INTEGRITY_CHECK_INTERVAL_HOURS = 24.0
 
 
@@ -2886,9 +2886,9 @@ def _should_run_integrity_check(
 # thread that opens its OWN sqlite connection (never the store's — that
 # connection is not safe to drive from another thread). The background scan does
 # NOT rebuild: on corruption it records a ``fts_integrity_failed:<table>`` marker
-# that ``/lcm doctor`` surfaces, pointing operators at the explicit repair path.
+# that ``/trove doctor`` surfaces, pointing operators at the explicit repair path.
 
-BACKGROUND_INTEGRITY_ENV = "LCM_FTS_INTEGRITY_BACKGROUND"
+BACKGROUND_INTEGRITY_ENV = "TROVE_FTS_INTEGRITY_BACKGROUND"
 
 # A ``fts_integrity_scan_started_at`` metadata stamp older than this (seconds) is
 # treated as a crashed scan, so a later bind re-dispatches instead of wedging
@@ -2903,7 +2903,7 @@ _integrity_scan_threads: dict[tuple[str, str], threading.Thread] = {}
 
 
 def _background_integrity_enabled() -> bool:
-    """Kill-switch: ``LCM_FTS_INTEGRITY_BACKGROUND=false`` restores the exact old
+    """Kill-switch: ``TROVE_FTS_INTEGRITY_BACKGROUND=false`` restores the exact old
     synchronous integrity-check behavior on the startup path."""
     raw = os.environ.get(BACKGROUND_INTEGRITY_ENV)
     if raw is None:
@@ -2948,7 +2948,7 @@ def load_integrity_failed(
     conn: sqlite3.Connection, spec: ExternalContentFtsSpec
 ) -> dict[str, object] | None:
     """Return ``{'at': float, 'detail': str}`` when a background scan flagged the
-    index as corrupt, else ``None``. Used by ``/lcm doctor`` to surface the flag."""
+    index as corrupt, else ``None``. Used by ``/trove doctor`` to surface the flag."""
     ensure_metadata_table(conn)
     row = conn.execute(
         "SELECT value FROM metadata WHERE key = ?",
@@ -3051,7 +3051,7 @@ def _run_background_integrity_scan(
                 )
                 logger.warning(
                     "Background FTS integrity-check found corruption in '%s': %s. "
-                    "Run `/lcm doctor repair apply` to rebuild the index.",
+                    "Run `/trove doctor repair apply` to rebuild the index.",
                     spec.table_name,
                     result.get("detail", ""),
                 )
@@ -3130,7 +3130,7 @@ def _dispatch_background_integrity_scan(
         thread = threading.Thread(
             target=_run_background_integrity_scan,
             args=(db_path, spec, current),
-            name=f"lcm-fts-integrity-{spec.table_name}",
+            name=f"trove-fts-integrity-{spec.table_name}",
             daemon=True,
         )
         _integrity_scan_threads[key] = thread
@@ -3161,7 +3161,7 @@ def _fts_needs_rebuild(
     # Structurally sound: the FTS5 integrity-check is O(index size) and was the
     # dominant startup cost on large databases (issue #235). On the startup path
     # (``throttle=True``) skip it when already checked within the interval.
-    # Explicit repair (e.g. ``/lcm doctor repair apply``) uses ``throttle=False``
+    # Explicit repair (e.g. ``/trove doctor repair apply``) uses ``throttle=False``
     # so it always runs the deep check and can fix same-row-count drift that the
     # structural checks cannot see.
     if throttle and not _should_run_integrity_check(conn, spec, now=now):
@@ -3216,7 +3216,7 @@ def check_external_content_fts_integrity(
     if _fts_needs_rebuild_structural(conn, spec):
         return {"status": "fail", "detail": "structural repair needed"}
 
-    savepoint = f"lcm_fts_integrity_{spec.table_name}"
+    savepoint = f"trove_fts_integrity_{spec.table_name}"
     savepoint_sql = quote_sql_identifier(savepoint)
     try:
         conn.execute(f"SAVEPOINT {savepoint_sql}")
@@ -3319,7 +3319,7 @@ def _fts_repair_ownership(conn: sqlite3.Connection):
     the historical behavior of the repair helper.
     """
     if conn.in_transaction:
-        savepoint = quote_sql_identifier("lcm_fts_repair_ownership")
+        savepoint = quote_sql_identifier("trove_fts_repair_ownership")
         conn.execute(f"SAVEPOINT {savepoint}")
         try:
             yield False
@@ -3535,13 +3535,13 @@ def run_message_identity_migration(conn: sqlite3.Connection) -> int:
     index. It never deletes rows.
 
     Why no destructive dedup here:
-        A live database (e.g. ``~/.hermes/lcm.db``) may contain duplicate
+        A live database (e.g. ``~/.hermes/trove.db``) may contain duplicate
         identity clusters from before the backstop existed. Building a
         *unique* index over those duplicates raises ``IntegrityError`` —
         and this path runs on every store open, against the live database,
         on the normal (non-migration) hot path. Hard-failing here would make
         an ordinary plugin registration raise against a perfectly healthy
-        live database (the test suite itself opens ``~/.hermes/lcm.db`` via
+        live database (the test suite itself opens ``~/.hermes/trove.db`` via
         the ambient ``HERMES_HOME``), which is unacceptable for a passive
         schema-ensure pass.
 
@@ -3579,7 +3579,7 @@ def run_message_identity_migration(conn: sqlite3.Connection) -> int:
             # duplicates explicitly (``run_message_identity_dedup``), after
             # which the next open lands the index.
             logger.warning(
-                "LCM identity index not created: duplicate message-identity "
+                "TROVE identity index not created: duplicate message-identity "
                 "clusters exist. Run the one-shot dedup "
                 "(db_bootstrap.run_message_identity_dedup) to remove them; "
                 "the unique index lands on the next open."
@@ -3602,7 +3602,7 @@ def run_message_identity_dedup(conn: sqlite3.Connection) -> int:
     deletes the rest, then records the ``messages_identity_dedup_v1`` marker
     and (if the index is not already present) creates ``idx_msg_identity``.
 
-    It is gated by the same ``lcm_chunk_meta`` / ``summary_nodes`` / lifecycle
+    It is gated by the same ``trove_chunk_meta`` / ``summary_nodes`` / lifecycle
     precondition checks as the dedup primitive: it refuses (raises
     ``RuntimeError``) if any row about to be deleted is referenced by a chunk,
     a summary-node source id, or a lifecycle frontier, because those
@@ -3627,7 +3627,7 @@ def run_message_identity_dedup(conn: sqlite3.Connection) -> int:
         deleted = dedup_message_identity_clusters(conn)
         mark_migration_step_complete(conn, "messages_identity_dedup_v1")
         if deleted:
-            logger.info("LCM identity dedup removed %d duplicate message rows", deleted)
+            logger.info("TROVE identity dedup removed %d duplicate message rows", deleted)
     else:
         deleted = 0
 

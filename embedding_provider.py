@@ -22,7 +22,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Protocol, Sequence
 
-from .config import LCMConfig
+from .config import TROVEConfig
 from .tokens import count_tokens
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ _VOYAGE_URL = "https://api.voyageai.com/v1/embeddings"
 # the real archive: zero rows written, clean lease behavior held).
 _VOYAGE_CONTEXT_URL = "https://api.voyageai.com/v1/contextualizedembeddings"
 _VOYAGE_RERANK_URL = "https://api.voyageai.com/v1/rerank"
-# lcm_recall's cross-encoder rerank model. A lite model keeps the single extra
+# trove_recall's cross-encoder rerank model. A lite model keeps the single extra
 # API call cheap and inside the latency-sensitive recall deadline.
 _VOYAGE_RERANK_MODEL = "rerank-2.5-lite"
 _VOYAGE_MAX_BATCH_TOKENS = 80_000
@@ -298,7 +298,7 @@ def _run_blocking_with_deadline(
             worker_slots.release()
 
     worker = threading.Thread(
-        target=run, name=f"lcm-{provider.lower()}-embedding", daemon=True
+        target=run, name=f"trove-{provider.lower()}-embedding", daemon=True
     )
     try:
         worker.start()
@@ -1570,7 +1570,7 @@ class FastembedProvider(_ResilientProvider):
                 ) from exc
             raise ProviderNotWarmedUp(
                 f"FastEmbed model {self.model_id!r} is not cached locally; "
-                "run /lcm embed warmup"
+                "run /trove embed warmup"
             ) from exc
 
     def _ensure_local(self) -> Any:
@@ -1677,13 +1677,13 @@ class FastembedProvider(_ResilientProvider):
 
 
 def resolve_provider(
-    config: LCMConfig, *, for_backfill: bool = False
+    config: TROVEConfig, *, for_backfill: bool = False
 ) -> EmbeddingProvider | None:
     """Resolve inert embedding config without making provider calls.
 
     ``for_backfill`` selects the bulk-operation contract. It bypasses the
     interactive per-minute spend guard and uses the separate backfill timeout:
-    bulk ``lcm embed backfill --apply`` embeds thousands of documents (e.g.
+    bulk ``trove embed backfill --apply`` embeds thousands of documents (e.g.
     ~1920 docs at batch 32 → ~60 provider calls), and neither its call volume
     nor a normal document batch/local model load should be governed by the
     latency-sensitive query policy. The backfill worker retains its own
@@ -1691,7 +1691,7 @@ def resolve_provider(
 
     The query path (``for_backfill=False``) gets an explicit, configurable
     sliding-window guard from ``embedding_query_spend_{max_calls,window_seconds,
-    backoff_seconds}`` (env ``LCM_EMBEDDING_QUERY_SPEND_*``), defaulting to a
+    backoff_seconds}`` (env ``TROVE_EMBEDDING_QUERY_SPEND_*``), defaulting to a
     generous ceiling. The historical implicit default here was the strict
     ``EmbeddingSpendGuard()`` (60/60s/60s) -- a backfill-economy control that
     silently gutted retrieval when a tight query loop crossed 60 calls/window
@@ -1705,7 +1705,7 @@ def resolve_provider(
         return None
     if not provider or not model:
         raise ProviderUnavailable(
-            "LCM_EMBEDDING_PROVIDER and LCM_EMBEDDING_MODEL must both be set"
+            "TROVE_EMBEDDING_PROVIDER and TROVE_EMBEDDING_MODEL must both be set"
         )
     # max_calls=0 disables the sliding-window guard (allows() always True,
     # record_call() a no-op); the circuit breaker still trips on failures.

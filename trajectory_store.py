@@ -1,4 +1,4 @@
-"""Immutable trajectory sources and bounded exact retrieval in one ``lcm.db``.
+"""Immutable trajectory sources and bounded exact retrieval in one ``trove.db``.
 
 The store is intentionally provider-free.  It models agent trajectories as
 first-class source material instead of flattening them into chat messages.
@@ -51,52 +51,52 @@ _STATE_EMBED_DOCUMENT_TOKEN_BUDGET = int(27_000 * 0.9)
 _STATE_EMBED_BATCH_TOKEN_BUDGET = int(80_000 * 0.9)
 
 _TRAJECTORY_BASE_SCHEMA: dict[str, frozenset[str]] = {
-    "lcm_trajectory_corpora": frozenset({
+    "trove_trajectory_corpora": frozenset({
         "singleton", "identity_digest", "identity_json", "schema_version",
         "corpus_uid", "haystack_digest", "source_manifest_digest",
         "trajectory_count", "ingest_cursor", "status", "created_at",
         "completed_at",
     }),
-    "lcm_trajectory_sources": frozenset({
+    "trove_trajectory_sources": frozenset({
         "source_id", "trajectory_id", "ordinal", "source_json", "source_sha256",
         "goal", "start_url", "outcome", "state_count", "inserted_at",
     }),
-    "lcm_trajectory_states": frozenset({
+    "trove_trajectory_states": frozenset({
         "state_id", "source_id", "state_index", "sequence_ordinal", "step",
         "url", "incoming_action", "thoughts", "text", "search_text",
         "observed_at", "observed_at_source", "occurred_at",
         "occurred_at_source", "ingested_at",
     }),
-    "lcm_trajectory_assets": frozenset({
+    "trove_trajectory_assets": frozenset({
         "asset_id", "state_id", "relative_path", "sha256", "byte_size",
     }),
-    "lcm_trajectory_ingest_receipts": frozenset({
+    "trove_trajectory_ingest_receipts": frozenset({
         "ordinal", "trajectory_id", "source_sha256", "committed_at",
     }),
-    "lcm_trajectory_transitions": frozenset({
+    "trove_trajectory_transitions": frozenset({
         "transition_id", "source_id", "sequence_ordinal", "pre_state_id",
         "post_state_id", "incoming_action",
     }),
 }
 _TRAJECTORY_OPTIONAL_SCHEMAS: tuple[dict[str, frozenset[str]], ...] = (
     {
-        "lcm_trajectory_embedding_profiles": frozenset({
+        "trove_trajectory_embedding_profiles": frozenset({
             "profile_digest", "provider", "model_name", "dim",
             "document_version", "source_manifest_digest", "document_count",
             "index_digest", "active", "created_at",
         }),
-        "lcm_trajectory_embeddings": frozenset({
+        "trove_trajectory_embeddings": frozenset({
             "source_id", "profile_digest", "document_sha256", "vector",
             "embedded_at",
         }),
     },
     {
-        "lcm_trajectory_state_embedding_profiles": frozenset({
+        "trove_trajectory_state_embedding_profiles": frozenset({
             "profile_digest", "provider", "model_name", "dim",
             "document_version", "source_manifest_digest", "state_count",
             "active", "created_at",
         }),
-        "lcm_trajectory_state_embeddings": frozenset({
+        "trove_trajectory_state_embeddings": frozenset({
             "state_id", "profile_digest", "document_sha256", "vector",
             "embedded_at",
         }),
@@ -111,11 +111,11 @@ def _verify_trajectory_schema(conn: sqlite3.Connection) -> list[str]:
         str(row[0])
         for row in conn.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table' "
-            "AND name LIKE 'lcm_trajectory%'"
+            "AND name LIKE 'trove_trajectory%'"
         )
     }
     expected = dict(_TRAJECTORY_BASE_SCHEMA)
-    expected_fts = "lcm_trajectory_states_fts"
+    expected_fts = "trove_trajectory_states_fts"
     allowed = set(expected) | {expected_fts}
     allowed.update(get_fts_shadow_table_names(expected_fts))
     for optional in _TRAJECTORY_OPTIONAL_SCHEMAS:
@@ -145,28 +145,28 @@ def _verify_trajectory_schema(conn: sqlite3.Connection) -> list[str]:
 
     required_objects = {
         "index": {
-            "lcm_trajectory_states_source_sequence",
+            "trove_trajectory_states_source_sequence",
             *(
                 {
-                    "lcm_trajectory_embedding_one_active",
-                    "lcm_trajectory_embeddings_profile",
+                    "trove_trajectory_embedding_one_active",
+                    "trove_trajectory_embeddings_profile",
                 }
-                if "lcm_trajectory_embeddings" in expected
+                if "trove_trajectory_embeddings" in expected
                 else set()
             ),
             *(
                 {
-                    "lcm_trajectory_state_embedding_one_active",
-                    "lcm_trajectory_state_embeddings_profile",
+                    "trove_trajectory_state_embedding_one_active",
+                    "trove_trajectory_state_embeddings_profile",
                 }
-                if "lcm_trajectory_state_embeddings" in expected
+                if "trove_trajectory_state_embeddings" in expected
                 else set()
             ),
         },
         "trigger": {
-            "lcm_trajectory_fts_insert",
-            "lcm_trajectory_fts_delete",
-            "lcm_trajectory_fts_update",
+            "trove_trajectory_fts_insert",
+            "trove_trajectory_fts_delete",
+            "trove_trajectory_fts_update",
         },
     }
     for object_type, names in required_objects.items():
@@ -174,7 +174,7 @@ def _verify_trajectory_schema(conn: sqlite3.Connection) -> list[str]:
             str(row[0])
             for row in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type = ? "
-                "AND name LIKE 'lcm_trajectory%'",
+                "AND name LIKE 'trove_trajectory%'",
                 (object_type,),
             )
         }
@@ -192,7 +192,7 @@ _MAX_QUERY_TEXT_CHARS = 8_000
 _MAX_ADJACENCY_RADIUS = 8
 _MAX_DIVERSITY_CAP = 24
 _MAX_SHARP_TOKEN_BUDGET = 4_000
-# Knob G (HERMES_LCM_ANTIBOILERPLATE): additive re-weighting inside the C1
+# Knob G (HERMES_TROVE_ANTIBOILERPLATE): additive re-weighting inside the C1
 # per-trajectory MMR survivor selection. A candidate is penalized by how much
 # it lexically resembles the OTHER pooled states of its own trajectory
 # (boilerplate looks like its siblings) and rewarded for query-term density, so
@@ -202,7 +202,7 @@ _MAX_SHARP_TOKEN_BUDGET = 4_000
 # re-ranking influence.
 _ANTIBOILERPLATE_BOILERPLATE_WEIGHT = 0.30
 _ANTIBOILERPLATE_DENSITY_WEIGHT = 0.30
-# Knob H (HERMES_LCM_TITLE_BOOST): contiguous question n-gram sizes matched
+# Knob H (HERMES_TROVE_TITLE_BOOST): contiguous question n-gram sizes matched
 # against a candidate's normalized title/heading/field-label text at the lexical
 # candidate stage.
 _TITLE_BOOST_MIN_GRAM = 2
@@ -476,16 +476,16 @@ def create_trajectory_embedding_provider(
     timeout_seconds: float,
     for_backfill: bool = False,
 ) -> TrajectoryEmbeddingProvider:
-    """Resolve an existing LCM provider without persisting its credential.
+    """Resolve an existing TROVE provider without persisting its credential.
 
     The provider reads credentials from its normal environment-backed secret
     seam. Only the provider/model identifiers belong in saved memory config.
     """
-    from .config import LCMConfig
+    from .config import TROVEConfig
     from .embedding_provider import resolve_provider
 
     timeout = max(0.1, float(timeout_seconds))
-    config = LCMConfig(
+    config = TROVEConfig(
         embedding_provider=str(provider_name).strip(),
         embedding_model=str(model_name).strip(),
         embedding_query_timeout_s=timeout,
@@ -534,7 +534,7 @@ def _bounded_text(value: Any, field: str, *, allow_empty: bool = True) -> str:
 
 
 class TrajectoryStore:
-    """SQLite trajectory store bound to the same physical file as LCM core."""
+    """SQLite trajectory store bound to the same physical file as TROVE core."""
 
     def __init__(
         self,
@@ -629,7 +629,7 @@ class TrajectoryStore:
     def _validate_existing_schema_version(self) -> None:
         try:
             row = self._conn.execute(
-                "SELECT schema_version FROM lcm_trajectory_corpora "
+                "SELECT schema_version FROM trove_trajectory_corpora "
                 "WHERE singleton = 1"
             ).fetchone()
         except sqlite3.OperationalError:
@@ -641,19 +641,19 @@ class TrajectoryStore:
 
     def _init_schema(self) -> None:
         required = {
-            "lcm_trajectory_corpora",
-            "lcm_trajectory_sources",
-            "lcm_trajectory_states",
-            "lcm_trajectory_assets",
-            "lcm_trajectory_ingest_receipts",
-            "lcm_trajectory_transitions",
-            "lcm_trajectory_states_fts",
+            "trove_trajectory_corpora",
+            "trove_trajectory_sources",
+            "trove_trajectory_states",
+            "trove_trajectory_assets",
+            "trove_trajectory_ingest_receipts",
+            "trove_trajectory_transitions",
+            "trove_trajectory_states_fts",
         }
         if self.read_only:
             existing = {
                 str(row[0])
                 for row in self._conn.execute(
-                    "SELECT name FROM sqlite_master WHERE name LIKE 'lcm_trajectory%'"
+                    "SELECT name FROM sqlite_master WHERE name LIKE 'trove_trajectory%'"
                 )
             }
             missing = sorted(required - existing)
@@ -671,11 +671,11 @@ class TrajectoryStore:
 
         run_versioned_migrations(self._conn)
         fts_preexisting = self._conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE name = 'lcm_trajectory_states_fts'"
+            "SELECT 1 FROM sqlite_master WHERE name = 'trove_trajectory_states_fts'"
         ).fetchone() is not None
         self._conn.executescript(
             """
-            CREATE TABLE IF NOT EXISTS lcm_trajectory_corpora (
+            CREATE TABLE IF NOT EXISTS trove_trajectory_corpora (
                 singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
                 identity_digest TEXT NOT NULL UNIQUE,
                 identity_json TEXT NOT NULL,
@@ -690,7 +690,7 @@ class TrajectoryStore:
                 completed_at REAL
             );
 
-            CREATE TABLE IF NOT EXISTS lcm_trajectory_sources (
+            CREATE TABLE IF NOT EXISTS trove_trajectory_sources (
                 source_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 trajectory_id TEXT NOT NULL UNIQUE,
                 ordinal INTEGER NOT NULL UNIQUE,
@@ -703,9 +703,9 @@ class TrajectoryStore:
                 inserted_at REAL NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS lcm_trajectory_states (
+            CREATE TABLE IF NOT EXISTS trove_trajectory_states (
                 state_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                source_id INTEGER NOT NULL REFERENCES lcm_trajectory_sources(source_id) ON DELETE CASCADE,
+                source_id INTEGER NOT NULL REFERENCES trove_trajectory_sources(source_id) ON DELETE CASCADE,
                 state_index INTEGER NOT NULL CHECK(state_index >= 0),
                 sequence_ordinal INTEGER NOT NULL CHECK(sequence_ordinal >= 0),
                 step INTEGER NOT NULL CHECK(step >= 0),
@@ -723,80 +723,80 @@ class TrajectoryStore:
                 UNIQUE(source_id, sequence_ordinal)
             );
 
-            CREATE TABLE IF NOT EXISTS lcm_trajectory_assets (
+            CREATE TABLE IF NOT EXISTS trove_trajectory_assets (
                 asset_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                state_id INTEGER NOT NULL UNIQUE REFERENCES lcm_trajectory_states(state_id) ON DELETE CASCADE,
+                state_id INTEGER NOT NULL UNIQUE REFERENCES trove_trajectory_states(state_id) ON DELETE CASCADE,
                 relative_path TEXT NOT NULL,
                 sha256 TEXT NOT NULL,
                 byte_size INTEGER NOT NULL CHECK(byte_size >= 0)
             );
 
-            CREATE TABLE IF NOT EXISTS lcm_trajectory_ingest_receipts (
+            CREATE TABLE IF NOT EXISTS trove_trajectory_ingest_receipts (
                 ordinal INTEGER PRIMARY KEY CHECK(ordinal >= 0),
                 trajectory_id TEXT NOT NULL UNIQUE,
                 source_sha256 TEXT NOT NULL,
                 committed_at REAL NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS lcm_trajectory_transitions (
+            CREATE TABLE IF NOT EXISTS trove_trajectory_transitions (
                 transition_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                source_id INTEGER NOT NULL REFERENCES lcm_trajectory_sources(source_id) ON DELETE CASCADE,
+                source_id INTEGER NOT NULL REFERENCES trove_trajectory_sources(source_id) ON DELETE CASCADE,
                 sequence_ordinal INTEGER NOT NULL CHECK(sequence_ordinal >= 1),
-                pre_state_id INTEGER NOT NULL REFERENCES lcm_trajectory_states(state_id) ON DELETE CASCADE,
-                post_state_id INTEGER NOT NULL REFERENCES lcm_trajectory_states(state_id) ON DELETE CASCADE,
+                pre_state_id INTEGER NOT NULL REFERENCES trove_trajectory_states(state_id) ON DELETE CASCADE,
+                post_state_id INTEGER NOT NULL REFERENCES trove_trajectory_states(state_id) ON DELETE CASCADE,
                 incoming_action TEXT,
                 UNIQUE(source_id, sequence_ordinal),
                 UNIQUE(source_id, post_state_id)
             );
 
-            CREATE VIRTUAL TABLE IF NOT EXISTS lcm_trajectory_states_fts
-            USING fts5(search_text, content='lcm_trajectory_states', content_rowid='state_id');
+            CREATE VIRTUAL TABLE IF NOT EXISTS trove_trajectory_states_fts
+            USING fts5(search_text, content='trove_trajectory_states', content_rowid='state_id');
 
-            CREATE TRIGGER IF NOT EXISTS lcm_trajectory_fts_insert
-            AFTER INSERT ON lcm_trajectory_states BEGIN
-                INSERT INTO lcm_trajectory_states_fts(rowid, search_text)
+            CREATE TRIGGER IF NOT EXISTS trove_trajectory_fts_insert
+            AFTER INSERT ON trove_trajectory_states BEGIN
+                INSERT INTO trove_trajectory_states_fts(rowid, search_text)
                 VALUES (new.state_id, new.search_text);
             END;
 
-            CREATE TRIGGER IF NOT EXISTS lcm_trajectory_fts_delete
-            AFTER DELETE ON lcm_trajectory_states BEGIN
-                INSERT INTO lcm_trajectory_states_fts(lcm_trajectory_states_fts, rowid, search_text)
+            CREATE TRIGGER IF NOT EXISTS trove_trajectory_fts_delete
+            AFTER DELETE ON trove_trajectory_states BEGIN
+                INSERT INTO trove_trajectory_states_fts(trove_trajectory_states_fts, rowid, search_text)
                 VALUES ('delete', old.state_id, old.search_text);
             END;
 
-            CREATE TRIGGER IF NOT EXISTS lcm_trajectory_fts_update
-            AFTER UPDATE OF search_text ON lcm_trajectory_states BEGIN
-                INSERT INTO lcm_trajectory_states_fts(lcm_trajectory_states_fts, rowid, search_text)
+            CREATE TRIGGER IF NOT EXISTS trove_trajectory_fts_update
+            AFTER UPDATE OF search_text ON trove_trajectory_states BEGIN
+                INSERT INTO trove_trajectory_states_fts(trove_trajectory_states_fts, rowid, search_text)
                 VALUES ('delete', old.state_id, old.search_text);
-                INSERT INTO lcm_trajectory_states_fts(rowid, search_text)
+                INSERT INTO trove_trajectory_states_fts(rowid, search_text)
                 VALUES (new.state_id, new.search_text);
             END;
 
-            CREATE INDEX IF NOT EXISTS lcm_trajectory_states_source_sequence
-            ON lcm_trajectory_states(source_id, sequence_ordinal);
+            CREATE INDEX IF NOT EXISTS trove_trajectory_states_source_sequence
+            ON trove_trajectory_states(source_id, sequence_ordinal);
             """
         )
         state_count = int(
-            self._conn.execute("SELECT COUNT(*) FROM lcm_trajectory_states").fetchone()[0]
+            self._conn.execute("SELECT COUNT(*) FROM trove_trajectory_states").fetchone()[0]
         )
         fts_count = int(
-            self._conn.execute("SELECT COUNT(*) FROM lcm_trajectory_states_fts").fetchone()[0]
+            self._conn.execute("SELECT COUNT(*) FROM trove_trajectory_states_fts").fetchone()[0]
         )
         fts_needs_rebuild = not fts_preexisting or state_count != fts_count
         if not fts_needs_rebuild:
             try:
                 self._conn.execute(
-                    "INSERT INTO lcm_trajectory_states_fts(lcm_trajectory_states_fts, rank) "
+                    "INSERT INTO trove_trajectory_states_fts(trove_trajectory_states_fts, rank) "
                     "VALUES ('integrity-check', 1)"
                 )
             except sqlite3.DatabaseError:
                 fts_needs_rebuild = True
         if fts_needs_rebuild:
             self._conn.execute(
-                "INSERT INTO lcm_trajectory_states_fts(lcm_trajectory_states_fts) VALUES ('rebuild')"
+                "INSERT INTO trove_trajectory_states_fts(trove_trajectory_states_fts) VALUES ('rebuild')"
             )
         marker = self._conn.execute(
-            "SELECT 1 FROM lcm_migration_state WHERE step_name = ?",
+            "SELECT 1 FROM trove_migration_state WHERE step_name = ?",
             (TRAJECTORY_MIGRATION_STEP,),
         ).fetchone()
         if marker is None:
@@ -805,14 +805,14 @@ class TrajectoryStore:
 
     def _bind_identity(self) -> None:
         row = self._conn.execute(
-            "SELECT * FROM lcm_trajectory_corpora WHERE singleton = 1"
+            "SELECT * FROM trove_trajectory_corpora WHERE singleton = 1"
         ).fetchone()
         if row is None:
             if self.read_only:
                 raise CorpusIdentityError("trajectory database has no corpus identity")
             self._conn.execute(
                 """
-                INSERT INTO lcm_trajectory_corpora(
+                INSERT INTO trove_trajectory_corpora(
                     singleton, identity_digest, identity_json, schema_version,
                     status, created_at
                 ) VALUES (1, ?, ?, ?, 'building', ?)
@@ -826,7 +826,7 @@ class TrajectoryStore:
             )
             self._conn.commit()
             row = self._conn.execute(
-                "SELECT * FROM lcm_trajectory_corpora WHERE singleton = 1"
+                "SELECT * FROM trove_trajectory_corpora WHERE singleton = 1"
             ).fetchone()
         if (
             str(row["identity_digest"]) != self.identity_digest
@@ -843,14 +843,14 @@ class TrajectoryStore:
     @property
     def status(self) -> str:
         row = self._conn.execute(
-            "SELECT status FROM lcm_trajectory_corpora WHERE singleton = 1"
+            "SELECT status FROM trove_trajectory_corpora WHERE singleton = 1"
         ).fetchone()
         return str(row[0])
 
     @property
     def corpus_uid(self) -> str | None:
         row = self._conn.execute(
-            "SELECT corpus_uid FROM lcm_trajectory_corpora WHERE singleton = 1"
+            "SELECT corpus_uid FROM trove_trajectory_corpora WHERE singleton = 1"
         ).fetchone()
         return str(row[0]) if row and row[0] else None
 
@@ -998,7 +998,7 @@ class TrajectoryStore:
                 existing = self._conn.execute(
                     """
                     SELECT source_sha256, state_count
-                    FROM lcm_trajectory_sources
+                    FROM trove_trajectory_sources
                     WHERE trajectory_id = ?
                     """,
                     (trajectory_id,),
@@ -1018,7 +1018,7 @@ class TrajectoryStore:
                 corpus_row = self._conn.execute(
                     """
                     SELECT status, ingest_cursor
-                    FROM lcm_trajectory_corpora WHERE singleton = 1
+                    FROM trove_trajectory_corpora WHERE singleton = 1
                     """
                 ).fetchone()
                 if str(corpus_row["status"]) == "complete":
@@ -1032,7 +1032,7 @@ class TrajectoryStore:
                 now = time.time()
                 cursor = self._conn.execute(
                     """
-                    INSERT INTO lcm_trajectory_sources(
+                    INSERT INTO trove_trajectory_sources(
                         trajectory_id, ordinal, source_json, source_sha256,
                         goal, start_url, outcome, state_count, inserted_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1062,7 +1062,7 @@ class TrajectoryStore:
                     )
                     state_cursor = self._conn.execute(
                         """
-                        INSERT INTO lcm_trajectory_states(
+                        INSERT INTO trove_trajectory_states(
                             source_id, state_index, sequence_ordinal, step, url,
                             incoming_action, thoughts, text, search_text,
                             observed_at, observed_at_source,
@@ -1090,7 +1090,7 @@ class TrajectoryStore:
                     relative_path, asset_sha, asset_size = asset
                     self._conn.execute(
                         """
-                        INSERT INTO lcm_trajectory_assets(
+                        INSERT INTO trove_trajectory_assets(
                             state_id, relative_path, sha256, byte_size
                         ) VALUES (?, ?, ?, ?)
                         """,
@@ -1105,7 +1105,7 @@ class TrajectoryStore:
                     state = protected_states[sequence_ordinal]
                     self._conn.execute(
                         """
-                        INSERT INTO lcm_trajectory_transitions(
+                        INSERT INTO trove_trajectory_transitions(
                             source_id, sequence_ordinal, pre_state_id,
                             post_state_id, incoming_action
                         ) VALUES (?, ?, ?, ?, ?)
@@ -1120,7 +1120,7 @@ class TrajectoryStore:
                     )
                 self._conn.execute(
                     """
-                    INSERT INTO lcm_trajectory_ingest_receipts(
+                    INSERT INTO trove_trajectory_ingest_receipts(
                         ordinal, trajectory_id, source_sha256, committed_at
                     ) VALUES (?, ?, ?, ?)
                     """,
@@ -1128,7 +1128,7 @@ class TrajectoryStore:
                 )
                 self._conn.execute(
                     """
-                    UPDATE lcm_trajectory_corpora
+                    UPDATE trove_trajectory_corpora
                     SET ingest_cursor = ingest_cursor + 1
                     WHERE singleton = 1
                     """
@@ -1157,7 +1157,7 @@ class TrajectoryStore:
                 rows = self._conn.execute(
                     """
                     SELECT trajectory_id, source_sha256
-                    FROM lcm_trajectory_sources
+                    FROM trove_trajectory_sources
                     ORDER BY ordinal, trajectory_id
                     """
                 ).fetchall()
@@ -1169,7 +1169,7 @@ class TrajectoryStore:
                 corpus_row = self._conn.execute(
                     """
                     SELECT status, corpus_uid, ingest_cursor
-                    FROM lcm_trajectory_corpora WHERE singleton = 1
+                    FROM trove_trajectory_corpora WHERE singleton = 1
                     """
                 ).fetchone()
                 if int(corpus_row["ingest_cursor"]) != len(ordered):
@@ -1193,7 +1193,7 @@ class TrajectoryStore:
                     return corpus_uid
                 self._conn.execute(
                     """
-                    UPDATE lcm_trajectory_corpora
+                    UPDATE trove_trajectory_corpora
                     SET corpus_uid = ?, haystack_digest = ?, source_manifest_digest = ?,
                         trajectory_count = ?, status = 'complete', completed_at = ?
                     WHERE singleton = 1
@@ -1223,7 +1223,7 @@ class TrajectoryStore:
         self._require_writable()
         self._conn.executescript(
             """
-            CREATE TABLE IF NOT EXISTS lcm_trajectory_embedding_profiles (
+            CREATE TABLE IF NOT EXISTS trove_trajectory_embedding_profiles (
                 profile_digest TEXT PRIMARY KEY,
                 provider TEXT NOT NULL,
                 model_name TEXT NOT NULL,
@@ -1236,22 +1236,22 @@ class TrajectoryStore:
                 created_at REAL NOT NULL
             );
 
-            CREATE UNIQUE INDEX IF NOT EXISTS lcm_trajectory_embedding_one_active
-            ON lcm_trajectory_embedding_profiles(active) WHERE active = 1;
+            CREATE UNIQUE INDEX IF NOT EXISTS trove_trajectory_embedding_one_active
+            ON trove_trajectory_embedding_profiles(active) WHERE active = 1;
 
-            CREATE TABLE IF NOT EXISTS lcm_trajectory_embeddings (
+            CREATE TABLE IF NOT EXISTS trove_trajectory_embeddings (
                 source_id INTEGER PRIMARY KEY
-                    REFERENCES lcm_trajectory_sources(source_id) ON DELETE CASCADE,
+                    REFERENCES trove_trajectory_sources(source_id) ON DELETE CASCADE,
                 profile_digest TEXT NOT NULL
-                    REFERENCES lcm_trajectory_embedding_profiles(profile_digest)
+                    REFERENCES trove_trajectory_embedding_profiles(profile_digest)
                     ON DELETE CASCADE,
                 document_sha256 TEXT NOT NULL,
                 vector BLOB NOT NULL,
                 embedded_at REAL NOT NULL
             );
 
-            CREATE INDEX IF NOT EXISTS lcm_trajectory_embeddings_profile
-            ON lcm_trajectory_embeddings(profile_digest, source_id);
+            CREATE INDEX IF NOT EXISTS trove_trajectory_embeddings_profile
+            ON trove_trajectory_embeddings(profile_digest, source_id);
             """
         )
         self._conn.commit()
@@ -1260,14 +1260,14 @@ class TrajectoryStore:
         exists = self._conn.execute(
             """
             SELECT 1 FROM sqlite_master
-            WHERE type = 'table' AND name = 'lcm_trajectory_embedding_profiles'
+            WHERE type = 'table' AND name = 'trove_trajectory_embedding_profiles'
             """
         ).fetchone()
         if exists is None:
             return None
         return self._conn.execute(
             """
-            SELECT * FROM lcm_trajectory_embedding_profiles
+            SELECT * FROM trove_trajectory_embedding_profiles
             WHERE active = 1
             """
         ).fetchone()
@@ -1287,7 +1287,7 @@ class TrajectoryStore:
         sources = self._conn.execute(
             """
             SELECT source_id, trajectory_id, goal, start_url, outcome
-            FROM lcm_trajectory_sources
+            FROM trove_trajectory_sources
             ORDER BY ordinal, trajectory_id
             """
         ).fetchall()
@@ -1297,7 +1297,7 @@ class TrajectoryStore:
                 """
                 SELECT state_index, sequence_ordinal, step, url,
                        incoming_action, thoughts, text
-                FROM lcm_trajectory_states
+                FROM trove_trajectory_states
                 WHERE source_id = ?
                 ORDER BY sequence_ordinal
                 """,
@@ -1350,7 +1350,7 @@ class TrajectoryStore:
         corpus = self._conn.execute(
             """
             SELECT source_manifest_digest, trajectory_count
-            FROM lcm_trajectory_corpora WHERE singleton = 1
+            FROM trove_trajectory_corpora WHERE singleton = 1
             """
         ).fetchone()
         provider_name = str(getattr(active_provider, "provider_id", "unknown"))
@@ -1367,7 +1367,7 @@ class TrajectoryStore:
             and int(current["document_count"]) == expected_count
         ):
             actual_count = int(self._conn.execute(
-                "SELECT COUNT(*) FROM lcm_trajectory_embeddings WHERE profile_digest = ?",
+                "SELECT COUNT(*) FROM trove_trajectory_embeddings WHERE profile_digest = ?",
                 (str(current["profile_digest"]),),
             ).fetchone()[0])
             if actual_count == expected_count:
@@ -1429,12 +1429,12 @@ class TrajectoryStore:
             self._conn.execute("BEGIN IMMEDIATE")
             try:
                 self._conn.execute(
-                    "UPDATE lcm_trajectory_embedding_profiles SET active = 0 WHERE active = 1"
+                    "UPDATE trove_trajectory_embedding_profiles SET active = 0 WHERE active = 1"
                 )
-                self._conn.execute("DELETE FROM lcm_trajectory_embeddings")
+                self._conn.execute("DELETE FROM trove_trajectory_embeddings")
                 self._conn.execute(
                     """
-                    INSERT INTO lcm_trajectory_embedding_profiles(
+                    INSERT INTO trove_trajectory_embedding_profiles(
                         profile_digest, provider, model_name, dim,
                         document_version, source_manifest_digest,
                         document_count, index_digest, active, created_at
@@ -1459,7 +1459,7 @@ class TrajectoryStore:
                 )
                 self._conn.executemany(
                     """
-                    INSERT INTO lcm_trajectory_embeddings(
+                    INSERT INTO trove_trajectory_embeddings(
                         source_id, profile_digest, document_sha256, vector, embedded_at
                     ) VALUES (?, ?, ?, ?, ?)
                     """,
@@ -1499,7 +1499,7 @@ class TrajectoryStore:
         self._require_writable()
         self._conn.executescript(
             """
-            CREATE TABLE IF NOT EXISTS lcm_trajectory_state_embedding_profiles (
+            CREATE TABLE IF NOT EXISTS trove_trajectory_state_embedding_profiles (
                 profile_digest TEXT PRIMARY KEY,
                 provider TEXT NOT NULL,
                 model_name TEXT NOT NULL,
@@ -1511,22 +1511,22 @@ class TrajectoryStore:
                 created_at REAL NOT NULL
             );
 
-            CREATE UNIQUE INDEX IF NOT EXISTS lcm_trajectory_state_embedding_one_active
-            ON lcm_trajectory_state_embedding_profiles(active) WHERE active = 1;
+            CREATE UNIQUE INDEX IF NOT EXISTS trove_trajectory_state_embedding_one_active
+            ON trove_trajectory_state_embedding_profiles(active) WHERE active = 1;
 
-            CREATE TABLE IF NOT EXISTS lcm_trajectory_state_embeddings (
+            CREATE TABLE IF NOT EXISTS trove_trajectory_state_embeddings (
                 state_id INTEGER PRIMARY KEY
-                    REFERENCES lcm_trajectory_states(state_id) ON DELETE CASCADE,
+                    REFERENCES trove_trajectory_states(state_id) ON DELETE CASCADE,
                 profile_digest TEXT NOT NULL
-                    REFERENCES lcm_trajectory_state_embedding_profiles(profile_digest)
+                    REFERENCES trove_trajectory_state_embedding_profiles(profile_digest)
                     ON DELETE CASCADE,
                 document_sha256 TEXT NOT NULL,
                 vector BLOB NOT NULL,
                 embedded_at REAL NOT NULL
             );
 
-            CREATE INDEX IF NOT EXISTS lcm_trajectory_state_embeddings_profile
-            ON lcm_trajectory_state_embeddings(profile_digest, state_id);
+            CREATE INDEX IF NOT EXISTS trove_trajectory_state_embeddings_profile
+            ON trove_trajectory_state_embeddings(profile_digest, state_id);
             """
         )
         self._conn.commit()
@@ -1535,7 +1535,7 @@ class TrajectoryStore:
         return self._conn.execute(
             """
             SELECT 1 FROM sqlite_master
-            WHERE type = 'table' AND name = 'lcm_trajectory_state_embedding_profiles'
+            WHERE type = 'table' AND name = 'trove_trajectory_state_embedding_profiles'
             """
         ).fetchone() is not None
 
@@ -1543,7 +1543,7 @@ class TrajectoryStore:
         if not self._state_semantic_profile_exists():
             return None
         return self._conn.execute(
-            "SELECT * FROM lcm_trajectory_state_embedding_profiles WHERE active = 1"
+            "SELECT * FROM trove_trajectory_state_embedding_profiles WHERE active = 1"
         ).fetchone()
 
     @staticmethod
@@ -1655,7 +1655,7 @@ class TrajectoryStore:
         """Resumable per-state embedding backfill (issue #142).
 
         Embeds one vector per state (``states.text``) into
-        ``lcm_trajectory_state_embeddings`` under an active profile keyed by
+        ``trove_trajectory_state_embeddings`` under an active profile keyed by
         provider/model/dim/document_version/source_manifest_digest. Requests are
         packed to ``batch_max_items`` items / ``batch_token_budget`` tokens; a
         state whose document exceeds ``document_token_budget`` is split into
@@ -1681,7 +1681,7 @@ class TrajectoryStore:
         corpus = self._conn.execute(
             """
             SELECT source_manifest_digest, trajectory_count
-            FROM lcm_trajectory_corpora WHERE singleton = 1
+            FROM trove_trajectory_corpora WHERE singleton = 1
             """
         ).fetchone()
         source_manifest_digest = str(corpus["source_manifest_digest"])
@@ -1711,7 +1711,7 @@ class TrajectoryStore:
         all_states = self._conn.execute(
             """
             SELECT s.state_id, s.text, s.url
-            FROM lcm_trajectory_states s
+            FROM trove_trajectory_states s
             ORDER BY s.state_id
             """
         ).fetchall()
@@ -1748,12 +1748,12 @@ class TrajectoryStore:
                 # ((profile_digest, state_id) identity) first; tracked in the
                 # fork issue for the next train.
                 self._conn.execute(
-                    "UPDATE lcm_trajectory_state_embedding_profiles "
+                    "UPDATE trove_trajectory_state_embedding_profiles "
                     "SET active = 0 WHERE active = 1",
                 )
                 self._conn.execute(
                     """
-                    INSERT INTO lcm_trajectory_state_embedding_profiles(
+                    INSERT INTO trove_trajectory_state_embedding_profiles(
                         profile_digest, provider, model_name, dim,
                         document_version, source_manifest_digest,
                         state_count, active, created_at
@@ -1774,7 +1774,7 @@ class TrajectoryStore:
                 )
                 if not resume:
                     self._conn.execute(
-                        "DELETE FROM lcm_trajectory_state_embeddings "
+                        "DELETE FROM trove_trajectory_state_embeddings "
                         "WHERE profile_digest = ?",
                         (profile_digest,),
                     )
@@ -1788,7 +1788,7 @@ class TrajectoryStore:
             already = {
                 int(row[0])
                 for row in self._conn.execute(
-                    "SELECT state_id FROM lcm_trajectory_state_embeddings "
+                    "SELECT state_id FROM trove_trajectory_state_embeddings "
                     "WHERE profile_digest = ?",
                     (profile_digest,),
                 )
@@ -1837,7 +1837,7 @@ class TrajectoryStore:
                 try:
                     self._conn.executemany(
                         """
-                        INSERT INTO lcm_trajectory_state_embeddings(
+                        INSERT INTO trove_trajectory_state_embeddings(
                             state_id, profile_digest, document_sha256, vector, embedded_at
                         ) VALUES (?, ?, ?, ?, ?)
                         ON CONFLICT(state_id) DO UPDATE SET
@@ -1934,7 +1934,7 @@ class TrajectoryStore:
         self._state_semantic_cache = None
         embedded_count = int(
             self._conn.execute(
-                "SELECT COUNT(*) FROM lcm_trajectory_state_embeddings "
+                "SELECT COUNT(*) FROM trove_trajectory_state_embeddings "
                 "WHERE profile_digest = ?",
                 (profile_digest,),
             ).fetchone()[0]
@@ -1947,11 +1947,11 @@ class TrajectoryStore:
             self._conn.execute("BEGIN IMMEDIATE")
             try:
                 self._conn.execute(
-                    "UPDATE lcm_trajectory_state_embedding_profiles "
+                    "UPDATE trove_trajectory_state_embedding_profiles "
                     "SET active = 0 WHERE active = 1"
                 )
                 self._conn.execute(
-                    "UPDATE lcm_trajectory_state_embedding_profiles "
+                    "UPDATE trove_trajectory_state_embedding_profiles "
                     "SET active = 1 WHERE profile_digest = ?",
                     (profile_digest,),
                 )
@@ -2122,7 +2122,7 @@ class TrajectoryStore:
         rows = self._conn.execute(
             """
             SELECT source_id, vector
-            FROM lcm_trajectory_embeddings
+            FROM trove_trajectory_embeddings
             WHERE profile_digest = ?
             """,
             (str(profile["profile_digest"]),),
@@ -2148,7 +2148,7 @@ class TrajectoryStore:
         freshness_row = self._conn.execute(
             """
             SELECT COUNT(*), COALESCE(MAX(embedded_at), 0.0)
-            FROM lcm_trajectory_state_embeddings
+            FROM trove_trajectory_state_embeddings
             WHERE profile_digest = ?
             """,
             (profile_digest,),
@@ -2163,7 +2163,7 @@ class TrajectoryStore:
             return cache[2], cache[3]
         rows = self._conn.execute(
             """
-            SELECT state_id, vector FROM lcm_trajectory_state_embeddings
+            SELECT state_id, vector FROM trove_trajectory_state_embeddings
             WHERE profile_digest = ?
             ORDER BY state_id
             """,
@@ -3133,13 +3133,13 @@ class TrajectoryStore:
             f"""
             SELECT s.*, src.trajectory_id, src.goal, src.outcome, src.ordinal,
                    a.relative_path, a.sha256 AS asset_sha256,
-                   bm25(lcm_trajectory_states_fts) AS rank
-            FROM lcm_trajectory_states_fts
-            JOIN lcm_trajectory_states s
-              ON s.state_id = lcm_trajectory_states_fts.rowid
-            JOIN lcm_trajectory_sources src ON src.source_id = s.source_id
-            LEFT JOIN lcm_trajectory_assets a ON a.state_id = s.state_id
-            WHERE lcm_trajectory_states_fts MATCH ?{source_clause}
+                   bm25(trove_trajectory_states_fts) AS rank
+            FROM trove_trajectory_states_fts
+            JOIN trove_trajectory_states s
+              ON s.state_id = trove_trajectory_states_fts.rowid
+            JOIN trove_trajectory_sources src ON src.source_id = s.source_id
+            LEFT JOIN trove_trajectory_assets a ON a.state_id = s.state_id
+            WHERE trove_trajectory_states_fts MATCH ?{source_clause}
             ORDER BY rank ASC, src.ordinal ASC, s.sequence_ordinal ASC
             LIMIT ?
             """,
@@ -3203,7 +3203,7 @@ class TrajectoryStore:
             fetched = self._conn.execute(
                 f"""
                 SELECT s.state_id, s.source_id, s.sequence_ordinal
-                FROM lcm_trajectory_states s
+                FROM trove_trajectory_states s
                 WHERE (s.source_id, s.sequence_ordinal) IN (VALUES {values})
                 """,
                 params,
@@ -3238,9 +3238,9 @@ class TrajectoryStore:
             f"""
             SELECT s.*, src.trajectory_id, src.goal, src.outcome, src.ordinal,
                    a.relative_path, a.sha256 AS asset_sha256, 0.0 AS rank
-            FROM lcm_trajectory_states s
-            JOIN lcm_trajectory_sources src ON src.source_id = s.source_id
-            LEFT JOIN lcm_trajectory_assets a ON a.state_id = s.state_id
+            FROM trove_trajectory_states s
+            JOIN trove_trajectory_sources src ON src.source_id = s.source_id
+            LEFT JOIN trove_trajectory_assets a ON a.state_id = s.state_id
             WHERE s.state_id IN ({placeholders})
             """,
             [int(state_id) for state_id in state_ids],
@@ -3613,9 +3613,9 @@ class TrajectoryStore:
                     """
                     SELECT s.*, src.trajectory_id, src.goal, src.outcome, src.ordinal,
                            a.relative_path, a.sha256 AS asset_sha256, 0.0 AS rank
-                    FROM lcm_trajectory_states s
-                    JOIN lcm_trajectory_sources src ON src.source_id = s.source_id
-                    LEFT JOIN lcm_trajectory_assets a ON a.state_id = s.state_id
+                    FROM trove_trajectory_states s
+                    JOIN trove_trajectory_sources src ON src.source_id = s.source_id
+                    LEFT JOIN trove_trajectory_assets a ON a.state_id = s.state_id
                     WHERE s.source_id = ? AND s.sequence_ordinal IN (?, ?)
                     ORDER BY ABS(s.sequence_ordinal - ?), s.sequence_ordinal
                     """,
@@ -3748,9 +3748,9 @@ class TrajectoryStore:
             """
             SELECT s.*, src.trajectory_id, src.goal, src.outcome, a.relative_path,
                    a.sha256 AS asset_sha256
-            FROM lcm_trajectory_states s
-            JOIN lcm_trajectory_sources src ON src.source_id = s.source_id
-            LEFT JOIN lcm_trajectory_assets a ON a.state_id = s.state_id
+            FROM trove_trajectory_states s
+            JOIN trove_trajectory_sources src ON src.source_id = s.source_id
+            LEFT JOIN trove_trajectory_assets a ON a.state_id = s.state_id
             WHERE src.trajectory_id = ? AND s.state_index = ?
             """,
             (trajectory_id, state_index),
@@ -3775,7 +3775,7 @@ class TrajectoryStore:
 
     def manifest(self) -> dict[str, Any]:
         row = self._conn.execute(
-            "SELECT * FROM lcm_trajectory_corpora WHERE singleton = 1"
+            "SELECT * FROM trove_trajectory_corpora WHERE singleton = 1"
         ).fetchone()
         semantic = self._semantic_profile()
         return {

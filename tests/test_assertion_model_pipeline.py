@@ -7,13 +7,13 @@ import json
 
 import pytest
 
-import hermes_lcm.assertion_extraction as extraction_module
-import hermes_lcm.engine as engine_module
-from hermes_lcm.assertion_extraction import ModelAssertionExtractor
-from hermes_lcm.assertion_store import AssertionStore, SourceSnapshot
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.engine import LCMEngine
-from hermes_lcm.store import MessageStore
+import hermes_trove.assertion_extraction as extraction_module
+import hermes_trove.engine as engine_module
+from hermes_trove.assertion_extraction import ModelAssertionExtractor
+from hermes_trove.assertion_store import AssertionStore, SourceSnapshot
+from hermes_trove.config import TROVEConfig
+from hermes_trove.engine import TROVEEngine
+from hermes_trove.store import MessageStore
 
 
 def _snapshot(store_id: int, content: str, *, role: str = "user") -> SourceSnapshot:
@@ -65,24 +65,24 @@ def _payload_from_prompt(prompt: str) -> str:
 
 def test_extraction_config_is_separate_default_off_and_env_addressable(monkeypatch):
     for name in (
-        "LCM_ASSERTION_EXTRACTION_ENABLED",
-        "LCM_ASSERTION_EXTRACTION_MODEL",
-        "LCM_ASSERTION_EXTRACTION_MAX_SOURCES_PER_PASS",
-        "LCM_ASSERTION_EXTRACTION_TIMEOUT_SECONDS",
+        "TROVE_ASSERTION_EXTRACTION_ENABLED",
+        "TROVE_ASSERTION_EXTRACTION_MODEL",
+        "TROVE_ASSERTION_EXTRACTION_MAX_SOURCES_PER_PASS",
+        "TROVE_ASSERTION_EXTRACTION_TIMEOUT_SECONDS",
     ):
         monkeypatch.delenv(name, raising=False)
 
-    default = LCMConfig.from_env()
+    default = TROVEConfig.from_env()
     assert default.assertion_extraction_enabled is False
     assert default.assertion_extraction_model == ""
     assert default.assertion_extraction_max_sources_per_pass == 4
     assert default.assertion_extraction_timeout_seconds == 30.0
 
-    monkeypatch.setenv("LCM_ASSERTION_EXTRACTION_ENABLED", "true")
-    monkeypatch.setenv("LCM_ASSERTION_EXTRACTION_MODEL", "provider/model")
-    monkeypatch.setenv("LCM_ASSERTION_EXTRACTION_MAX_SOURCES_PER_PASS", "7")
-    monkeypatch.setenv("LCM_ASSERTION_EXTRACTION_TIMEOUT_SECONDS", "12.5")
-    configured = LCMConfig.from_env()
+    monkeypatch.setenv("TROVE_ASSERTION_EXTRACTION_ENABLED", "true")
+    monkeypatch.setenv("TROVE_ASSERTION_EXTRACTION_MODEL", "provider/model")
+    monkeypatch.setenv("TROVE_ASSERTION_EXTRACTION_MAX_SOURCES_PER_PASS", "7")
+    monkeypatch.setenv("TROVE_ASSERTION_EXTRACTION_TIMEOUT_SECONDS", "12.5")
+    configured = TROVEConfig.from_env()
     assert configured.assertion_extraction_enabled is True
     assert configured.assertion_extraction_model == "provider/model"
     assert configured.assertion_extraction_max_sources_per_pass == 7
@@ -90,7 +90,7 @@ def test_extraction_config_is_separate_default_off_and_env_addressable(monkeypat
 
 
 def test_model_adapter_validates_exact_source_and_records_stage_metrics(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     messages = MessageStore(db_path)
     assertions = AssertionStore(db_path)
     content = "I prefer tea ☕."
@@ -126,7 +126,7 @@ def test_model_adapter_validates_exact_source_and_records_stage_metrics(tmp_path
 
 
 def test_model_adapter_skips_unsupported_roles_and_rejects_unbounded_source(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     messages = MessageStore(db_path)
     assertions = AssertionStore(db_path)
     calls = 0
@@ -160,11 +160,11 @@ def test_engine_binding_never_calls_provider_until_feature_is_enabled_and_schedu
         "_call_structured_assertion_llm",
         payload_call,
     )
-    disabled = LCMEngine(config=LCMConfig(
+    disabled = TROVEEngine(config=TROVEConfig(
         database_path=str(tmp_path / "disabled.db"),
         assertions_enabled=True,
     ))
-    enabled = LCMEngine(config=LCMConfig(
+    enabled = TROVEEngine(config=TROVEConfig(
         database_path=str(tmp_path / "enabled.db"),
         assertions_enabled=True,
         assertion_extraction_enabled=True,
@@ -194,8 +194,8 @@ def test_scheduled_batch_is_bounded_resumable_and_does_not_rewrite_raw_rows(
         "_call_structured_assertion_llm",
         lambda prompt, _model, _timeout: (_payload_from_prompt(prompt), 11, 7),
     )
-    engine = LCMEngine(config=LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    engine = TROVEEngine(config=TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         assertions_enabled=True,
         assertion_extraction_enabled=True,
         assertion_extraction_model="provider/model",
@@ -252,8 +252,8 @@ def test_worker_start_failure_is_non_blocking_and_releases_process_slot(
         "_call_structured_assertion_llm",
         lambda prompt, _model, _timeout: (_payload_from_prompt(prompt), 1, 1),
     )
-    engine = LCMEngine(config=LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    engine = TROVEEngine(config=TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         assertions_enabled=True,
         assertion_extraction_enabled=True,
     ))
@@ -300,8 +300,8 @@ def test_compression_hook_queues_exact_rows_without_waiting_for_assertion_public
         "summarize_with_escalation",
         lambda **_kwargs: ("Leaf summary.\nExpand for details about: test", 1),
     )
-    engine = LCMEngine(config=LCMConfig(
-        database_path=str(tmp_path / "lcm.db"),
+    engine = TROVEEngine(config=TROVEConfig(
+        database_path=str(tmp_path / "trove.db"),
         assertions_enabled=True,
         assertion_extraction_enabled=True,
         assertion_extraction_max_sources_per_pass=2,

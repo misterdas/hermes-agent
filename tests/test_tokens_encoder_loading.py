@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from hermes_lcm import tokens as tokens_mod
+from hermes_trove import tokens as tokens_mod
 
 
 @pytest.fixture(autouse=True)

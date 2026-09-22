@@ -1,4 +1,4 @@
-# Hermes-LCM benchmark runbook
+# Hermes-TROVE benchmark runbook
 
 This runbook exists so the benchmark program never restarts from scratch-knowledge. It covers the
 three scoring protocols in use against this repo, how to run each one, and the operational discipline

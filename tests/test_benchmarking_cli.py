@@ -13,8 +13,8 @@ import pytest
 
 
 def _load_benchmark_cli():
-    script_path = Path(__file__).resolve().parents[1] / "scripts" / "lcm_benchmark.py"
-    spec = importlib.util.spec_from_file_location("lcm_benchmark_cli", script_path)
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "trove_benchmark.py"
+    spec = importlib.util.spec_from_file_location("trove_benchmark_cli", script_path)
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -24,7 +24,7 @@ def _load_benchmark_cli():
 
 def _block_agent_imports(monkeypatch):
     for name in list(sys.modules):
-        if name == "agent" or name.startswith("agent.") or name == "hermes_lcm" or name.startswith("hermes_lcm."):
+        if name == "agent" or name.startswith("agent.") or name == "hermes_trove" or name.startswith("hermes_trove."):
             monkeypatch.delitem(sys.modules, name, raising=False)
 
     real_import = builtins.__import__

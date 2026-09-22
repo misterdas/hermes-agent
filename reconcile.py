@@ -1,18 +1,18 @@
-"""Ingest-cursor reconciliation and replay-identity for the LCM engine (WS5 Seam 4).
+"""Ingest-cursor reconciliation and replay-identity for the TROVE engine (WS5 Seam 4).
 
 The ``ReconcileMixin`` holds the machinery that reconciles the persisted store
 tail against the active message list after a process restart, plus the stable
 replay-identity primitives it relies on. These methods were lifted verbatim out
-of ``LCMEngine`` and continue to run bound to the engine instance (``self`` is
-the ``LCMEngine``), so they read the engine's runtime state (``_store``,
+of ``TROVEEngine`` and continue to run bound to the engine instance (``self`` is
+the ``TROVEEngine``), so they read the engine's runtime state (``_store``,
 ``_session_id``, ``_config``, ``_ingest_cursor`` is written by the engine from
 the value these return) and call back into engine helpers through normal
-attribute lookup. ``LCMEngine`` mixes this in, so no call site and no test
+attribute lookup. ``TROVEEngine`` mixes this in, so no call site and no test
 changes.
 
 ``_PRESERVED_OBJECTIVE_CONTEXT_PREFIX`` lives here (used by the reconciliation
 scan) and is re-exported to ``engine.py``; the two tool-call-identity
-staticmethods reference the mixin class directly rather than ``LCMEngine`` to
+staticmethods reference the mixin class directly rather than ``TROVEEngine`` to
 avoid an import cycle (staticmethod resolution is identical).
 """
 
@@ -55,8 +55,8 @@ logger = logging.getLogger(__name__)
 # live values that already start with it are escaped. Both constants are
 # impossible as provider message content because '[' cannot start an escaped
 # form and the sentinel is fixed-length.
-_REPLAY_IDENTITY_ABSENT_CONTENT_PREFIX = "[LCM replay identity: content absent]"
-_REPLAY_IDENTITY_ABSENT_CONTENT_ESCAPE_PREFIX = "[LCM replay identity: content escaped] "
+_REPLAY_IDENTITY_ABSENT_CONTENT_PREFIX = "[TROVE replay identity: content absent]"
+_REPLAY_IDENTITY_ABSENT_CONTENT_ESCAPE_PREFIX = "[TROVE replay identity: content escaped] "
 
 
 def _count_leading_reserved_prefixes(content: str) -> int:
@@ -92,7 +92,7 @@ def _escape_replay_identity_content(normalized_content: str) -> str:
 
     Unprefixed content passes through unchanged. Content starting with either
     reserved prefix carries an explicit count of the consumed leading prefixes
-    plus the original string verbatim; the counted marker namespace ("[LCM
+    plus the original string verbatim; the counted marker namespace ("[TROVE
     replay identity: content escaped] x<count> ") is unreachable by uncounted
     strings because the marker itself starts with a reserved prefix and would
     therefore have been counted. Injectivity proof sketch: two encodings equal
@@ -280,7 +280,7 @@ class ReconcileMixin:
         # 4029411030/1037). Absence is marked with the sentinel prefix. A live
         # value starting with either reserved prefix is escaped with a COUNTED
         # marker — the number of leading reserved prefixes is embedded
-        # ("[LCM replay identity: content escaped] xN " + the original string
+        # ("[TROVE replay identity: content escaped] xN " + the original string
         # verbatim) — instead of one blind re-escape prepend: a naive
         # while-startswith loop never terminates (its own output still starts
         # with the escape prefix) and a single prepend leaves the
@@ -326,14 +326,14 @@ class ReconcileMixin:
                 try:
                     live_stat = Path(str(persisted_output_source_path)).stat()
                     return (
-                        "[LCM persisted-output live file: "
+                        "[TROVE persisted-output live file: "
                         f"path={persisted_output_source_path}; "
                         f"mtime_ns={live_stat.st_mtime_ns}; "
                         f"chars={expected_chars}]"
                     )
                 except OSError:
                     return (
-                        "[LCM persisted-output live file: "
+                        "[TROVE persisted-output live file: "
                         f"path={persisted_output_source_path}; "
                         f"chars={expected_chars}]"
                     )
@@ -478,7 +478,7 @@ class ReconcileMixin:
         if role != "tool" or not isinstance(content, str):
             return identity
         stripped = re.sub(
-            r"\n?\[LCM persisted-output file generation: "
+            r"\n?\[TROVE persisted-output file generation: "
             r"size=\d+; mtime_ns=\d+; ctime_ns=\d+\]\n?(?=</persisted-output>)",
             "\n",
             content,
@@ -503,7 +503,7 @@ class ReconcileMixin:
         identity: tuple[str, str, str, str],
     ) -> tuple[str, str, str, str]:
         role, _content, tool_call_id, tool_calls = identity
-        return (role, "[LCM persisted-output durable replay]", tool_call_id, tool_calls)
+        return (role, "[TROVE persisted-output durable replay]", tool_call_id, tool_calls)
 
     def _matches_persisted_output_durable_full_replay(
         self,
@@ -638,7 +638,7 @@ class ReconcileMixin:
         text = str(_strip_replay_identity_shape_tag(content) or "").strip()
         return bool(
             re.fullmatch(
-                r"\[Externalized LCM ingest payload: assistant output quarantined; "
+                r"\[Externalized TROVE ingest payload: assistant output quarantined; "
                 r"kind=quarantined_assistant_output; "
                 r"reason=[A-Za-z0-9_.:/-]+; "
                 r"field=[A-Za-z0-9_.:/<>\[\]-]+; "
@@ -647,7 +647,7 @@ class ReconcileMixin:
                 text,
             )
             or re.fullmatch(
-                r"\[LCM active replay placeholder: assistant output quarantined; "
+                r"\[TROVE active replay placeholder: assistant output quarantined; "
                 r"kind=quarantined_assistant_output; "
                 r"reason=[A-Za-z0-9_.:/-]+; "
                 r"scope=ignored_message_pattern; field=content; "
@@ -1038,7 +1038,7 @@ class ReconcileMixin:
     ) -> bool:
         """Return true for short stale snapshots with no durable-tail overlap.
 
-        A restarted gateway can hand LCM a stale, short in-memory snapshot from
+        A restarted gateway can hand TROVE a stale, short in-memory snapshot from
         the beginning of a longer session.  When that snapshot has no overlap
         with the durable tail, appending it as a delta creates duplicate rows.
         Fail closed only when the short batch is proven stale by matching the
@@ -1074,7 +1074,7 @@ class ReconcileMixin:
         try:
             session_count = self._store.get_session_count(self._session_id)
         except Exception as exc:  # pragma: no cover - defensive only
-            logger.debug("LCM ingest cursor reconciliation count failed: %s", exc)
+            logger.debug("TROVE ingest cursor reconciliation count failed: %s", exc)
             return 0
         if session_count <= 0:
             placeholder_budget = self._load_generated_ignored_placeholder_hash_counts()
@@ -1143,7 +1143,7 @@ class ReconcileMixin:
                 effective_incoming=len(self._effective_replay_identities(messages)),
             )
             logger.debug(
-                "LCM reconciled ingest cursor after existing-session bind: session=%s cursor=%d incoming=%d stored_tail=%d session_count=%d reason=%s",
+                "TROVE reconciled ingest cursor after existing-session bind: session=%s cursor=%d incoming=%d stored_tail=%d session_count=%d reason=%s",
                 self._session_id,
                 cursor,
                 len(messages),
@@ -1189,7 +1189,7 @@ class ReconcileMixin:
                 effective_incoming=len(incoming_identities),
             )
             logger.warning(
-                "LCM skipped stale no-overlap snapshot after existing-session bind: session=%s incoming=%d effective_incoming=%d stored_tail=%d session_count=%d",
+                "TROVE skipped stale no-overlap snapshot after existing-session bind: session=%s incoming=%d effective_incoming=%d stored_tail=%d session_count=%d",
                 self._session_id,
                 len(messages),
                 len(incoming_identities),

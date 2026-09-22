@@ -1,12 +1,12 @@
-"""Process-wide registry of active LCM runtime clones by session/lane.
+"""Process-wide registry of active TROVE runtime clones by session/lane.
 
-Isolated from ``engine.py`` (WS5 seam): LCM clones register their own
+Isolated from ``engine.py`` (WS5 seam): TROVE clones register their own
 session/conversation binding so post-turn ingest can follow the active clone
 instead of the process-wide plugin singleton. The lock and the two weak
 registries live here alongside the pure resolver/matcher helpers that read
 them. ``engine.py`` imports the shared lock, the two registries, the removal
-helper, and the public ``resolve_active_lcm_engine`` entry point; the binding
-methods on ``LCMEngine`` mutate the same shared objects by reference.
+helper, and the public ``resolve_active_trove_engine`` entry point; the binding
+methods on ``TROVEEngine`` mutate the same shared objects by reference.
 """
 
 from __future__ import annotations
@@ -20,17 +20,17 @@ _ACTIVE_ENGINES_BY_SESSION_ID = weakref.WeakValueDictionary()
 _ACTIVE_ENGINES_BY_CONVERSATION_ID = weakref.WeakValueDictionary()
 
 
-def _is_usable_lcm_engine(engine: Any) -> bool:
+def _is_usable_trove_engine(engine: Any) -> bool:
     return bool(
         engine is not None
-        and getattr(engine, "name", None) == "lcm"
+        and getattr(engine, "name", None) == "trove"
         and hasattr(engine, "ingest")
     )
 
 
 def _engine_matches_session_binding(engine: Any, session_id: str) -> bool:
     return bool(
-        _is_usable_lcm_engine(engine)
+        _is_usable_trove_engine(engine)
         and session_id
         and str(getattr(engine, "_session_id", "") or "") == session_id
     )
@@ -38,7 +38,7 @@ def _engine_matches_session_binding(engine: Any, session_id: str) -> bool:
 
 def _engine_matches_conversation_binding(engine: Any, conversation_id: str) -> bool:
     return bool(
-        _is_usable_lcm_engine(engine)
+        _is_usable_trove_engine(engine)
         and conversation_id
         and str(getattr(engine, "_conversation_id", "") or "") == conversation_id
     )
@@ -57,7 +57,7 @@ def _engine_matches_foreground_binding(
     follow the bound session for ingest dispatch, so operator commands need this
     bounded fallback scan to recover the same clone without rebinding it.
     """
-    if not _is_usable_lcm_engine(engine) or not (session_id or conversation_id):
+    if not _is_usable_trove_engine(engine) or not (session_id or conversation_id):
         return False
     try:
         foreground_session_id = str(
@@ -93,16 +93,16 @@ def _remove_registry_entries_for_engine(
             _ACTIVE_ENGINES_BY_CONVERSATION_ID.pop(registered_conversation_id, None)
 
 
-def resolve_active_lcm_engine(
+def resolve_active_trove_engine(
     session_id: str = "",
     conversation_id: str = "",
     *,
     allow_foreground: bool = False,
 ) -> Any:
-    """Return the LCM runtime clone most recently bound to a session/lane.
+    """Return the TROVE runtime clone most recently bound to a session/lane.
 
     Newer Hermes Agent hosts pass the active per-agent context engine directly
-    to ``post_llm_call`` hooks. Older hosts may only pass session/lane ids. LCM
+    to ``post_llm_call`` hooks. Older hosts may only pass session/lane ids. TROVE
     clones register their own session binding when ``on_session_start`` runs so
     post-turn ingest can still follow the active clone instead of rebinding the
     process-wide plugin singleton.

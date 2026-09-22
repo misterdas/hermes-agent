@@ -5,14 +5,14 @@ from __future__ import annotations
 import sqlite3
 from types import SimpleNamespace
 
-from hermes_lcm.assertion_rebuild import (
+from hermes_trove.assertion_rebuild import (
     AssertionExtraction,
     rebuild_assertions,
 )
-from hermes_lcm.assertion_store import AssertionCandidate, AssertionStore
-from hermes_lcm.command import handle_lcm_command
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.store import MessageStore
+from hermes_trove.assertion_store import AssertionCandidate, AssertionStore
+from hermes_trove.command import handle_trove_command
+from hermes_trove.config import TROVEConfig
+from hermes_trove.store import MessageStore
 
 
 def _extract_preference(snapshot) -> AssertionExtraction:
@@ -41,7 +41,7 @@ def _table_names(conn: sqlite3.Connection) -> set[str]:
 
 
 def test_read_only_rebuild_plan_never_invokes_extractor_or_writes(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     messages = MessageStore(db_path)
     assertions = AssertionStore(db_path)
     messages.append(
@@ -76,7 +76,7 @@ def test_read_only_rebuild_plan_never_invokes_extractor_or_writes(tmp_path):
 
 
 def test_apply_is_resumable_idempotent_and_rebuild_digest_stable(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     messages = MessageStore(db_path)
     assertions = AssertionStore(db_path)
     first_id = messages.append(
@@ -127,7 +127,7 @@ def test_apply_is_resumable_idempotent_and_rebuild_digest_stable(tmp_path):
 
 
 def test_apply_records_zero_results_and_continues_after_failure(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     messages = MessageStore(db_path)
     assertions = AssertionStore(db_path)
     bad_id = messages.append(
@@ -151,7 +151,7 @@ def test_apply_records_zero_results_and_continues_after_failure(tmp_path):
     assert result.failures[0].source_store_id == bad_id
     assert "synthetic extractor failure" in result.failures[0].error
     receipt = assertions.connection.execute(
-        "SELECT assertion_count FROM lcm_assertion_sources WHERE source_store_id = ?",
+        "SELECT assertion_count FROM trove_assertion_sources WHERE source_store_id = ?",
         (good_id,),
     ).fetchone()
     assert receipt is not None and receipt[0] == 0
@@ -160,24 +160,24 @@ def test_apply_records_zero_results_and_continues_after_failure(tmp_path):
 
 
 def test_command_is_default_off_and_does_not_materialize_schema(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     messages = MessageStore(db_path)
-    config = LCMConfig(database_path=str(db_path))
+    config = TROVEConfig(database_path=str(db_path))
     engine = SimpleNamespace(_config=config, _store=messages, _assertions=None)
     before = _table_names(messages._conn)
 
-    output = handle_lcm_command("assertions rebuild --limit 5", engine)
+    output = handle_trove_command("assertions rebuild --limit 5", engine)
 
     assert "status: disabled" in output
     assert _table_names(messages._conn) == before
-    assert not any(name.startswith("lcm_assertion") for name in before)
+    assert not any(name.startswith("trove_assertion") for name in before)
     messages.close()
 
 
 def test_command_dry_run_and_explicit_injected_apply_are_bounded(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     messages = MessageStore(db_path)
-    config = LCMConfig(database_path=str(db_path), assertions_enabled=True)
+    config = TROVEConfig(database_path=str(db_path), assertions_enabled=True)
     assertions = AssertionStore(db_path)
     messages.append(
         "session-a", {"role": "user", "content": "I prefer tea."}
@@ -188,33 +188,33 @@ def test_command_dry_run_and_explicit_injected_apply_are_bounded(tmp_path):
         _assertions=assertions,
     )
 
-    dry_run = handle_lcm_command("assertions rebuild --limit 1", engine)
+    dry_run = handle_trove_command("assertions rebuild --limit 1", engine)
     assert "status: complete" in dry_run
     assert "mode: dry-run" in dry_run
     assert "pending: 1" in dry_run
     assert "selected: 1" in dry_run
     assert "note: read-only dry-run; extractor was not invoked" in dry_run
     assert assertions.connection.execute(
-        "SELECT COUNT(*) FROM lcm_assertion_sources"
+        "SELECT COUNT(*) FROM trove_assertion_sources"
     ).fetchone()[0] == 0
 
-    refused = handle_lcm_command("assertions rebuild --apply", engine)
+    refused = handle_trove_command("assertions rebuild --apply", engine)
     assert "status: refused" in refused
     assert "no structured assertion extractor is configured" in refused
     assert assertions.connection.execute(
-        "SELECT COUNT(*) FROM lcm_assertion_sources"
+        "SELECT COUNT(*) FROM trove_assertion_sources"
     ).fetchone()[0] == 0
 
-    arbitrary_version = handle_lcm_command(
+    arbitrary_version = handle_trove_command(
         "assertions rebuild --version assertions-v2", engine
     )
     assert "unsupported assertion rebuild argument: --version" in arbitrary_version
     assert assertions.connection.execute(
-        "SELECT COUNT(*) FROM lcm_assertion_sources"
+        "SELECT COUNT(*) FROM trove_assertion_sources"
     ).fetchone()[0] == 0
 
     engine._assertion_extractor = _extract_preference
-    applied = handle_lcm_command(
+    applied = handle_trove_command(
         "assertions rebuild --apply --limit=1", engine
     )
     assert "status: complete" in applied

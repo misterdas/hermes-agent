@@ -1,26 +1,26 @@
-"""Tests for host capability detection before registering lcm_* tools."""
+"""Tests for host capability detection before registering trove_* tools."""
 
 import importlib.util
 import sys
 from pathlib import Path
 
 
-EXPECTED_LCM_TOOLS = {
-    "lcm_grep",
-    "lcm_recall",
-    "lcm_query_state",
-    "lcm_compute",
-    "lcm_compile_evidence",
-    "lcm_evidence_pack",
-    "lcm_retrieve",
-    "lcm_recent",
-    "lcm_load_session",
-    "lcm_describe",
-    "lcm_expand",
-    "lcm_expand_query",
-    "lcm_status",
-    "lcm_inspect",
-    "lcm_doctor",
+EXPECTED_TROVE_TOOLS = {
+    "trove_grep",
+    "trove_recall",
+    "trove_query_state",
+    "trove_compute",
+    "trove_compile_evidence",
+    "trove_evidence_pack",
+    "trove_retrieve",
+    "trove_recent",
+    "trove_load_session",
+    "trove_describe",
+    "trove_expand",
+    "trove_expand_query",
+    "trove_status",
+    "trove_inspect",
+    "trove_doctor",
 }
 
 
@@ -36,10 +36,10 @@ def _load_plugin_module(name: str):
 
 
 class TestHostCapabilityDetection:
-    """Verify explicit host capability detection for registered lcm_* tools."""
+    """Verify explicit host capability detection for registered trove_* tools."""
 
     def test_returns_false_when_ctx_lacks_capability(self):
-        module = _load_plugin_module("hermes_lcm_cap_no_attr")
+        module = _load_plugin_module("hermes_trove_cap_no_attr")
 
         class _Ctx:
             pass
@@ -47,7 +47,7 @@ class TestHostCapabilityDetection:
         assert module._host_forwards_registered_tool_messages(_Ctx()) is False
 
     def test_returns_false_when_capability_is_false(self):
-        module = _load_plugin_module("hermes_lcm_cap_false")
+        module = _load_plugin_module("hermes_trove_cap_false")
 
         class _Ctx:
             context_engine_tool_handlers_receive_messages = False
@@ -55,7 +55,7 @@ class TestHostCapabilityDetection:
         assert module._host_forwards_registered_tool_messages(_Ctx()) is False
 
     def test_returns_true_when_capability_is_true(self):
-        module = _load_plugin_module("hermes_lcm_cap_true")
+        module = _load_plugin_module("hermes_trove_cap_true")
 
         class _Ctx:
             context_engine_tool_handlers_receive_messages = True
@@ -63,7 +63,7 @@ class TestHostCapabilityDetection:
         assert module._host_forwards_registered_tool_messages(_Ctx()) is True
 
     def test_supports_callable_capability(self):
-        module = _load_plugin_module("hermes_lcm_cap_callable")
+        module = _load_plugin_module("hermes_trove_cap_callable")
 
         class _Ctx:
             def context_engine_tool_handlers_receive_messages(self):
@@ -72,7 +72,7 @@ class TestHostCapabilityDetection:
         assert module._host_forwards_registered_tool_messages(_Ctx()) is True
 
     def test_callable_capability_failure_fails_closed(self):
-        module = _load_plugin_module("hermes_lcm_cap_callable_raises")
+        module = _load_plugin_module("hermes_trove_cap_callable_raises")
 
         class _Ctx:
             def context_engine_tool_handlers_receive_messages(self):
@@ -85,7 +85,7 @@ class TestRegistrationGating:
     """Verify register() skips ctx.register_tool unless messages forwarding is explicit."""
 
     def test_skips_register_tool_without_explicit_message_forwarding(self):
-        module = _load_plugin_module("hermes_lcm_gating_skip")
+        module = _load_plugin_module("hermes_trove_gating_skip")
         registered_tools = []
 
         class _CtxNoForwarding:
@@ -102,14 +102,14 @@ class TestRegistrationGating:
         module.register(ctx)
 
         assert ctx.engine is not None
-        assert ctx.engine.name == "lcm"
+        assert ctx.engine.name == "trove"
         assert registered_tools == []
-        assert EXPECTED_LCM_TOOLS.issubset(
+        assert EXPECTED_TROVE_TOOLS.issubset(
             {schema["name"] for schema in ctx.engine.get_tool_schemas()}
         )
 
     def test_registers_tools_when_host_explicitly_supports_message_forwarding(self):
-        module = _load_plugin_module("hermes_lcm_gating_register")
+        module = _load_plugin_module("hermes_trove_gating_register")
         registered_tools = []
 
         class _CtxWithForwarding:
@@ -128,10 +128,10 @@ class TestRegistrationGating:
         module.register(ctx)
 
         assert ctx.engine is not None
-        assert set(registered_tools) == EXPECTED_LCM_TOOLS
+        assert set(registered_tools) == EXPECTED_TROVE_TOOLS
 
     def test_existing_context_engine_path_still_loads_without_register_tool(self):
-        module = _load_plugin_module("hermes_lcm_gating_no_register_tool")
+        module = _load_plugin_module("hermes_trove_gating_no_register_tool")
 
         class _Ctx:
             def __init__(self):
@@ -143,14 +143,14 @@ class TestRegistrationGating:
         ctx = _Ctx()
         module.register(ctx)
         assert ctx.engine is not None
-        assert ctx.engine.name == "lcm"
+        assert ctx.engine.name == "trove"
 
 
 class TestHermesAgentRegression:
-    """Regression: Hermes Agent-shaped hosts must not shadow native LCM routing."""
+    """Regression: Hermes Agent-shaped hosts must not shadow native TROVE routing."""
 
     def test_hermes_agent_shaped_host_uses_context_engine_path(self):
-        module = _load_plugin_module("hermes_lcm_hermes_agent_regression")
+        module = _load_plugin_module("hermes_trove_hermes_agent_regression")
         registered_via_tool = []
         registered_via_engine = []
 
@@ -172,10 +172,10 @@ class TestHermesAgentRegression:
 
         assert ctx.engine is not None
         assert registered_via_tool == []
-        assert set(registered_via_engine) == EXPECTED_LCM_TOOLS
+        assert set(registered_via_engine) == EXPECTED_TROVE_TOOLS
 
     def test_messages_forwarded_through_context_engine_path(self):
-        module = _load_plugin_module("hermes_lcm_messages_forward_regression")
+        module = _load_plugin_module("hermes_trove_messages_forward_regression")
 
         class _HermesAgentCtx:
             def __init__(self):
@@ -185,7 +185,7 @@ class TestHermesAgentRegression:
                 self.engine = engine
 
             def register_tool(self, name, toolset, schema, handler, description="", emoji=""):
-                raise AssertionError("Hermes Agent-shaped host must not register lcm_* tools")
+                raise AssertionError("Hermes Agent-shaped host must not register trove_* tools")
 
         ctx = _HermesAgentCtx()
         module.register(ctx)
@@ -193,7 +193,7 @@ class TestHermesAgentRegression:
 
         test_messages = [{"role": "user", "content": "test context"}]
         result = ctx.engine.handle_tool_call(
-            "lcm_status", {}, messages=test_messages
+            "trove_status", {}, messages=test_messages
         )
 
         assert isinstance(result, str)

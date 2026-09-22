@@ -1,4 +1,4 @@
-"""Fixture loading and deterministic fixture generation for LCM benchmarks."""
+"""Fixture loading and deterministic fixture generation for TROVE benchmarks."""
 
 from __future__ import annotations
 
@@ -153,7 +153,7 @@ def make_synthetic_fixture(
     """
     prefix = _canary_prefix(name)
     messages: list[dict[str, str]] = [
-        {"role": "system", "content": "You are a deterministic LCM benchmark agent."}
+        {"role": "system", "content": "You are a deterministic TROVE benchmark agent."}
     ]
     canaries = []
     filler = " ".join(f"{prefix.lower()}_filler_{idx}" for idx in range(filler_words))

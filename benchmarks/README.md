@@ -1,6 +1,6 @@
-# hermes-lcm deterministic benchmarks
+# hermes-trove deterministic benchmarks
 
-This directory contains deterministic replay fixtures and policy files for benchmark-driven LCM preset work. For the retrieval-quality and judged-QA-accuracy benchmarks (LongMemEval harnesses, fairness rules, reproduction, results index), see [`METHODOLOGY.md`](METHODOLOGY.md).
+This directory contains deterministic replay fixtures and policy files for benchmark-driven TROVE preset work. For the retrieval-quality and judged-QA-accuracy benchmarks (LongMemEval harnesses, fairness rules, reproduction, results index), see [`METHODOLOGY.md`](METHODOLOGY.md).
 
 The benchmark harness is offline by default:
 
@@ -19,7 +19,7 @@ prints aggregate-only JSON:
 
 ```bash
 python benchmarks/benchmark_active_tool_stubbing.py \
-  --output /tmp/hermes-lcm-active-tool-stubbing.json
+  --output /tmp/hermes-trove-active-tool-stubbing.json
 ```
 
 The result measures provider-visible prompt tokens and local assembly latency.
@@ -41,7 +41,7 @@ includes message contents, temporary paths, or session identifiers.
 ## Run the default replay suite
 
 ```bash
-python scripts/lcm_benchmark.py \
+python scripts/trove_benchmark.py \
   --fixture benchmarks/fixtures/long_history_canaries.json \
   --fixture benchmarks/fixtures/repeated_compaction_chatter.json \
   --fixture benchmarks/fixtures/summary_timeout_probe.json \
@@ -55,9 +55,9 @@ python scripts/lcm_benchmark.py \
 Use `--allow-external-output` when writing outside the repository:
 
 ```bash
-python scripts/lcm_benchmark.py \
+python scripts/trove_benchmark.py \
   --fixture benchmarks/fixtures/repeated_compaction_chatter.json \
-  --output /tmp/hermes-lcm-benchmark \
+  --output /tmp/hermes-trove-benchmark \
   --allow-external-output \
   --json
 ```
@@ -72,7 +72,7 @@ When no `--policy` is supplied, the harness loads built-in policies:
 The committed policy files in `benchmarks/policies/` are the canonical benchmark inputs. Compare the GPT/Codex candidate against baseline with committed fixtures:
 
 ```bash
-python scripts/lcm_benchmark.py \
+python scripts/trove_benchmark.py \
   --fixture benchmarks/fixtures/long_history_canaries.json \
   --fixture benchmarks/fixtures/repeated_compaction_chatter.json \
   --policy benchmarks/policies/baseline.yaml \
@@ -84,7 +84,7 @@ python scripts/lcm_benchmark.py \
 For a large deterministic pressure probe without committing a huge transcript fixture, generate a synthetic fixture inline:
 
 ```bash
-python scripts/lcm_benchmark.py \
+python scripts/trove_benchmark.py \
   --synthetic-fixture codex_pressure_probe:42:4:1000 \
   --policy benchmarks/policies/baseline.yaml \
   --policy benchmarks/policies/codex_gpt_long_context.yaml \
@@ -95,7 +95,7 @@ python scripts/lcm_benchmark.py \
 The 128k Spark preset uses the same pressure-probe shape with a smaller fresh tail to preserve post-compaction headroom under the lower trigger:
 
 ```bash
-python scripts/lcm_benchmark.py \
+python scripts/trove_benchmark.py \
   --synthetic-fixture spark_pressure_probe:42:4:1000 \
   --policy benchmarks/policies/codex_spark_context.yaml \
   --output benchmarks/runs/codex-spark-pressure \
@@ -139,7 +139,7 @@ The comparison score is intentionally conservative. It rewards canary recall and
 Use `--export` to write a shareable benchmark result JSON without raw transcript contents or local state paths. The export path follows the same repo-containment policy as `--output`; pass `--allow-external-output` when writing either path outside the repository.
 
 ```bash
-python scripts/lcm_benchmark.py \
+python scripts/trove_benchmark.py \
   --synthetic-fixture codex_pressure_probe:42:4:1000 \
   --policy benchmarks/policies/baseline.yaml \
   --policy benchmarks/policies/codex_gpt_long_context.yaml \
@@ -173,8 +173,8 @@ The export omits per-run `metrics` rows because they can include local `database
 Use the deterministic stress check before release cuts or risky context-engine changes. It is offline by default, patches summarization in-process, writes all SQLite and payload artifacts under the requested output directory, and exits non-zero when any scenario records a failure.
 
 ```bash
-python scripts/lcm_stress_check.py \
-  --output /tmp/hermes-lcm-stress-$(date +%Y%m%d-%H%M%S) \
+python scripts/trove_stress_check.py \
+  --output /tmp/hermes-trove-stress-$(date +%Y%m%d-%H%M%S) \
   --tier release \
   --json
 ```
@@ -182,8 +182,8 @@ python scripts/lcm_stress_check.py \
 For a quick local smoke pass:
 
 ```bash
-python scripts/lcm_stress_check.py \
-  --output /tmp/hermes-lcm-stress-smoke \
+python scripts/trove_stress_check.py \
+  --output /tmp/hermes-trove-stress-smoke \
   --tier smoke \
   --json
 ```
@@ -191,8 +191,8 @@ python scripts/lcm_stress_check.py \
 For a longer manual lifecycle soak pass, use the `soak` tier. It is intentionally not a default CI gate:
 
 ```bash
-python scripts/lcm_stress_check.py \
-  --output /tmp/hermes-lcm-stress-soak-$(date +%Y%m%d-%H%M%S) \
+python scripts/trove_stress_check.py \
+  --output /tmp/hermes-trove-stress-soak-$(date +%Y%m%d-%H%M%S) \
   --tier soak \
   --scenario lifecycle_soak_and_profile_rebinds \
   --json
@@ -200,9 +200,9 @@ python scripts/lcm_stress_check.py \
 
 The stress runner currently covers:
 
-- multi-cycle compaction with planted canary recall through `lcm_grep` and `lcm_expand`
+- multi-cycle compaction with planted canary recall through `trove_grep` and `trove_expand`
 - sensitive-pattern redaction plus large-output externalization boundary checks
-- current/all/explicit session scope and `lcm_load_session` pagination
+- current/all/explicit session scope and `trove_load_session` pagination
 - punctuation/unicode/FTS-hostile query fuzzing with bounded fallback behavior
 - concurrent reader/writer smoke while compaction is active
 - lifecycle soak across `/new` rollover, restart/rebind, Hermes home profile rebinding, SQLite WAL growth checks, and externalized-payload accumulation
@@ -213,16 +213,16 @@ Generated artifacts:
 - `stress-summary.md`, concise operator summary
 - `sandbox/`, isolated Hermes home, SQLite databases, and externalized payload files
 
-Hard gates for release use: `failure_count == 0`, no live profile writes, no raw configured secrets in SQLite rows/file bytes or externalized payload files, all planted non-secret canaries retrievable according to their scope, `lcm_doctor` healthy after stress, and artifact hashes recorded in `stress-results.json`. The JSON records a canonical hash for `stress-results.json` with the self-referential `artifact_hashes` field excluded, plus direct hashes for non-self-referential artifacts such as `stress-summary.md`.
+Hard gates for release use: `failure_count == 0`, no live profile writes, no raw configured secrets in SQLite rows/file bytes or externalized payload files, all planted non-secret canaries retrievable according to their scope, `trove_doctor` healthy after stress, and artifact hashes recorded in `stress-results.json`. The JSON records a canonical hash for `stress-results.json` with the self-referential `artifact_hashes` field excluded, plus direct hashes for non-self-referential artifacts such as `stress-summary.md`.
 
 ## Preset provenance and dry-run surface
 
-The shipped preset catalog is inspectable from the `/lcm` command surface when slash commands are enabled:
+The shipped preset catalog is inspectable from the `/trove` command surface when slash commands are enabled:
 
 ```text
-/lcm preset show codex_gpt_long_context
-/lcm preset suggest
-/lcm preset apply codex_gpt_long_context --dry-run
+/trove preset show codex_gpt_long_context
+/trove preset suggest
+/trove preset apply codex_gpt_long_context --dry-run
 ```
 
 Current `codex_gpt_long_context` / `codex_spark_context` provenance from the fresh-main validation suite:
@@ -239,12 +239,12 @@ Current `codex_gpt_long_context` / `codex_spark_context` provenance from the fre
 The dry-run apply surface previews env-var changes only:
 
 ```text
-LCM_CONTEXT_THRESHOLD=0.75
-LCM_FRESH_TAIL_COUNT=24
-LCM_LEAF_CHUNK_TOKENS=8000
+TROVE_CONTEXT_THRESHOLD=0.75
+TROVE_FRESH_TAIL_COUNT=24
+TROVE_LEAF_CHUNK_TOKENS=8000
 ```
 
-Explicit parseable preset-managed operator config wins. If `LCM_FRESH_TAIL_COUNT` or another supported preset-managed `LCM_*` knob is already set to a value the runtime can parse, `/lcm preset suggest` and `/lcm preset apply ... --dry-run` report that value as kept rather than overwritten. Invalid env values are reported separately, and the preview shows the preset value that would replace them. Runtime `target_after_compaction` is still benchmark-only metadata because the engine does not yet expose that as a live config field.
+Explicit parseable preset-managed operator config wins. If `TROVE_FRESH_TAIL_COUNT` or another supported preset-managed `TROVE_*` knob is already set to a value the runtime can parse, `/trove preset suggest` and `/trove preset apply ... --dry-run` report that value as kept rather than overwritten. Invalid env values are reported separately, and the preview shows the preset value that would replace them. Runtime `target_after_compaction` is still benchmark-only metadata because the engine does not yet expose that as a live config field.
 
 ## Metrics added for preset research
 
@@ -263,14 +263,14 @@ These are the first benchmark-quality signals for issue #189. Runtime `preset: a
 
 ## Symptom-to-knob tuning guide
 
-Use benchmark output and `lcm_status`, not guesswork:
+Use benchmark output and `trove_status`, not guesswork:
 
 | Symptom | First knob to inspect | Direction |
 |---------|-----------------------|-----------|
-| Compaction happens nearly every turn | `post_compaction_headroom_tokens`, `repeated_compaction_risk`, `LCM_CONTEXT_THRESHOLD` | Lower the trigger or target more headroom before considering runtime auto-preset behavior |
-| Fresh tail dominates the active prompt | `fresh_tail_pressure_ratio`, `fresh_tail_tokens`, `LCM_FRESH_TAIL_COUNT` | Lower the protected tail for long-context GPT/Codex-style routes; keep it high only when recent tool turns must stay verbatim |
-| Leaf passes are huge and slow | `LCM_LEAF_CHUNK_TOKENS`, `LCM_DYNAMIC_LEAF_CHUNK_ENABLED` | Reduce chunk size or enable dynamic chunking after confirming raw backlog is the pressure source |
-| Old facts are not in the active prompt but are retrievable | `active_canary_recall`, `retrieval_canary_recall` | Do not overfit for active recall; train usage toward `lcm_grep`, `lcm_expand`, and `lcm_expand_query` |
+| Compaction happens nearly every turn | `post_compaction_headroom_tokens`, `repeated_compaction_risk`, `TROVE_CONTEXT_THRESHOLD` | Lower the trigger or target more headroom before considering runtime auto-preset behavior |
+| Fresh tail dominates the active prompt | `fresh_tail_pressure_ratio`, `fresh_tail_tokens`, `TROVE_FRESH_TAIL_COUNT` | Lower the protected tail for long-context GPT/Codex-style routes; keep it high only when recent tool turns must stay verbatim |
+| Leaf passes are huge and slow | `TROVE_LEAF_CHUNK_TOKENS`, `TROVE_DYNAMIC_LEAF_CHUNK_ENABLED` | Reduce chunk size or enable dynamic chunking after confirming raw backlog is the pressure source |
+| Old facts are not in the active prompt but are retrievable | `active_canary_recall`, `retrieval_canary_recall` | Do not overfit for active recall; train usage toward `trove_grep`, `trove_expand`, and `trove_expand_query` |
 | Old facts are not retrievable | `retrieval_canary_recall`, failures, fixture coverage | Treat as a correctness bug or fixture gap before changing preset thresholds |
 | Large tool outputs dominate token pressure | externalization status, payload sizes | Enable large-output externalization before tuning compaction thresholds |
 
@@ -278,15 +278,15 @@ Hard gates for promoting a preset: no replay failures, no raw transcript leakage
 
 ## LongMemEval retrieval harness
 
-`scripts/lcm_longmemeval.py` measures retrieval quality (recall@k / NDCG@10)
-on **LongMemEval_S** (Wu et al., ICLR 2025) for the LCM retrieval arms —
+`scripts/trove_longmemeval.py` measures retrieval quality (recall@k / NDCG@10)
+on **LongMemEval_S** (Wu et al., ICLR 2025) for the TROVE retrieval arms —
 `fts` (raw-message FTS5), `summary_vectors` (summary embeddings), `hybrid_rrf`
 (reciprocal-rank fusion, k=60), `hybrid_rerank` (a reranker over the fused pool,
 see below), `chunk_vectors` (raw-chunk KNN), `hybrid_rrf3` (FTS + summary +
-chunk fusion), and `lcm_recall` (the **production tool users actually call** — see
+chunk fusion), and `trove_recall` (the **production tool users actually call** — see
 below). There is **no LLM judge**: the dataset labels the evidence
 session(s) per question (`answer_session_ids`), so recall is computable offline.
-It ingests each question's history into a fresh temporary LCM store (reusing the
+It ingests each question's history into a fresh temporary TROVE store (reusing the
 `store`/`dag`/`vector_store` APIs directly, no live Hermes host), builds one
 deterministic summary per session, optionally backfills embeddings, then scores
 each arm against the labeled evidence.
@@ -318,13 +318,13 @@ fused tail is appended unchanged. Any provider error falls back to the placehold
 The mode actually used is recorded in the JSON (`rerank.mode`) and the markdown
 header so no one mistakes a placeholder run for a real-reranker run.
 
-### The production arm (`lcm_recall`)
+### The production arm (`trove_recall`)
 
 The other arms measure retrieval *primitives* — the harness reimplements each
-arm's ranking (its own FTS query builder, its own RRF fusion). `lcm_recall`
-instead scores the **actual `tools.lcm_recall` tool** end-to-end: weighted RRF
+arm's ranking (its own FTS query builder, its own RRF fusion). `trove_recall`
+instead scores the **actual `tools.trove_recall` tool** end-to-end: weighted RRF
 over the FTS + summary + chunk arms (`retrieval_core.rrf_fuse` with the
-`LCM_RECALL_ARM_WEIGHTS` down-weighting of the FTS arm), the scope/recency prior,
+`TROVE_RECALL_ARM_WEIGHTS` down-weighting of the FTS arm), the scope/recency prior,
 chunk-vs-FTS dedup by `store_id`, and `include`-filtering — the full path a caller
 gets, none of which the per-arm numbers exercise. It is invoked per question
 against the same per-question temp store via a `SimpleNamespace` engine (the proven
@@ -340,8 +340,8 @@ Two honesty notes on how the production behavior shows up in these numbers:
   still applies** to every hit (newer hits are boosted by a half-life multiplier);
   that is the real production behavior and is deliberately left in rather than
   stubbed out, so the number reflects the tool as shipped.
-- **`limit` is clamped to the production ceiling.** `lcm_recall` caps its response
-  at `_LCM_RECALL_LIMIT_CAP` (=25) hits, so its session ranking is only as deep as
+- **`limit` is clamped to the production ceiling.** `trove_recall` caps its response
+  at `_TROVE_RECALL_LIMIT_CAP` (=25) hits, so its session ranking is only as deep as
   the tool will ever surface; recall@10 is measured over the deduped sessions of
   those top hits. Its per-question latency is also the *real* tool cost (thread
   pool, read-only connection setup, provider resolution, KNN pooling), so it is
@@ -372,14 +372,14 @@ file `longmemeval_s` (~278 MB, 500 questions), pinned to revision
 `2ec2a557f339b6c0369619b1ed5793734cc87533`:
 
 ```bash
-python scripts/lcm_longmemeval.py fetch --output /path/to/longmemeval-data
+python scripts/trove_longmemeval.py fetch --output /path/to/longmemeval-data
 ```
 
 Deterministic plumbing proof (offline, `<60s`, scores are meaningless with the
 hash-based stub embedder):
 
 ```bash
-python scripts/lcm_longmemeval.py run \
+python scripts/trove_longmemeval.py run \
   --dataset /path/to/longmemeval-data/longmemeval_s \
   --provider stub --limit 5 \
   --output benchmarks/runs/longmemeval-stub
@@ -388,13 +388,13 @@ python scripts/lcm_longmemeval.py run \
 CI-grade local run with the deterministic FastEmbed provider (the model is
 downloaded once into the FastEmbed cache; the query path is local thereafter).
 `fastembed` is an optional dependency — install it into a virtualenv, and point
-its model cache at a roomy volume with `LCM_LONGMEMEVAL_FASTEMBED_CACHE`:
+its model cache at a roomy volume with `TROVE_LONGMEMEVAL_FASTEMBED_CACHE`:
 
 ```bash
 python -m venv .venv-fastembed
 .venv-fastembed/bin/pip install fastembed
-LCM_LONGMEMEVAL_FASTEMBED_CACHE=/path/to/fastembed-cache \
-  .venv-fastembed/bin/python scripts/lcm_longmemeval.py run \
+TROVE_LONGMEMEVAL_FASTEMBED_CACHE=/path/to/fastembed-cache \
+  .venv-fastembed/bin/python scripts/trove_longmemeval.py run \
     --dataset /path/to/longmemeval-data/longmemeval_s \
     --provider fastembed --model BAAI/bge-small-en-v1.5 --limit 25 \
     --output benchmarks/runs/longmemeval-fastembed
@@ -407,7 +407,7 @@ cost; the full 500-question run over all six arms with `bge-small` takes on the
 order of minutes on a laptop.
 
 Output is **aggregate-only**, matching the export hygiene of
-`scripts/lcm_benchmark.py`: `longmemeval_metrics.json` (per-arm and per-category
+`scripts/trove_benchmark.py`: `longmemeval_metrics.json` (per-arm and per-category
 recall@1/5/10, NDCG@10 at both session and turn granularity — the latter under a
 `turn` block with a `session_granularity` flag — per-arm latency percentiles, plus
 top-level `rerank` mode/window/budget and `ingest` timing/provenance) plus a
@@ -420,7 +420,7 @@ multi-session, temporal (temporal-reasoning), and knowledge-update.
 **Honest caveat — this is our configuration, not a universal verdict.** MemDelta
 (arXiv:2606.29914) shows that memory-benchmark rankings **flip** with the choice
 of embedding model and base model: an arm that wins under one embedder can lose
-under another. So these numbers gate the LCM rerank and embed-policy defaults
+under another. So these numbers gate the TROVE rerank and embed-policy defaults
 *for the precise configuration recorded in the metrics JSON* (provider, model,
 dataset revision) and must not be read as an absolute claim that one arm is
 better than another. Re-run with your intended production embedder before

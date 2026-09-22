@@ -9,16 +9,16 @@ Covers:
 - no leakage of configured sensitive values from structured content or bearer-style text
 """
 
-from hermes_lcm.engine import LCMEngine
+from hermes_trove.engine import TROVEEngine
 
 
 class TestDeriveAutoFocusTopic:
-    """Tests for LCMEngine._derive_auto_focus_topic."""
+    """Tests for TROVEEngine._derive_auto_focus_topic."""
 
     # --- Test 1: derives from latest real user turns ---
 
     def test_derives_from_latest_user_turns(self, tmp_path):
-        engine = LCMEngine(config=None)
+        engine = TROVEEngine(config=None)
         try:
             messages = [
                 {"role": "assistant", "content": "Previous assistant reply"},
@@ -41,14 +41,14 @@ class TestDeriveAutoFocusTopic:
             engine.shutdown()
 
     def test_returns_none_for_empty_messages(self, tmp_path):
-        engine = LCMEngine(config=None)
+        engine = TROVEEngine(config=None)
         try:
             assert engine._derive_auto_focus_topic([]) is None
         finally:
             engine.shutdown()
 
     def test_returns_none_for_no_user_messages(self, tmp_path):
-        engine = LCMEngine(config=None)
+        engine = TROVEEngine(config=None)
         try:
             messages = [
                 {"role": "assistant", "content": "Reply one"},
@@ -61,7 +61,7 @@ class TestDeriveAutoFocusTopic:
     # --- Test 2: skips synthetic context-summary content ---
 
     def test_skips_context_compaction_summary(self, tmp_path):
-        engine = LCMEngine(config=None)
+        engine = TROVEEngine(config=None)
         try:
             messages = [
                 {"role": "user", "content": "Please check config.yaml"},
@@ -78,7 +78,7 @@ class TestDeriveAutoFocusTopic:
             engine.shutdown()
 
     def test_skips_all_summary_markers(self, tmp_path):
-        engine = LCMEngine(config=None)
+        engine = TROVEEngine(config=None)
         try:
             summaries = [
                 "[CONTEXT COMPACTION] something",
@@ -109,7 +109,7 @@ class TestDeriveAutoFocusTopic:
         The actual guard is in compress(): ``if focus_topic is None`` -- so
         when focus_topic is provided, this method is never called.
         """
-        engine = LCMEngine(config=None)
+        engine = TROVEEngine(config=None)
         try:
             messages = [
                 {"role": "user", "content": "First user message"},
@@ -124,7 +124,7 @@ class TestDeriveAutoFocusTopic:
     # --- Test 4: per-turn and total truncation ---
 
     def test_per_turn_truncation(self, tmp_path):
-        engine = LCMEngine(config=None)
+        engine = TROVEEngine(config=None)
         try:
             long_msg = "x" * 500
             messages = [{"role": "user", "content": long_msg}]
@@ -135,7 +135,7 @@ class TestDeriveAutoFocusTopic:
             engine.shutdown()
 
     def test_total_truncation(self, tmp_path):
-        engine = LCMEngine(config=None)
+        engine = TROVEEngine(config=None)
         try:
             # 3 long messages should exceed total limit of _AUTO_FOCUS_MAX_CHARS (700)
             messages = [
@@ -150,7 +150,7 @@ class TestDeriveAutoFocusTopic:
             engine.shutdown()
 
     def test_max_3_turns(self, tmp_path):
-        engine = LCMEngine(config=None)
+        engine = TROVEEngine(config=None)
         try:
             messages = [
                 {"role": "user", "content": "Message four"},
@@ -171,7 +171,7 @@ class TestDeriveAutoFocusTopic:
     # --- Test 5: multimodal/text-part content ---
 
     def test_multimodal_content(self, tmp_path):
-        engine = LCMEngine(config=None)
+        engine = TROVEEngine(config=None)
         try:
             messages = [
                 {"role": "user", "content": "Look at this image"},
@@ -189,7 +189,7 @@ class TestDeriveAutoFocusTopic:
         """Sensitive values in working_messages are already redacted by
         _ingest_messages -> _redact_active_replay_messages, so the derived
         focus topic must not contain raw secrets."""
-        engine = LCMEngine(config=None)
+        engine = TROVEEngine(config=None)
         try:
             engine._session_id = "test-focus-session"
             # Simulate raw messages that would be ingested
@@ -210,7 +210,7 @@ class TestDeriveAutoFocusTopic:
 
     def test_structured_content_no_leakage(self, tmp_path):
         """Dict/JSON token values in working_messages are redacted."""
-        engine = LCMEngine(config=None)
+        engine = TROVEEngine(config=None)
         try:
             # Simulate working_messages where content is already redacted
             # by _redact_active_replay_messages for dict-type content
@@ -231,13 +231,13 @@ class TestDeriveAutoFocusTopic:
         """Integration test: _ingest_messages returns redacted messages that
         are safe to pass to _derive_auto_focus_topic. This verifies the
         actual redaction path, not a mock."""
-        from hermes_lcm.config import LCMConfig
+        from hermes_trove.config import TROVEConfig
 
-        config = LCMConfig(database_path=str(tmp_path / "focus-ingest.db"))
+        config = TROVEConfig(database_path=str(tmp_path / "focus-ingest.db"))
         # Enable sensitive pattern redaction explicitly
         config.sensitive_patterns_enabled = True
         config.sensitive_patterns = ["api_key", "bearer_token", "password_assignment"]
-        engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes-home"))
+        engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes-home"))
         try:
             engine._session_id = "test-ingest-focus"
             engine.context_length = 200000
@@ -268,12 +268,12 @@ class TestDeriveAutoFocusTopic:
         """Verify the additional redaction safety net in _derive_auto_focus_topic
         catches sensitive values that _redact_active_replay_messages misses
         (e.g., text extracted from structured content via text_content_for_pattern_matching)."""
-        from hermes_lcm.config import LCMConfig
+        from hermes_trove.config import TROVEConfig
 
-        config = LCMConfig(database_path=str(tmp_path / "focus-safety.db"))
+        config = TROVEConfig(database_path=str(tmp_path / "focus-safety.db"))
         config.sensitive_patterns_enabled = True
         config.sensitive_patterns = ["api_key", "bearer_token", "password_assignment"]
-        engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes-home"))
+        engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes-home"))
         try:
             # Messages where content is a list (structured/multimodal) --
             # _redact_active_replay_messages uses parse_json_strings=False for content,
@@ -304,7 +304,7 @@ class TestDeriveAutoFocusTopic:
     # --- Skip empty user messages ---
 
     def test_skips_empty_user_messages(self, tmp_path):
-        engine = LCMEngine(config=None)
+        engine = TROVEEngine(config=None)
         try:
             messages = [
                 {"role": "user", "content": ""},

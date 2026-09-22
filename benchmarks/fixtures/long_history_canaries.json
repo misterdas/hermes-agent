@@ -2,7 +2,7 @@
   "name": "long_history_canaries",
   "tags": ["long_history", "exact_recall", "synthetic"],
   "messages": [
-    {"role": "system", "content": "You are a deterministic LCM benchmark agent."},
+    {"role": "system", "content": "You are a deterministic TROVE benchmark agent."},
     {"role": "user", "content": "CANARY_ALPHA = VALUE_ALPHA. Early project invariant: alpha routing must remain recoverable."},
     {"role": "assistant", "content": "Acknowledged alpha invariant."},
     {"role": "user", "content": "Routine discussion about implementation details, tests, and release order."},

@@ -6,7 +6,7 @@
     "summary_failure_mode": "llm_timeout_then_truncate"
   },
   "messages": [
-    {"role": "system", "content": "You are a deterministic LCM benchmark agent."},
+    {"role": "system", "content": "You are a deterministic TROVE benchmark agent."},
     {"role": "user", "content": "CANARY_TIMEOUT = VALUE_TIMEOUT. This replay marks an LLM timeout before deterministic truncation fallback."},
     {"role": "assistant", "content": "Acknowledged timeout anchor."},
     {"role": "user", "content": "Timeout probe backlog segment. timeout_probe_filler_0 timeout_probe_filler_1 timeout_probe_filler_2 timeout_probe_filler_3 timeout_probe_filler_4 timeout_probe_filler_5."},

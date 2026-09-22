@@ -7,26 +7,26 @@ from types import SimpleNamespace
 
 import pytest
 
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.dag import SummaryDAG, SummaryNode
-from hermes_lcm.rollup_periods import parse_recent_period
-from hermes_lcm.rollup_store import RollupStore
-from hermes_lcm.schemas import LCM_RECENT
-from hermes_lcm.tokens import count_tokens
-from hermes_lcm import tools as tools_module
-from hermes_lcm.tools import (
+from hermes_trove.config import TROVEConfig
+from hermes_trove.dag import SummaryDAG, SummaryNode
+from hermes_trove.rollup_periods import parse_recent_period
+from hermes_trove.rollup_store import RollupStore
+from hermes_trove.schemas import TROVE_RECENT
+from hermes_trove.tokens import count_tokens
+from hermes_trove import tools as tools_module
+from hermes_trove.tools import (
     _recent_expected_period_starts,
     _recent_has_unready_rollups,
     _recent_ready_rollups,
-    lcm_recent,
+    trove_recent,
 )
 
 
 NOW = datetime(2026, 7, 15, 15, 30, tzinfo=timezone.utc)
 
 
-def test_lcm_recent_schema_advertises_conversation_scope_only():
-    assert LCM_RECENT["parameters"]["properties"]["scope"]["enum"] == ["conversation"]
+def test_trove_recent_schema_advertises_conversation_scope_only():
+    assert TROVE_RECENT["parameters"]["properties"]["scope"]["enum"] == ["conversation"]
 
 
 @pytest.mark.parametrize(
@@ -91,7 +91,7 @@ def recent_parts(tmp_path):
     db_path = tmp_path / "recent.db"
     dag = SummaryDAG(db_path)
     store = RollupStore(db_path)
-    config = LCMConfig(database_path=str(db_path), temporal_rollups_enabled=True)
+    config = TROVEConfig(database_path=str(db_path), temporal_rollups_enabled=True)
     engine = SimpleNamespace(
         _dag=dag,
         _config=config,
@@ -132,11 +132,11 @@ def _ready(store, kind, period_start, scope, summary="ready rollup", token_count
     return token.rollup_id
 
 
-def test_lcm_recent_serves_ready_rollup_with_provenance(recent_parts):
+def test_trove_recent_serves_ready_rollup_with_provenance(recent_parts):
     engine, store = recent_parts
     rollup_id = _ready(store, "day", "2026-07-15", engine.current_session_id)
 
-    result = json.loads(lcm_recent({"period": "date:2026-07-15"}, engine=engine))
+    result = json.loads(trove_recent({"period": "date:2026-07-15"}, engine=engine))
 
     assert result["mode"] == "rollup"
     assert result["provenance"] == {
@@ -146,14 +146,14 @@ def test_lcm_recent_serves_ready_rollup_with_provenance(recent_parts):
     assert result["sections"][0]["content"].startswith("Tokens: 17\n")
 
 
-def test_lcm_recent_stale_rollup_falls_back_to_leaf_summaries(recent_parts):
+def test_trove_recent_stale_rollup_falls_back_to_leaf_summaries(recent_parts):
     engine, store = recent_parts
     _add_leaf(engine._dag, engine.current_session_id, date(2026, 7, 15), "leaf fallback")
     store.drain_invalidations()
     _ready(store, "day", "2026-07-15", engine.current_session_id)
     store.mark_stale_for_day("2026-07-15", engine.current_session_id)
 
-    result = json.loads(lcm_recent({"period": "date:2026-07-15"}, engine=engine))
+    result = json.loads(trove_recent({"period": "date:2026-07-15"}, engine=engine))
 
     assert result["mode"] == "leaf_summary_fallback"
     assert result["fallback_reason"] == "rollups_unavailable"
@@ -161,7 +161,7 @@ def test_lcm_recent_stale_rollup_falls_back_to_leaf_summaries(recent_parts):
     assert [section["content"] for section in result["sections"]] == ["leaf fallback"]
 
 
-def test_lcm_recent_fails_closed_while_invalidation_is_pending(recent_parts):
+def test_trove_recent_fails_closed_while_invalidation_is_pending(recent_parts):
     engine, store = recent_parts
     _ready(store, "day", "2026-07-15", engine.current_session_id)
 
@@ -175,7 +175,7 @@ def test_lcm_recent_fails_closed_while_invalidation_is_pending(recent_parts):
         "new content awaiting rollup invalidation",
     )
 
-    result = json.loads(lcm_recent({"period": "date:2026-07-15"}, engine=engine))
+    result = json.loads(trove_recent({"period": "date:2026-07-15"}, engine=engine))
 
     assert result["mode"] == "leaf_summary_fallback"
     assert result["fallback_reason"] == "rollups_invalidation_pending"
@@ -210,7 +210,7 @@ def test_recent_window_coverage_requires_every_day_ready(recent_parts):
 def test_recent_window_period_enumeration_fails_closed_above_work_cap(recent_parts):
     engine, store = recent_parts
     window = parse_recent_period(
-        f"{tools_module._LCM_RECENT_FRONTIER_WORK_LIMIT + 1}d", now=NOW
+        f"{tools_module._TROVE_RECENT_FRONTIER_WORK_LIMIT + 1}d", now=NOW
     )
     statements: list[str] = []
     store.connection.set_trace_callback(statements.append)
@@ -224,10 +224,10 @@ def test_recent_window_period_enumeration_fails_closed_above_work_cap(recent_par
 
     # The oversized request is rejected arithmetically; it never enumerates or
     # queries thousands of expected period IDs.
-    assert not any("FROM lcm_rollups" in statement for statement in statements)
+    assert not any("FROM trove_rollups" in statement for statement in statements)
 
 
-def test_lcm_recent_fallback_includes_retained_higher_depth_summary(recent_parts):
+def test_trove_recent_fallback_includes_retained_higher_depth_summary(recent_parts):
     # After rotation, a retained higher-depth (carry-forward) summary in-window
     # must be returned by the leaf fallback, not only depth-0 leaves
     # (maintainer #389 blocker 2).
@@ -256,27 +256,27 @@ def test_lcm_recent_fallback_includes_retained_higher_depth_summary(recent_parts
         )
     )
 
-    result = json.loads(lcm_recent({"period": "date:2026-07-15"}, engine=engine))
+    result = json.loads(trove_recent({"period": "date:2026-07-15"}, engine=engine))
 
     assert result["mode"] == "leaf_summary_fallback"
     returned_ids = {section["node_id"] for section in result["sections"]}
     assert retained_id in returned_ids
 
 
-def test_lcm_recent_disabled_flag_falls_back_even_when_ready(recent_parts):
+def test_trove_recent_disabled_flag_falls_back_even_when_ready(recent_parts):
     engine, store = recent_parts
     engine._config.temporal_rollups_enabled = False
     _add_leaf(engine._dag, engine.current_session_id, date(2026, 7, 15), "flag-off leaf")
     _ready(store, "day", "2026-07-15", engine.current_session_id)
 
-    result = json.loads(lcm_recent({"period": "date:2026-07-15"}, engine=engine))
+    result = json.loads(trove_recent({"period": "date:2026-07-15"}, engine=engine))
 
     assert result["fallback_reason"] == "temporal_rollups_disabled"
     assert result["provenance"]["fallback"] is True
     assert result["sections"][0]["kind"] == "leaf_summary"
 
 
-def test_lcm_recent_subday_window_always_falls_back(recent_parts):
+def test_trove_recent_subday_window_always_falls_back(recent_parts):
     engine, _store = recent_parts
     recent_time = datetime.now(timezone.utc) - timedelta(minutes=30)
     _add_leaf(
@@ -287,17 +287,17 @@ def test_lcm_recent_subday_window_always_falls_back(recent_parts):
         timestamp=recent_time.timestamp(),
     )
 
-    result = json.loads(lcm_recent({"period": "last 2h"}, engine=engine))
+    result = json.loads(trove_recent({"period": "last 2h"}, engine=engine))
 
     assert result["fallback_reason"] == "subday_window"
     assert result["provenance"]["fallback"] is True
     assert result["sections"][0]["content"] == "subday leaf"
 
 
-def test_lcm_recent_empty_window_is_a_successful_empty_fallback(recent_parts):
+def test_trove_recent_empty_window_is_a_successful_empty_fallback(recent_parts):
     engine, _store = recent_parts
 
-    result = json.loads(lcm_recent({"period": "date:1999-01-01"}, engine=engine))
+    result = json.loads(trove_recent({"period": "date:1999-01-01"}, engine=engine))
 
     assert "error" not in result
     assert result["provenance"]["fallback"] is True
@@ -305,7 +305,7 @@ def test_lcm_recent_empty_window_is_a_successful_empty_fallback(recent_parts):
     assert result["returned_sections"] == 0
 
 
-def test_lcm_recent_limit_order_and_response_char_bound(recent_parts):
+def test_trove_recent_limit_order_and_response_char_bound(recent_parts):
     engine, _store = recent_parts
     engine._config.temporal_rollups_enabled = False
     target_day = date(2026, 7, 15)
@@ -319,7 +319,7 @@ def test_lcm_recent_limit_order_and_response_char_bound(recent_parts):
     )
     _add_leaf(engine._dag, engine.current_session_id, target_day, "middle", timestamp=_timestamp(target_day, 12))
 
-    raw = lcm_recent({"period": "date:2026-07-15", "limit": 2}, engine=engine)
+    raw = trove_recent({"period": "date:2026-07-15", "limit": 2}, engine=engine)
     result = json.loads(raw)
 
     assert len(raw) <= 20_000
@@ -329,12 +329,12 @@ def test_lcm_recent_limit_order_and_response_char_bound(recent_parts):
     assert result["truncated"] is True
 
 
-def test_lcm_recent_conversation_scope_reports_clamped_limit(recent_parts):
+def test_trove_recent_conversation_scope_reports_clamped_limit(recent_parts):
     engine, store = recent_parts
     rollup_id = _ready(store, "day", "2026-07-15", engine.current_session_id)
 
     result = json.loads(
-        lcm_recent(
+        trove_recent(
             {"period": "date:2026-07-15", "scope": "conversation", "limit": 500},
             engine=engine,
         )
@@ -356,17 +356,17 @@ def test_lcm_recent_conversation_scope_reports_clamped_limit(recent_parts):
         ({"period": "today", "limit": True}, "limit must be an integer"),
     ],
 )
-def test_lcm_recent_argument_validation(recent_parts, args, message):
+def test_trove_recent_argument_validation(recent_parts, args, message):
     engine, _store = recent_parts
-    result = json.loads(lcm_recent(args, engine=engine))
+    result = json.loads(trove_recent(args, engine=engine))
     assert message in result["error"]
 
 
-def test_lcm_recent_reports_max_date_overflow_as_validation_error(recent_parts):
+def test_trove_recent_reports_max_date_overflow_as_validation_error(recent_parts):
     engine, _store = recent_parts
 
     result = json.loads(
-        lcm_recent({"period": "date:9999-12-31"}, engine=engine)
+        trove_recent({"period": "date:9999-12-31"}, engine=engine)
     )
 
     assert result == {"error": "period is outside the supported date range"}
@@ -396,7 +396,7 @@ def test_recent_rollup_falls_back_when_finalized_session_has_window_content(rece
     assert served == []
     assert reason == "rollups_span_multiple_sessions"
 
-    result = json.loads(lcm_recent({"period": "date:2026-07-15"}, engine=engine))
+    result = json.loads(trove_recent({"period": "date:2026-07-15"}, engine=engine))
     assert result["mode"] == "leaf_summary_fallback"
     assert result["fallback_reason"] == "rollups_span_multiple_sessions"
     assert "finalized session leaf" in {section["content"] for section in result["sections"]}
@@ -433,7 +433,7 @@ def test_recent_fallback_suppresses_child_covered_by_overlapping_parent(recent_p
         )
     )
 
-    result = json.loads(lcm_recent({"period": "date:2026-07-15", "limit": 2}, engine=engine))
+    result = json.loads(trove_recent({"period": "date:2026-07-15", "limit": 2}, engine=engine))
 
     assert result["mode"] == "leaf_summary_fallback"
     returned = {section["node_id"] for section in result["sections"]}
@@ -485,7 +485,7 @@ def test_recent_fallback_suppresses_transitive_child_when_parent_not_selected(
     )
 
     result = json.loads(
-        lcm_recent({"period": "date:2026-07-15", "limit": 2}, engine=engine)
+        trove_recent({"period": "date:2026-07-15", "limit": 2}, engine=engine)
     )
 
     returned = {section["node_id"] for section in result["sections"]}
@@ -520,7 +520,7 @@ def test_recent_fallback_collapses_identical_sibling_lineage(recent_parts):
         )
 
     result = json.loads(
-        lcm_recent({"period": "date:2026-07-15", "limit": 10}, engine=engine)
+        trove_recent({"period": "date:2026-07-15", "limit": 10}, engine=engine)
     )
 
     assert [section["node_id"] for section in result["sections"]] == [
@@ -558,7 +558,7 @@ def test_recent_fallback_fails_closed_on_partial_lineage_overlap(recent_parts):
         )
 
     result = json.loads(
-        lcm_recent({"period": "date:2026-07-15", "limit": 10}, engine=engine)
+        trove_recent({"period": "date:2026-07-15", "limit": 10}, engine=engine)
     )
 
     assert result["mode"] == "leaf_summary_fallback"
@@ -577,13 +577,13 @@ def test_recent_provenance_is_bounded_to_returned_sections(recent_parts):
     days = [today - timedelta(days=offset) for offset in range(1000)]
     with store.connection:
         store.connection.executemany(
-            "INSERT INTO lcm_rollups(period_kind, period_start, scope, summary, "
+            "INSERT INTO trove_rollups(period_kind, period_start, scope, summary, "
             "token_count, status, source_fingerprint) "
             "VALUES('day', ?, ?, ?, ?, 'ready', ?)",
             [(d.isoformat(), scope, f"summary for {d}", 5, f"fp-{d}") for d in days],
         )
 
-    raw = lcm_recent({"period": "1000d", "limit": 1}, engine=engine)
+    raw = trove_recent({"period": "1000d", "limit": 1}, engine=engine)
     result = json.loads(raw)
 
     assert result["mode"] == "rollup"
@@ -618,7 +618,7 @@ def test_recent_fallback_includes_summary_overlapping_window_edge(recent_parts):
         )
     )
 
-    result = json.loads(lcm_recent({"period": "date:2026-07-15"}, engine=engine))
+    result = json.loads(trove_recent({"period": "date:2026-07-15"}, engine=engine))
     assert result["mode"] == "leaf_summary_fallback"
     assert spanning_id in {section["node_id"] for section in result["sections"]}
 
@@ -644,7 +644,7 @@ def test_recent_fallback_candidate_work_is_sql_bounded(recent_parts, monkeypatch
             earliest_at=content_time,
             latest_at=content_time,
         )
-        for index in range(tools_module._LCM_RECENT_FRONTIER_WORK_LIMIT + 1)
+        for index in range(tools_module._TROVE_RECENT_FRONTIER_WORK_LIMIT + 1)
     ]
     for node in rows:
         engine._dag.add_node(node)
@@ -663,7 +663,7 @@ def test_recent_fallback_candidate_work_is_sql_bounded(recent_parts, monkeypatch
             datetime(2026, 7, 16, tzinfo=timezone.utc).timestamp(),
             datetime(2026, 7, 15, tzinfo=timezone.utc).timestamp(),
             scope,
-            tools_module._LCM_RECENT_FRONTIER_WORK_LIMIT + 1,
+            tools_module._TROVE_RECENT_FRONTIER_WORK_LIMIT + 1,
         ),
     ).fetchall()
     plan_text = " ".join(str(row[3]) for row in probe_plan).upper()
@@ -679,7 +679,7 @@ def test_recent_fallback_candidate_work_is_sql_bounded(recent_parts, monkeypatch
 
     monkeypatch.setattr(tools_module, "canonical_frontier", counted_frontier)
     result = json.loads(
-        lcm_recent({"period": "date:2026-07-15", "limit": 1}, engine=engine)
+        trove_recent({"period": "date:2026-07-15", "limit": 1}, engine=engine)
     )
 
     assert result["mode"] == "leaf_summary_fallback"

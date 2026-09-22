@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from hermes_lcm.occurrence_time import resolve_occurrence_time
+from hermes_trove.occurrence_time import resolve_occurrence_time
 
 
 def _day(value):

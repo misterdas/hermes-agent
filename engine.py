@@ -1,4 +1,4 @@
-"""LCM Engine — Lossless Context Management.
+"""TROVE Engine — Lossless Context Management.
 
 Implements the ContextEngine ABC. Replaces the built-in ContextCompressor
 with a DAG-based summarization system that preserves every message.
@@ -25,7 +25,7 @@ from .codex_routing import (
     _codex_oauth_context_cap,
     _is_codex_gpt55_route,
 )
-from .config import LCMConfig, _resolve_hermes_home
+from .config import TROVEConfig, _resolve_hermes_home
 from .dag import SummaryDAG, SummaryNode
 from .diagnostics import _enforce_state_db_containment
 from .engine_registry import (
@@ -33,7 +33,7 @@ from .engine_registry import (
     _ACTIVE_ENGINES_BY_CONVERSATION_ID,
     _ACTIVE_ENGINES_BY_SESSION_ID,
     _remove_registry_entries_for_engine,
-    resolve_active_lcm_engine,  # noqa: F401  (re-exported: hosts import it from .engine)
+    resolve_active_trove_engine,  # noqa: F401  (re-exported: hosts import it from .engine)
 )
 from .escalation import (
     SummaryCircuitBreaker,
@@ -90,21 +90,21 @@ from .assertion_store import AssertionStore, SourceSnapshot
 from .adaptive_retrieval import AdaptiveRetrievalRegistry
 from .query_view_store import QueryViewStore
 from .schemas import (
-    LCM_DESCRIBE,
-    LCM_DOCTOR,
-    LCM_EXPAND,
-    LCM_EXPAND_QUERY,
-    LCM_GREP,
-    LCM_INSPECT,
-    LCM_LOAD_SESSION,
-    LCM_COMPUTE,
-    LCM_COMPILE_EVIDENCE,
-    LCM_EVIDENCE_PACK,
-    LCM_QUERY_STATE,
-    LCM_RECALL,
-    LCM_RECENT,
-    LCM_RETRIEVE,
-    LCM_STATUS,
+    TROVE_DESCRIBE,
+    TROVE_DOCTOR,
+    TROVE_EXPAND,
+    TROVE_EXPAND_QUERY,
+    TROVE_GREP,
+    TROVE_INSPECT,
+    TROVE_LOAD_SESSION,
+    TROVE_COMPUTE,
+    TROVE_COMPILE_EVIDENCE,
+    TROVE_EVIDENCE_PACK,
+    TROVE_QUERY_STATE,
+    TROVE_RECALL,
+    TROVE_RECENT,
+    TROVE_RETRIEVE,
+    TROVE_STATUS,
 )
 from .sanitize import (
     _clean_active_assistant_message,
@@ -140,7 +140,7 @@ from .sqlite_util import (
 )
 from .store import MessageStore
 from .tokens import count_message_tokens, count_messages_tokens, count_tokens
-from . import tools as lcm_tools
+from . import tools as trove_tools
 
 logger = logging.getLogger(__name__)
 
@@ -211,7 +211,7 @@ class _RollupMaintenanceScheduler:
         with self._condition:
             if key in self._exclusive_keys:
                 logger.info(
-                    "LCM temporal rollup maintenance deferred while an operator "
+                    "TROVE temporal rollup maintenance deferred while an operator "
                     "rebuild owns database=%s scope=%s",
                     key[0],
                     key[1],
@@ -228,7 +228,7 @@ class _RollupMaintenanceScheduler:
                 return True
             if len(self._jobs) >= self._max_pending_jobs:
                 logger.warning(
-                    "LCM temporal rollup maintenance queue is full; "
+                    "TROVE temporal rollup maintenance queue is full; "
                     "deferring database=%s scope=%s until a later bind",
                     key[0],
                     key[1],
@@ -237,7 +237,7 @@ class _RollupMaintenanceScheduler:
             if self._worker is None or not self._worker.is_alive():
                 worker = threading.Thread(
                     target=self._run,
-                    name="lcm-rollup-maintenance",
+                    name="trove-rollup-maintenance",
                     daemon=True,
                 )
                 worker.start()
@@ -325,7 +325,7 @@ class _RollupMaintenanceScheduler:
                     job()
                 except (Exception, asyncio.CancelledError):
                     logger.warning(
-                        "LCM background temporal rollup maintenance failed for database=%s scope=%s",
+                        "TROVE background temporal rollup maintenance failed for database=%s scope=%s",
                         key[0],
                         key[1],
                         exc_info=True,
@@ -359,7 +359,7 @@ _AUTO_FOCUS_TURN_MAX_CHARS = 260
 _AUTO_FOCUS_MAX_CHARS = 700
 
 _PRESERVED_TODO_CONTEXT_PREFIX = "[Your active task list was preserved across context compression]"
-_LCM_MESSAGE_PREFIX_FINGERPRINT_LIMIT = 8
+_TROVE_MESSAGE_PREFIX_FINGERPRINT_LIMIT = 8
 
 
 def _normalize_total_compactions(value: Any) -> int:
@@ -369,12 +369,12 @@ def _normalize_total_compactions(value: Any) -> int:
     return value
 
 
-class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessionMixin, PlaceholderLedgerMixin, BypassMixin, ContextEngine):
+class TROVEEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessionMixin, PlaceholderLedgerMixin, BypassMixin, ContextEngine):
     """Lossless Context Management engine.
 
-    Automatic LCM compaction is routine background maintenance. Hosts that
+    Automatic TROVE compaction is routine background maintenance. Hosts that
     support user-visible compaction status opt-outs should keep successful
-    automatic LCM passes silent unless the user explicitly asks for diagnostics.
+    automatic TROVE passes silent unless the user explicitly asks for diagnostics.
 
     Architecture:
       1. Every message is persisted verbatim in an immutable MessageStore
@@ -382,20 +382,20 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
          are summarized into leaf nodes (D0) in a SummaryDAG
       3. When enough nodes accumulate at a depth, they're condensed into
          higher-depth nodes (D1, D2, ...)
-      4. The agent gets tools (lcm_grep, lcm_load_session, lcm_describe,
-         lcm_expand) to search and drill into compacted history
+      4. The agent gets tools (trove_grep, trove_load_session, trove_describe,
+         trove_expand) to search and drill into compacted history
       5. Active context = system prompt + DAG summaries + fresh tail
     """
 
     def load_externalized_payload_sidecar(self, ref: str) -> Dict[str, Any] | None:
-        """Load one externalized payload through LCM's public safe reader."""
+        """Load one externalized payload through TROVE's public safe reader."""
         return load_externalized_payload(
             ref,
             config=self._config,
             hermes_home=self._hermes_home,
         )
 
-    def __init__(self, config: LCMConfig | None = None,
+    def __init__(self, config: TROVEConfig | None = None,
                  hermes_home: str = ""):
         effective_home = str(hermes_home or "")
         config_home = str(getattr(config, "config_hermes_home", "") or "")
@@ -404,9 +404,9 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         ):
             effective_home = config_home or str(_resolve_hermes_home())
         if config is None:
-            self._config = LCMConfig.from_env(hermes_home=effective_home or None)
+            self._config = TROVEConfig.from_env(hermes_home=effective_home or None)
         elif config_home and config_home != effective_home:
-            self._config = LCMConfig.from_env(hermes_home=effective_home)
+            self._config = TROVEConfig.from_env(hermes_home=effective_home)
         else:
             self._config = config
         self._hermes_home = effective_home
@@ -434,8 +434,8 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         self._session_id: str = ""
         self._session_platform: str = ""
         # Tracks the most recent non-ignored, non-stateless binding so that
-        # user-facing tools (lcm_status, lcm_grep default scope, lcm_describe,
-        # lcm_expand_query, lcm_doctor) keep showing the foreground session
+        # user-facing tools (trove_status, trove_grep default scope, trove_describe,
+        # trove_expand_query, trove_doctor) keep showing the foreground session
         # even while a side-channel session (cron, debug) temporarily owns the
         # engine's _session_id binding. Updated alongside _session_id only
         # when _refresh_session_filters classifies the new session as a real
@@ -534,8 +534,8 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         # run_agent.py reads these for context probing
         self._context_probed = False
         self._context_probe_persistable = False
-        # Host compatibility: LCM treats successful automatic compaction as
-        # silent maintenance. Manual /lcm diagnostics and warning/error paths
+        # Host compatibility: TROVE treats successful automatic compaction as
+        # silent maintenance. Manual /trove diagnostics and warning/error paths
         # remain explicit.
         self.emit_automatic_compaction_status = False
         self.quiet_mode = True
@@ -581,7 +581,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         self._consecutive_ingest_failures = 0
         # Proactive-recall injection telemetry (SPEC F). Store-scoped counters so
         # a session reset does not zero the operator's running totals; surfaced
-        # through lcm_status. injected = a block was placed this assembly;
+        # through trove_status. injected = a block was placed this assembly;
         # skipped = ran but nothing survived the floor/dedupe; timeout = the
         # recall query hit its deadline (inject nothing, never block assembly).
         self._proactive_recall_injected_count = 0
@@ -626,19 +626,19 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         self._auxiliary_handoff_parent_session_ids: dict[str, str] = {}
         self._auxiliary_retired_session_generations: dict[str, set[int]] = {}
         self._auxiliary_foreground_reused_session_ids: set[str] = set()
-        self._lcm_bypass_lineage_session_ids: set[str] = set()
-        self._lcm_bypass_lineage_platforms: dict[str, set[str]] = {}
-        self._lcm_non_bypass_platforms: dict[str, set[str]] = {}
-        self._lcm_session_last_platform: dict[str, str] = {}
-        self._lcm_session_last_normal_platform: dict[str, str] = {}
-        self._lcm_session_last_bypassed: dict[str, bool] = {}
-        self._lcm_session_last_conversation_id: dict[str, str] = {}
-        self._lcm_session_last_normal_conversation_id: dict[str, str] = {}
-        self._lcm_bypass_message_prefix_fingerprints: dict[
+        self._trove_bypass_lineage_session_ids: set[str] = set()
+        self._trove_bypass_lineage_platforms: dict[str, set[str]] = {}
+        self._trove_non_bypass_platforms: dict[str, set[str]] = {}
+        self._trove_session_last_platform: dict[str, str] = {}
+        self._trove_session_last_normal_platform: dict[str, str] = {}
+        self._trove_session_last_bypassed: dict[str, bool] = {}
+        self._trove_session_last_conversation_id: dict[str, str] = {}
+        self._trove_session_last_normal_conversation_id: dict[str, str] = {}
+        self._trove_bypass_message_prefix_fingerprints: dict[
             str, list[tuple[list[str], bool]]
         ] = {}
-        self._lcm_normal_message_prefix_fingerprints: dict[tuple[str, str], list[str]] = {}
-        self._lcm_current_start_allows_bypass_lineage = False
+        self._trove_normal_message_prefix_fingerprints: dict[tuple[str, str], list[str]] = {}
+        self._trove_current_start_allows_bypass_lineage = False
         self._auxiliary_session_lock = threading.RLock()
         self._host_fallback_compressor: Any = None
         self._host_fallback_session_id = ""
@@ -647,12 +647,12 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         # diagnostic drains do not retain every historical session key forever.
         self._rollup_maintenance_owner = object()
 
-    def clone_for_agent(self) -> "LCMEngine":
+    def clone_for_agent(self) -> "TROVEEngine":
         """Return a fresh runtime engine for one AIAgent instance.
 
         Hermes registers plugin context engines process-wide, while gateway
         runtimes may keep multiple cached AIAgent instances alive at once
-        (different platforms, chats, cron jobs, etc.).  LCM stores mutable
+        (different platforms, chats, cron jobs, etc.).  TROVE stores mutable
         session binding and ingest cursor state on the engine object itself, so
         sharing one registered instance across agents can let one conversation
         rebind another conversation's raw-message ingest and lifecycle state.
@@ -690,16 +690,16 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         # before binding it; hosts that bind only through on_session_start()
         # must still be able to replace the copied prototype route.
         clone._update_model_pending_session_start = False
-        clone._lcm_current_start_allows_bypass_lineage = False
+        clone._trove_current_start_allows_bypass_lineage = False
         return clone
 
-    def __deepcopy__(self, memo: dict[int, object]) -> "LCMEngine":
+    def __deepcopy__(self, memo: dict[int, object]) -> "TROVEEngine":
         """Copy the plugin runtime without pickling SQLite-backed helpers.
 
         Hermes core may deepcopy plugin context engines while creating isolated
         AIAgent instances. A default object deepcopy walks into MessageStore,
         SummaryDAG, and LifecycleStateStore sqlite3.Connection handles, which
-        cannot be pickled. LCM already exposes clone_for_agent() as the safe
+        cannot be pickled. TROVE already exposes clone_for_agent() as the safe
         boundary: share durable configuration/database path, but allocate fresh
         per-agent runtime/storage helper objects.
         """
@@ -712,8 +712,8 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         if self._config.database_path:
             return Path(self._config.database_path)
         if hermes_home:
-            return Path(hermes_home) / "lcm.db"
-        return Path.home() / ".hermes" / "lcm.db"
+            return Path(hermes_home) / "trove.db"
+        return Path.home() / ".hermes" / "trove.db"
 
     def _bind_storage(self, db_path: str | Path, hermes_home: str = "") -> None:
         """Bind store/DAG/lifecycle helpers to one SQLite database."""
@@ -780,7 +780,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 try:
                     close()
                 except Exception:
-                    logger.debug("LCM failed closing %s during profile rebind", attr, exc_info=True)
+                    logger.debug("TROVE failed closing %s during profile rebind", attr, exc_info=True)
 
     def _assertion_extraction_model(self) -> str:
         return str(
@@ -828,17 +828,17 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             self._auxiliary_handoff_parent_session_ids.clear()
             self._auxiliary_retired_session_generations.clear()
             self._auxiliary_foreground_reused_session_ids.clear()
-            self._lcm_bypass_lineage_session_ids.clear()
-            self._lcm_bypass_lineage_platforms.clear()
-            self._lcm_non_bypass_platforms.clear()
-            self._lcm_session_last_platform.clear()
-            self._lcm_session_last_normal_platform.clear()
-            self._lcm_session_last_bypassed.clear()
-            self._lcm_session_last_conversation_id.clear()
-            self._lcm_session_last_normal_conversation_id.clear()
-            self._lcm_bypass_message_prefix_fingerprints.clear()
-            self._lcm_normal_message_prefix_fingerprints.clear()
-        self._lcm_current_start_allows_bypass_lineage = False
+            self._trove_bypass_lineage_session_ids.clear()
+            self._trove_bypass_lineage_platforms.clear()
+            self._trove_non_bypass_platforms.clear()
+            self._trove_session_last_platform.clear()
+            self._trove_session_last_normal_platform.clear()
+            self._trove_session_last_bypassed.clear()
+            self._trove_session_last_conversation_id.clear()
+            self._trove_session_last_normal_conversation_id.clear()
+            self._trove_bypass_message_prefix_fingerprints.clear()
+            self._trove_normal_message_prefix_fingerprints.clear()
+        self._trove_current_start_allows_bypass_lineage = False
         self._host_fallback_compressor = None
         self._host_fallback_session_id = ""
         self._host_fallback_import_warning_logged = False
@@ -870,7 +870,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 if store is not None:
                     store._hermes_home = hermes_home
                 self._reset_profile_runtime_state()
-            logger.info("LCM rebound Hermes home for configured database path %s", hermes_home)
+            logger.info("TROVE rebound Hermes home for configured database path %s", hermes_home)
             return True
 
         db_path = self._resolve_db_path(hermes_home)
@@ -888,16 +888,16 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             self._hermes_home = hermes_home
             self._bind_storage(db_path, hermes_home)
             self._reset_profile_runtime_state()
-        logger.info("LCM rebound storage for Hermes home %s", hermes_home)
+        logger.info("TROVE rebound storage for Hermes home %s", hermes_home)
         return True
 
     def _refresh_profile_config(self, hermes_home: str = "") -> bool:
         """Reload profile-derived config for a routed Hermes home.
 
-        ``LCMConfig`` instances created manually are intentionally left alone:
+        ``TROVEConfig`` instances created manually are intentionally left alone:
         callers that pass a config object have already supplied the operator's
         explicit runtime policy.  Configs built by ``from_env`` retain their
-        process-global ``LCM_*`` overrides while rereading only the selected
+        process-global ``TROVE_*`` overrides while rereading only the selected
         profile's YAML through an explicit path argument.
         """
         if (
@@ -907,7 +907,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         ):
             return False
 
-        self._config = LCMConfig.from_env(hermes_home=hermes_home)
+        self._config = TROVEConfig.from_env(hermes_home=hermes_home)
         self._config_hermes_home = str(hermes_home)
         self._compiled_ignore_session_patterns = compile_session_patterns(
             self._config.ignore_session_patterns
@@ -950,7 +950,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 self._runtime_context_threshold(model=self.model, provider=self.provider)
             )
             self.threshold_percent = self.context_threshold
-        logger.info("LCM refreshed profile config for Hermes home %s", hermes_home)
+        logger.info("TROVE refreshed profile config for Hermes home %s", hermes_home)
         return True
 
     def _runtime_context_threshold(
@@ -965,16 +965,16 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             if getattr(self._config, "config_sources", None)
             else "manual_or_default"
         )
-        explicit_lcm_override = source in {
-            "env:LCM_CONTEXT_THRESHOLD",
-            "config_yaml:lcm.context_threshold",
+        explicit_trove_override = source in {
+            "env:TROVE_CONTEXT_THRESHOLD",
+            "config_yaml:trove.context_threshold",
         }
         route_model = self.model if model is None else model
         route_provider = self.provider if provider is None else provider
         if (
             _is_codex_gpt55_route(route_model, route_provider)
             and self._config.codex_gpt55_autoraise_enabled
-            and not explicit_lcm_override
+            and not explicit_trove_override
             and configured < _CODEX_GPT55_COMPACTION_THRESHOLD
         ):
             return (
@@ -1007,7 +1007,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
 
         Hermes core uses ``threshold_tokens`` as a cheap gate before it pays for
         the full request estimate that includes system prompt and tool schemas.
-        LCM can enforce a stricter active-context assembly cap than the normal
+        TROVE can enforce a stricter active-context assembly cap than the normal
         context-threshold value, so expose the stricter cap here; otherwise a
         tool/schema-heavy request can skip host preflight entirely.
         """
@@ -1029,11 +1029,11 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         try:
             parsed_context_length = int(context_length)
         except (TypeError, ValueError):
-            logger.debug("LCM ignored invalid %s context_length: %r", source, context_length)
+            logger.debug("TROVE ignored invalid %s context_length: %r", source, context_length)
             return False
         if parsed_context_length <= 0:
             logger.debug(
-                "LCM cleared non-positive %s context_length: %r",
+                "TROVE cleared non-positive %s context_length: %r",
                 source,
                 context_length,
             )
@@ -1090,14 +1090,14 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
 
     @property
     def name(self) -> str:
-        return "lcm"
+        return "trove"
 
     @property
     def last_compression_status(self) -> str:
         """Public status for the most recent compression/preflight attempt.
 
         Host runtimes use this to distinguish a real compaction boundary from
-        an LCM no-op (for example, when request pressure is high but all
+        an TROVE no-op (for example, when request pressure is high but all
         compactable raw backlog is protected by the fresh tail).
         """
         return self._last_compression_status
@@ -1124,14 +1124,14 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         self._last_compression_noop_reason = ""
         if trigger:
             logger.info(
-                "LCM preflight decision operation=%s reason=%s trigger=%s",
+                "TROVE preflight decision operation=%s reason=%s trigger=%s",
                 operation,
                 reason,
                 trigger,
             )
         else:
             logger.info(
-                "LCM preflight decision operation=%s reason=%s",
+                "TROVE preflight decision operation=%s reason=%s",
                 operation,
                 reason,
             )
@@ -1150,13 +1150,13 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
 
     @property
     def current_session_id(self) -> str:
-        """User-facing "current session" id surfaced by LCM tools.
+        """User-facing "current session" id surfaced by TROVE tools.
 
         Returns the most recent foreground binding (the last session id that
         ``_refresh_session_filters`` classified as neither ignored nor
         stateless). Falls back to ``_session_id`` when no foreground has
         ever been bound, so unattended cron-only or stateless-only processes
-        remain observable via ``lcm_status``.
+        remain observable via ``trove_status``.
 
         Lifecycle paths (compress, ingest, on_session_end, etc.) must keep
         reading ``_session_id`` directly because those paths must follow the
@@ -1185,10 +1185,10 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         """True when an ignored or stateless session has temporarily rebound
         ``_session_id`` while a real foreground binding still exists.
 
-        Operators reading lcm_status during this window see the foreground
+        Operators reading trove_status during this window see the foreground
         session id and counts (because tools read ``current_session_id``)
         but the engine itself is servicing the side channel. This predicate
-        lets diagnostic surfaces (lcm_status, /lcm command) make the
+        lets diagnostic surfaces (trove_status, /trove command) make the
         divergence explicit without recomputing the underlying invariant.
         """
         return bool(self._foreground_session_id) and self._foreground_session_id != self._session_id
@@ -1362,7 +1362,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             # first post-compaction snapshot at turn zero without recounting.
             self._compaction_telemetry_turn_reset_pending = True
         except Exception:
-            logger.debug("LCM successful compaction telemetry update failed", exc_info=True)
+            logger.debug("TROVE successful compaction telemetry update failed", exc_info=True)
 
     def _record_turn_compaction_telemetry(self) -> None:
         """Persist a per-conversation compaction-telemetry snapshot for this turn.
@@ -1466,7 +1466,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             self._compaction_telemetry_counter_rebaseline_pending = False
             self._compaction_telemetry_turn_reset_pending = False
         except Exception:
-            logger.debug("LCM compaction telemetry update failed", exc_info=True)
+            logger.debug("TROVE compaction telemetry update failed", exc_info=True)
 
     def _compression_boundary_cooldown_active(self) -> bool:
         """Return true while a boundary skip is in its short no-compress window."""
@@ -1475,7 +1475,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         elapsed = time.time() - self._last_boundary_skip_time
         if elapsed < 60:
             logger.debug(
-                "LCM compression cooldown active: %.1f seconds since boundary skip",
+                "TROVE compression cooldown active: %.1f seconds since boundary skip",
                 elapsed,
             )
             return True
@@ -1496,7 +1496,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         self._consecutive_ingest_failures += 1
         self._last_ingest_error = f"{type(error).__name__}: {error}"
         self._last_ingest_error_time = time.time()
-        message = "LCM ingest failed (%s): %s [consecutive=%d, total=%d]"
+        message = "TROVE ingest failed (%s): %s [consecutive=%d, total=%d]"
         args = (
             where,
             error,
@@ -1528,7 +1528,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
 
         An un-ingested foreground branch and a provisional late-marked auxiliary
         child can both expose the same in-process parent id before either has
-        durable LCM rows. The canonical host signal for real foreground branches
+        durable TROVE rows. The canonical host signal for real foreground branches
         is the ``sessions.model_config._branched_from`` marker in state.db; use
         it to decide whether a displaced un-ingested candidate is safe to restore.
         """
@@ -1555,7 +1555,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             finally:
                 conn.close()
         except Exception:
-            logger.debug("LCM foreground branch marker probe failed", exc_info=True)
+            logger.debug("TROVE foreground branch marker probe failed", exc_info=True)
             return False
         if not row:
             return False
@@ -1658,14 +1658,14 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 parent_session_id
                 and parent_session_id != session_id
                 and parent_session_id == self._foreground_rebind_previous_session_id
-                and self._lcm_session_last_normal_conversation_id.get(parent_session_id)
+                and self._trove_session_last_normal_conversation_id.get(parent_session_id)
             ):
                 self._foreground_session_id = parent_session_id
-                self._foreground_session_platform = self._lcm_session_last_normal_platform.get(
+                self._foreground_session_platform = self._trove_session_last_normal_platform.get(
                     parent_session_id,
                     self._foreground_rebind_previous_platform,
                 )
-                self._foreground_conversation_id = self._lcm_session_last_normal_conversation_id[
+                self._foreground_conversation_id = self._trove_session_last_normal_conversation_id[
                     parent_session_id
                 ]
             else:
@@ -1698,7 +1698,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         try:
             stored_count = self._store.get_session_count(session_id)
         except Exception:
-            logger.debug("LCM first-ingest auxiliary recheck count probe failed", exc_info=True)
+            logger.debug("TROVE first-ingest auxiliary recheck count probe failed", exc_info=True)
             return False
         if stored_count != 0:
             return False
@@ -1708,7 +1708,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         self._mark_thread_context_stateless(session_id)
         self._restore_foreground_after_late_auxiliary_reclassification(session_id)
         logger.info(
-            "LCM reclassified session %s as auxiliary at first ingest after bind-time detection missed",
+            "TROVE reclassified session %s as auxiliary at first ingest after bind-time detection missed",
             session_id,
         )
         return True
@@ -1716,7 +1716,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
     def ingest(self, messages: List[Dict[str, Any]]) -> None:
         """Persist messages to the durable store every turn.
 
-        Called by the post_llm_call plugin hook so messages land in LCM
+        Called by the post_llm_call plugin hook so messages land in TROVE
         regardless of whether compression triggers — short WebUI
         conversations never hit the compression threshold and never
         expire like Telegram sessions do, so without this they'd never
@@ -1727,15 +1727,15 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         are skipped (no duplicates).
         """
         if self._maybe_reclassify_current_session_as_auxiliary_before_message_ingest():
-            self._remember_lcm_bypass_message_prefix(self._bypass_lcm_session_id(), messages)
+            self._remember_trove_bypass_message_prefix(self._bypass_trove_session_id(), messages)
             return
-        if self._bypasses_lcm_context_management():
-            self._remember_lcm_bypass_message_prefix(self._bypass_lcm_session_id(), messages)
+        if self._bypasses_trove_context_management():
+            self._remember_trove_bypass_message_prefix(self._bypass_trove_session_id(), messages)
             return
         if self._session_id and messages:
             with self._sanitation_claim_lock:
                 try:
-                    self._remember_lcm_normal_message_prefix(
+                    self._remember_trove_normal_message_prefix(
                         self._session_id,
                         messages,
                         conversation_id=self._conversation_id,
@@ -1848,7 +1848,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 if not smaller_chunk or len(smaller_chunk) >= len(attempt_chunk):
                     raise
                 logger.warning(
-                    "LCM leaf summarization retrying with smaller oldest chunk after retry-worthy failure: %s (attempt %d/%d, %d→%d messages)",
+                    "TROVE leaf summarization retrying with smaller oldest chunk after retry-worthy failure: %s (attempt %d/%d, %d→%d messages)",
                     exc,
                     attempt_number,
                     max_attempts,
@@ -1888,7 +1888,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             raw_database_path = str(self._dag.db_path)
             if raw_database_path == ":memory:":
                 logger.warning(
-                    "LCM cannot run background temporal rollup maintenance for "
+                    "TROVE cannot run background temporal rollup maintenance for "
                     "an isolated in-memory SQLite database; maintenance skipped"
                 )
                 return
@@ -1920,7 +1920,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             # Maintenance is opportunistic; a scheduler/setup failure must never
             # turn a successful foreground session bind into a host failure.
             logger.warning(
-                "LCM could not schedule background temporal rollup maintenance",
+                "TROVE could not schedule background temporal rollup maintenance",
                 exc_info=True,
             )
 
@@ -1939,12 +1939,12 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
     ) -> None:
         state = self._lifecycle.bind_session(session_id, conversation_id=conversation_id)
         self._conversation_id = state.conversation_id
-        self._lcm_session_last_conversation_id[session_id] = state.conversation_id
+        self._trove_session_last_conversation_id[session_id] = state.conversation_id
         self._last_compacted_store_id = state.current_frontier_store_id
         self._register_active_engine_binding()
         if not self._session_ignored and not self._session_stateless:
             self._remember_foreground_rebind_candidate(session_id)
-            self._lcm_session_last_normal_conversation_id[session_id] = state.conversation_id
+            self._trove_session_last_normal_conversation_id[session_id] = state.conversation_id
             self._foreground_session_id = session_id
             self._foreground_session_platform = self._session_platform
             self._foreground_conversation_id = state.conversation_id
@@ -1968,12 +1968,12 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 deleted = 0
             if deleted:
                 logger.info(
-                    "LCM pruned %d lifecycle rows with zero stored data "
+                    "TROVE pruned %d lifecycle rows with zero stored data "
                     "(table exceeded threshold of %d rows)",
                     deleted,
                     self._config.empty_lifecycle_gc_threshold,
                 )
-        # Bypassed/stateless sessions skip every LCM write, so they must also skip
+        # Bypassed/stateless sessions skip every TROVE write, so they must also skip
         # rollup maintenance — otherwise the bind-time hook would build rollups for
         # a session whose ingest is suppressed (maintainer #388: gate on the same
         # not-bypassed condition the ingest write uses).
@@ -2033,33 +2033,33 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             self._last_compacted_store_id,
         )
 
-    def _has_lcm_bypass_lineage_session(self, session_id: str, *, platform: Optional[str] = None) -> bool:
+    def _has_trove_bypass_lineage_session(self, session_id: str, *, platform: Optional[str] = None) -> bool:
         with self._auxiliary_session_lock:
-            if session_id not in self._lcm_bypass_lineage_session_ids:
+            if session_id not in self._trove_bypass_lineage_session_ids:
                 return False
             if platform is None:
                 return True
-            platforms = self._lcm_bypass_lineage_platforms.get(session_id) or set()
+            platforms = self._trove_bypass_lineage_platforms.get(session_id) or set()
             return not platforms or platform in platforms
 
-    def _mark_lcm_bypass_lineage_session(self, session_id: str, *, platform: Optional[str] = None) -> None:
+    def _mark_trove_bypass_lineage_session(self, session_id: str, *, platform: Optional[str] = None) -> None:
         if not session_id:
             return
         platform = self._session_platform if platform is None else str(platform or "")
         with self._auxiliary_session_lock:
-            self._lcm_bypass_lineage_session_ids.add(session_id)
-            self._lcm_bypass_lineage_platforms.setdefault(session_id, set()).add(platform)
-            self._lcm_session_last_platform[session_id] = platform
-            self._lcm_session_last_bypassed[session_id] = True
+            self._trove_bypass_lineage_session_ids.add(session_id)
+            self._trove_bypass_lineage_platforms.setdefault(session_id, set()).add(platform)
+            self._trove_session_last_platform[session_id] = platform
+            self._trove_session_last_bypassed[session_id] = True
 
-    def _unmark_lcm_bypass_lineage_session(self, session_id: str) -> None:
+    def _unmark_trove_bypass_lineage_session(self, session_id: str) -> None:
         if not session_id:
             return
         with self._auxiliary_session_lock:
-            self._lcm_bypass_lineage_session_ids.discard(session_id)
-            self._lcm_bypass_lineage_platforms.pop(session_id, None)
+            self._trove_bypass_lineage_session_ids.discard(session_id)
+            self._trove_bypass_lineage_platforms.pop(session_id, None)
 
-    def _handoff_lcm_bypass_lineage(
+    def _handoff_trove_bypass_lineage(
         self,
         old_session_id: str,
         new_session_id: str,
@@ -2068,35 +2068,35 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
     ) -> None:
         with self._auxiliary_session_lock:
             if old_session_id:
-                self._lcm_bypass_lineage_session_ids.add(old_session_id)
+                self._trove_bypass_lineage_session_ids.add(old_session_id)
             if new_session_id:
                 new_platform = str(new_platform or "")
-                self._lcm_bypass_lineage_session_ids.add(new_session_id)
-                self._lcm_bypass_lineage_platforms.setdefault(new_session_id, set()).add(new_platform)
-                self._lcm_session_last_platform[new_session_id] = new_platform
-                self._lcm_session_last_bypassed[new_session_id] = True
+                self._trove_bypass_lineage_session_ids.add(new_session_id)
+                self._trove_bypass_lineage_platforms.setdefault(new_session_id, set()).add(new_platform)
+                self._trove_session_last_platform[new_session_id] = new_platform
+                self._trove_session_last_bypassed[new_session_id] = True
 
-    def _compression_boundary_from_lcm_bypassed_session(self, old_session_id: str) -> bool:
+    def _compression_boundary_from_trove_bypassed_session(self, old_session_id: str) -> bool:
         if not old_session_id:
             return False
-        if old_session_id in self._lcm_session_last_bypassed:
-            return bool(self._lcm_session_last_bypassed.get(old_session_id))
+        if old_session_id in self._trove_session_last_bypassed:
+            return bool(self._trove_session_last_bypassed.get(old_session_id))
         if old_session_id == self._session_id:
             return bool(
-                self._bypasses_lcm_context_management()
-                or self._session_id_matches_lcm_bypass_filters(
+                self._bypasses_trove_context_management()
+                or self._session_id_matches_trove_bypass_filters(
                     old_session_id,
                     platform=self._session_platform,
                 )
             )
         return bool(
-            self._has_lcm_bypass_lineage_session(old_session_id)
-            or self._session_id_matches_lcm_bypass_filters(old_session_id)
+            self._has_trove_bypass_lineage_session(old_session_id)
+            or self._session_id_matches_trove_bypass_filters(old_session_id)
         )
 
     def _get_allowed_hermes_base(self) -> Path | None:
         """Get the allowed base directory for hermes_home, or None if not restricted."""
-        env_base = os.environ.get("LCM_HERMES_BASE_DIR")
+        env_base = os.environ.get("TROVE_HERMES_BASE_DIR")
         if env_base:
             return Path(env_base).expanduser().resolve()
         return None  # No restriction when env var not set
@@ -2112,7 +2112,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         db_path = Path(self._store.db_path)
         return _enforce_state_db_containment(
             db_path.parent / "state.db",
-            description=f"state database fallback from LCM database {db_path}",
+            description=f"state database fallback from TROVE database {db_path}",
         )
 
     def _clear_pending_reset_boundary(self) -> None:
@@ -2343,7 +2343,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 parsed_context_length = int(incoming_context_length)
             except (TypeError, ValueError):
                 logger.debug(
-                    "LCM ignored invalid session-start context_length: %r",
+                    "TROVE ignored invalid session-start context_length: %r",
                     incoming_context_length,
                 )
                 self._update_model_pending_session_start = False
@@ -2355,14 +2355,14 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                         ignore_empty_optional=True,
                     ):
                         logger.debug(
-                            "LCM ignored missing session-start context_length=%r for model=%s; active update_model context_length=%s",
+                            "TROVE ignored missing session-start context_length=%r for model=%s; active update_model context_length=%s",
                             incoming_context_length,
                             self.model or str(kwargs.get("model") or ""),
                             self.context_length,
                         )
                     else:
                         logger.warning(
-                            "LCM ignored stale session-start runtime metadata for model=%s; active update_model model=%s",
+                            "TROVE ignored stale session-start runtime metadata for model=%s; active update_model model=%s",
                             str(kwargs.get("model") or ""),
                             self.model,
                         )
@@ -2376,7 +2376,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                     and parsed_context_length not in {self.context_length, self.raw_context_length}
                 ):
                     logger.warning(
-                        "LCM ignored stale session-start context_length=%s for model=%s; active update_model raw_context_length=%s effective_context_length=%s",
+                        "TROVE ignored stale session-start context_length=%s for model=%s; active update_model raw_context_length=%s effective_context_length=%s",
                         parsed_context_length,
                         self.model or str(kwargs.get("model") or ""),
                         self.raw_context_length,
@@ -2387,7 +2387,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 if update_model_is_authoritative:
                     if not self._session_metadata_matches_active_runtime(kwargs):
                         logger.warning(
-                            "LCM ignored stale session-start runtime metadata for model=%s; active update_model model=%s",
+                            "TROVE ignored stale session-start runtime metadata for model=%s; active update_model model=%s",
                             str(kwargs.get("model") or ""),
                             self.model,
                         )
@@ -2406,7 +2406,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             and not self._session_metadata_matches_active_runtime(kwargs)
         ):
             logger.warning(
-                "LCM ignored stale session-start runtime metadata for model=%s; active update_model model=%s",
+                "TROVE ignored stale session-start runtime metadata for model=%s; active update_model model=%s",
                 str(kwargs.get("model") or ""),
                 self.model,
             )
@@ -2502,14 +2502,14 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             # boundary as old_session_id. A different bound session can be a
             # short-lived subagent/cron/WebUI side channel that ran after the
             # foreground compaction. Prefer the host-authoritative source when
-            # durable lifecycle + DAG evidence proves it belongs to LCM, then
+            # durable lifecycle + DAG evidence proves it belongs to TROVE, then
             # fall back to the older bound-session recovery path. When the host
             # old_session_id is the durable conversation id, use that row's
-            # current/finalized LCM source instead of unrelated auxiliary rows
+            # current/finalized TROVE source instead of unrelated auxiliary rows
             # where the id appears only as last_finalized_session_id.
             if host_source_session_id:
                 logger.warning(
-                    "LCM compression boundary using host old_session_id %s as carry-over source=%s despite bound session drift=%s",
+                    "TROVE compression boundary using host old_session_id %s as carry-over source=%s despite bound session drift=%s",
                     old_session_id,
                     host_source_session_id,
                     previous_session_id,
@@ -2541,7 +2541,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                     source_session_id = previous_session_id
                     source_state = bound_state
                     logger.warning(
-                        "LCM compression boundary using bound session %s as carry-over source; host old_session_id=%s does not match",
+                        "TROVE compression boundary using bound session %s as carry-over source; host old_session_id=%s does not match",
                         previous_session_id,
                         old_session_id,
                     )
@@ -2570,7 +2570,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                         source_session_id = previous_session_id
                         source_state = bound_state
                         logger.warning(
-                            "LCM compression boundary using bound session %s on sibling chain as carry-over source; host old_session_id=%s has zero DAG, parent=%s matches",
+                            "TROVE compression boundary using bound session %s on sibling chain as carry-over source; host old_session_id=%s has zero DAG, parent=%s matches",
                             previous_session_id,
                             old_session_id,
                             bound_state.last_finalized_session_id,
@@ -2676,14 +2676,14 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             # reassigned to the next compression segment.
             moved_nodes = self._dag.reassign_session_nodes(source_session_id, session_id)
             logger.debug(
-                "LCM compression boundary continued %s -> %s: carried %d DAG nodes; preserved raw message ownership",
+                "TROVE compression boundary continued %s -> %s: carried %d DAG nodes; preserved raw message ownership",
                 source_session_id,
                 session_id,
                 moved_nodes,
             )
         elif old_session_id:
             logger.warning(
-                "LCM compression boundary skipped carry-over: old_session_id=%s does not match bound session=%s",
+                "TROVE compression boundary skipped carry-over: old_session_id=%s does not match bound session=%s",
                 old_session_id,
                 previous_session_id,
             )
@@ -2731,7 +2731,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         previous_session_id = self._session_id
         previous_conversation_id = self._conversation_id
         requested_conversation_id = str(kwargs.get("conversation_id") or session_id)
-        self._lcm_current_start_allows_bypass_lineage = False
+        self._trove_current_start_allows_bypass_lineage = False
         requested_platform = str(kwargs.get("platform") or self._session_platform or "")
         pre_reset_preserve_ambiguous_no_frame_old_session = False
         if boundary_reason == "compression" and old_session_id and old_session_id != session_id:
@@ -2778,7 +2778,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 )
             if old_session_auxiliary_generation_is_stale:
                 logger.info(
-                    "LCM ignored stale auxiliary compression boundary from %s to %s",
+                    "TROVE ignored stale auxiliary compression boundary from %s to %s",
                     old_session_id,
                     session_id,
                 )
@@ -2804,13 +2804,13 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 try:
                     on_session_end(fallback_session_id, [])
                 except Exception:
-                    logger.debug("LCM host fallback compressor session-start reset failed", exc_info=True)
+                    logger.debug("TROVE host fallback compressor session-start reset failed", exc_info=True)
             on_session_reset = getattr(compressor, "on_session_reset", None)
             if callable(on_session_reset):
                 try:
                     on_session_reset()
                 except Exception:
-                    logger.debug("LCM host fallback compressor reset failed", exc_info=True)
+                    logger.debug("TROVE host fallback compressor reset failed", exc_info=True)
             self._host_fallback_compressor = None
             self._host_fallback_session_id = ""
         if boundary_reason == "compression" and old_session_id and old_session_id != session_id:
@@ -2874,7 +2874,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             )
             if old_session_auxiliary_generation_is_stale:
                 logger.info(
-                    "LCM ignored stale auxiliary compression boundary from %s to %s",
+                    "TROVE ignored stale auxiliary compression boundary from %s to %s",
                     old_session_id,
                     session_id,
                 )
@@ -2903,14 +2903,14 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                     preserve_old_foreground_marker=old_session_is_suppressed_foreground,
                 )
                 logger.info(
-                    "LCM auxiliary session %s compressed to %s — keeping boundary stateless",
+                    "TROVE auxiliary session %s compressed to %s — keeping boundary stateless",
                     old_session_id,
                     session_id,
                 )
                 return
-            if self._compression_boundary_from_lcm_bypassed_session(old_session_id):
+            if self._compression_boundary_from_trove_bypassed_session(old_session_id):
                 self._invalidate_sanitation_operation()
-                self._handoff_lcm_bypass_lineage(
+                self._handoff_trove_bypass_lineage(
                     old_session_id,
                     session_id,
                     new_platform=str(kwargs.get("platform") or ""),
@@ -2925,7 +2925,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                     self._last_compacted_store_id = 0
                     self._last_overflow_recovery_failed = False
                     self._last_condensation_suppressed_reason = ""
-                self._lcm_current_start_allows_bypass_lineage = True
+                self._trove_current_start_allows_bypass_lineage = True
                 self._apply_session_start_metadata(session_id, kwargs)
                 self._bind_lifecycle_state(
                     session_id,
@@ -2934,7 +2934,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 self._schedule_ingest_cursor_reconciliation()
                 self._log_session_filter_diagnostics()
                 logger.info(
-                    "LCM compression boundary %s -> %s stayed stateless because the source session bypasses LCM storage",
+                    "TROVE compression boundary %s -> %s stayed stateless because the source session bypasses TROVE storage",
                     old_session_id,
                     session_id,
                 )
@@ -2949,12 +2949,12 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             preserve_foreground_reuse_marker = bool(
                 (
                     explicit_parent_id
-                    and self._lcm_session_last_bypassed.get(explicit_parent_id)
+                    and self._trove_session_last_bypassed.get(explicit_parent_id)
                 )
-                or self._lcm_session_last_normal_conversation_id.get(session_id)
+                or self._trove_session_last_normal_conversation_id.get(session_id)
             )
             if preserve_foreground_reuse_marker:
-                if self._lcm_session_last_normal_conversation_id.get(session_id):
+                if self._trove_session_last_normal_conversation_id.get(session_id):
                     with self._auxiliary_session_lock:
                         self._auxiliary_foreground_reused_session_ids.add(session_id)
                 self._mark_thread_context_stateless(
@@ -2964,17 +2964,17 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             else:
                 self._register_auxiliary_session(session_id)
             logger.info(
-                "LCM session %s is a live child of bound session %s — treating it as auxiliary/stateless",
+                "TROVE session %s is a live child of bound session %s — treating it as auxiliary/stateless",
                 session_id,
                 previous_session_id,
             )
             return
         self._invalidate_sanitation_operation()
         start_platform = str(kwargs.get("platform") or "")
-        side_channel_rebind = self._session_id_matches_lcm_bypass_filters(
+        side_channel_rebind = self._session_id_matches_trove_bypass_filters(
             session_id,
             platform=start_platform,
-        ) or self._has_lcm_bypass_lineage_session(session_id, platform=start_platform)
+        ) or self._has_trove_bypass_lineage_session(session_id, platform=start_platform)
         self._unmark_thread_context_auxiliary_session(
             session_id,
             suppress_as_foreground_reuse=not side_channel_rebind,
@@ -3034,7 +3034,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         ingest_refs = extract_ingest_externalized_refs(stripped)
         if (
             len(ingest_refs) == 1
-            and stripped.startswith("[Externalized LCM ingest payload:")
+            and stripped.startswith("[Externalized TROVE ingest payload:")
             and stripped.endswith("]")
         ):
             payload = load_externalized_payload(
@@ -3134,7 +3134,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 conversation_id=conversation_id,
             )
         except Exception:
-            logger.debug("LCM session-end prefix check failed", exc_info=True)
+            logger.debug("TROVE session-end prefix check failed", exc_info=True)
             return None
         if not stored_messages:
             return 0
@@ -3152,14 +3152,14 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                     session_id=session_id,
                 )
             except Exception:
-                logger.debug("LCM session-end prefix compare normalization failed", exc_info=True)
+                logger.debug("TROVE session-end prefix compare normalization failed", exc_info=True)
                 return None
             if message_identity != stored_identity:
                 return None
         return len(stored_messages)
 
     @staticmethod
-    def _lcm_bypass_message_fingerprint(message: Dict[str, Any]) -> str:
+    def _trove_bypass_message_fingerprint(message: Dict[str, Any]) -> str:
         tool_calls = message.get("tool_calls")
         if tool_calls is None or tool_calls == [] or tool_calls == {}:
             tool_calls = None
@@ -3172,7 +3172,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
         return hashlib.sha256(encoded.encode("utf-8", errors="replace")).hexdigest()
 
-    def _remember_lcm_bypass_message_prefix(
+    def _remember_trove_bypass_message_prefix(
         self,
         session_id: str,
         messages: List[Dict[str, Any]],
@@ -3180,12 +3180,12 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         if not session_id or not messages:
             return
         fingerprints = [
-            self._lcm_bypass_message_fingerprint(msg)
-            for msg in messages[:_LCM_MESSAGE_PREFIX_FINGERPRINT_LIMIT]
+            self._trove_bypass_message_fingerprint(msg)
+            for msg in messages[:_TROVE_MESSAGE_PREFIX_FINGERPRINT_LIMIT]
         ]
         if fingerprints:
-            remembered = self._lcm_bypass_message_prefix_fingerprints.setdefault(session_id, [])
-            truncated = len(messages) > _LCM_MESSAGE_PREFIX_FINGERPRINT_LIMIT
+            remembered = self._trove_bypass_message_prefix_fingerprints.setdefault(session_id, [])
+            truncated = len(messages) > _TROVE_MESSAGE_PREFIX_FINGERPRINT_LIMIT
             retained: list[tuple[list[str], bool]] = []
             for existing_fingerprints, existing_truncated in remembered:
                 if existing_fingerprints == fingerprints:
@@ -3195,7 +3195,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             retained.append((fingerprints, truncated))
             remembered[:] = retained
 
-    def _remember_lcm_normal_message_prefix(
+    def _remember_trove_normal_message_prefix(
         self,
         session_id: str,
         messages: List[Dict[str, Any]],
@@ -3205,15 +3205,15 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         if not session_id or not messages:
             return
         fingerprints = [
-            self._lcm_bypass_message_fingerprint(msg)
-            for msg in messages[:_LCM_MESSAGE_PREFIX_FINGERPRINT_LIMIT]
+            self._trove_bypass_message_fingerprint(msg)
+            for msg in messages[:_TROVE_MESSAGE_PREFIX_FINGERPRINT_LIMIT]
         ]
         if fingerprints:
-            self._lcm_normal_message_prefix_fingerprints[
-                self._lcm_normal_prefix_key(session_id, conversation_id=conversation_id)
+            self._trove_normal_message_prefix_fingerprints[
+                self._trove_normal_prefix_key(session_id, conversation_id=conversation_id)
             ] = fingerprints
 
-    def _lcm_normal_prefix_key(
+    def _trove_normal_prefix_key(
         self,
         session_id: str,
         *,
@@ -3223,7 +3223,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             session_id,
             str(
                 conversation_id
-                or self._lcm_session_last_normal_conversation_id.get(session_id)
+                or self._trove_session_last_normal_conversation_id.get(session_id)
                 or ""
             ),
         )
@@ -3245,34 +3245,34 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         compare_count = min(len(fingerprints), len(messages))
         if compare_count <= 0:
             return 0
-        candidate = [self._lcm_bypass_message_fingerprint(msg) for msg in messages[:compare_count]]
+        candidate = [self._trove_bypass_message_fingerprint(msg) for msg in messages[:compare_count]]
         if candidate == fingerprints[:compare_count]:
             return compare_count
         return 0
 
-    def _messages_match_lcm_bypass_prefix(
+    def _messages_match_trove_bypass_prefix(
         self,
         session_id: str,
         messages: List[Dict[str, Any]],
     ) -> bool:
-        return self._matching_lcm_bypass_prefix_count(session_id, messages) > 0
+        return self._matching_trove_bypass_prefix_count(session_id, messages) > 0
 
-    def _matching_lcm_bypass_prefix_count(
+    def _matching_trove_bypass_prefix_count(
         self,
         session_id: str,
         messages: List[Dict[str, Any]],
     ) -> int:
-        count, _truncated = self._matching_lcm_bypass_prefix_evidence(session_id, messages)
+        count, _truncated = self._matching_trove_bypass_prefix_evidence(session_id, messages)
         return count
 
-    def _matching_lcm_bypass_prefix_evidence(
+    def _matching_trove_bypass_prefix_evidence(
         self,
         session_id: str,
         messages: List[Dict[str, Any]],
     ) -> tuple[int, bool]:
         best_count = 0
         best_truncated = False
-        for fingerprints, truncated in self._lcm_bypass_message_prefix_fingerprints.get(session_id, []):
+        for fingerprints, truncated in self._trove_bypass_message_prefix_fingerprints.get(session_id, []):
             count = self._matching_fingerprint_prefix_count(fingerprints, messages)
             count_truncated = bool(truncated and count > 0 and count == len(fingerprints))
             if count > best_count:
@@ -3282,20 +3282,20 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 best_truncated = best_truncated or count_truncated
         return best_count, best_truncated
 
-    def _messages_match_lcm_normal_prefix(
+    def _messages_match_trove_normal_prefix(
         self,
         session_id: str,
         messages: List[Dict[str, Any]],
         *,
         conversation_id: str | None = None,
     ) -> bool:
-        return self._matching_lcm_normal_prefix_count(
+        return self._matching_trove_normal_prefix_count(
             session_id,
             messages,
             conversation_id=conversation_id,
         ) > 0
 
-    def _matching_lcm_normal_prefix_count(
+    def _matching_trove_normal_prefix_count(
         self,
         session_id: str,
         messages: List[Dict[str, Any]],
@@ -3303,8 +3303,8 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         conversation_id: str | None = None,
     ) -> int:
         return self._matching_fingerprint_prefix_count(
-            self._lcm_normal_message_prefix_fingerprints.get(
-                self._lcm_normal_prefix_key(session_id, conversation_id=conversation_id)
+            self._trove_normal_message_prefix_fingerprints.get(
+                self._trove_normal_prefix_key(session_id, conversation_id=conversation_id)
             ) or [],
             messages,
         )
@@ -3325,7 +3325,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 self._ignored_message_count += 1
                 excerpt = (text_content_for_pattern_matching(msg.get("content")) or "")[:80].replace("\n", " ")
                 logger.debug(
-                    "LCM ignore_message_patterns dropped late session-end %s message: %r",
+                    "TROVE ignore_message_patterns dropped late session-end %s message: %r",
                     msg.get("role", "unknown"),
                     excerpt,
                 )
@@ -3383,7 +3383,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             )
             if deactivated:
                 if current_thread_session_id == session_id or active_auxiliary_end:
-                    self._remember_lcm_bypass_message_prefix(session_id, messages)
+                    self._remember_trove_bypass_message_prefix(session_id, messages)
                 self._end_host_fallback_compressor_for_session(
                     session_id,
                     messages,
@@ -3392,9 +3392,9 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 if current_thread_session_id == session_id:
                     self._clear_thread_context_stateless(session_id)
             return
-        current_session_bypasses = session_id == self._session_id and self._bypasses_lcm_context_management()
-        ended_session_directly_bypasses = self._ended_session_directly_bypasses_lcm(session_id)
-        direct_bypass_normal_conversation_id = self._lcm_session_last_normal_conversation_id.get(session_id)
+        current_session_bypasses = session_id == self._session_id and self._bypasses_trove_context_management()
+        ended_session_directly_bypasses = self._ended_session_directly_bypasses_trove(session_id)
+        direct_bypass_normal_conversation_id = self._trove_session_last_normal_conversation_id.get(session_id)
         direct_bypass_normal_prefix_count = None
         if (
             session_id != self._session_id
@@ -3417,7 +3417,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             and direct_bypass_normal_prefix_count > 0
         )
         if ended_session_directly_bypasses and not direct_bypass_is_suppressed_reused_normal:
-            self._remember_lcm_bypass_message_prefix(session_id, messages)
+            self._remember_trove_bypass_message_prefix(session_id, messages)
             self._end_host_fallback_compressor_for_session(
                 session_id,
                 messages,
@@ -3430,7 +3430,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         same_id_has_bypass_lineage = (
             session_id == self._session_id
             and not current_session_bypasses
-            and self._has_lcm_bypass_lineage_session(session_id)
+            and self._has_trove_bypass_lineage_session(session_id)
         )
         same_id_normal_prefix_count = None
         same_id_recorded_normal_prefix_count = 0
@@ -3439,19 +3439,19 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         if same_id_has_bypass_lineage:
             same_id_conversation_id = (
                 self._conversation_id
-                or self._lcm_session_last_normal_conversation_id.get(session_id)
+                or self._trove_session_last_normal_conversation_id.get(session_id)
                 or None
             )
             (
                 same_id_bypass_prefix_count,
                 same_id_bypass_prefix_truncated,
-            ) = self._matching_lcm_bypass_prefix_evidence(session_id, messages)
+            ) = self._matching_trove_bypass_prefix_evidence(session_id, messages)
             same_id_normal_prefix_count = self._session_end_store_prefix_count(
                 session_id,
                 messages,
                 conversation_id=same_id_conversation_id,
             )
-            same_id_recorded_normal_prefix_count = self._matching_lcm_normal_prefix_count(
+            same_id_recorded_normal_prefix_count = self._matching_trove_normal_prefix_count(
                 session_id,
                 messages,
                 conversation_id=same_id_conversation_id,
@@ -3487,12 +3487,12 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         off_current_lineage = (
             session_id != self._session_id
             and (
-                self._has_lcm_bypass_lineage_session(session_id)
+                self._has_trove_bypass_lineage_session(session_id)
                 or off_current_auxiliary_reused_normal
             )
         )
         off_current_normal_conversation_id = (
-            self._lcm_session_last_normal_conversation_id.get(session_id)
+            self._trove_session_last_normal_conversation_id.get(session_id)
             if off_current_lineage
             else ""
         )
@@ -3504,14 +3504,14 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             (
                 off_current_bypass_prefix_count,
                 off_current_bypass_prefix_truncated,
-            ) = self._matching_lcm_bypass_prefix_evidence(session_id, messages)
+            ) = self._matching_trove_bypass_prefix_evidence(session_id, messages)
         if off_current_lineage and off_current_normal_conversation_id:
             off_current_store_prefix_count = self._session_end_store_prefix_count(
                 session_id,
                 messages,
                 conversation_id=off_current_normal_conversation_id,
             )
-            off_current_recorded_prefix_count = self._matching_lcm_normal_prefix_count(
+            off_current_recorded_prefix_count = self._matching_trove_normal_prefix_count(
                 session_id,
                 messages,
                 conversation_id=off_current_normal_conversation_id,
@@ -3531,7 +3531,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                     conversation_id=off_current_normal_conversation_id,
                 )
             except Exception:
-                logger.debug("LCM off-current recorded-prefix row-count probe failed", exc_info=True)
+                logger.debug("TROVE off-current recorded-prefix row-count probe failed", exc_info=True)
                 stored_normal_rows = []
             if len(stored_normal_rows) == off_current_recorded_prefix_count:
                 off_current_recorded_prefix_for_append = off_current_recorded_prefix_count
@@ -3569,7 +3569,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             and off_current_normal_conversation_id
             and off_current_store_prefix_count == 0
             and off_current_bypass_prefix_count <= 0
-            and self._lcm_session_last_bypassed.get(session_id) is False
+            and self._trove_session_last_bypassed.get(session_id) is False
         ):
             off_current_prefix_count = 0
         same_id_should_bypass = (
@@ -3579,14 +3579,14 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         )
         off_current_matches_bypass_prefix = (
             session_id != self._session_id
-            and self._has_lcm_bypass_lineage_session(session_id)
+            and self._has_trove_bypass_lineage_session(session_id)
             and off_current_bypass_prefix_count > 0
             and off_current_prefix_count is None
         )
         ended_lineage_bypasses = (
             session_id != self._session_id
-            and self._has_lcm_bypass_lineage_session(session_id)
-            and bool(self._lcm_session_last_bypassed.get(session_id))
+            and self._has_trove_bypass_lineage_session(session_id)
+            and bool(self._trove_session_last_bypassed.get(session_id))
             and not self._session_end_matches_current_store_prefix(session_id, messages)
         )
         off_current_should_bypass = off_current_lineage and off_current_prefix_count is None
@@ -3598,8 +3598,8 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                     session_id,
                     suffix,
                     source=(
-                        self._lcm_session_last_normal_platform.get(session_id)
-                        or self._lcm_session_last_platform.get(session_id, self._session_platform)
+                        self._trove_session_last_normal_platform.get(session_id)
+                        or self._trove_session_last_platform.get(session_id, self._session_platform)
                     ),
                     conversation_id=off_current_normal_conversation_id,
                 )
@@ -3612,7 +3612,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                     frontier_store_id=frontier_store_id,
                 )
             except Exception:
-                logger.debug("LCM off-current session-end lifecycle finalization failed", exc_info=True)
+                logger.debug("TROVE off-current session-end lifecycle finalization failed", exc_info=True)
             return
         if (
             current_session_bypasses
@@ -3642,14 +3642,14 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                     self._ingest_messages(messages)
                 except KeyboardInterrupt:
                     logger.warning(
-                        "LCM session-end raw-message ingest interrupted; "
+                        "TROVE session-end raw-message ingest interrupted; "
                         "final messages may be absent from the plugin-local store"
                     )
                     return
                 except Exception as exc:
                     if _is_sqlite_locked_error(exc):
                         logger.warning(
-                            "LCM session-end raw-message ingest skipped due to SQLite lock after short wait; "
+                            "TROVE session-end raw-message ingest skipped due to SQLite lock after short wait; "
                             "final messages may be absent from the plugin-local store: %s",
                             exc,
                         )
@@ -3664,26 +3664,26 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                     )
                 except KeyboardInterrupt:
                     logger.warning(
-                        "LCM session-end lifecycle finalization interrupted; "
+                        "TROVE session-end lifecycle finalization interrupted; "
                         "raw messages may be ingested but lifecycle state may be finalized later"
                     )
                     return
                 except Exception as exc:
                     if _is_sqlite_locked_error(exc):
                         logger.warning(
-                            "LCM session-end lifecycle finalization skipped due to SQLite lock after short wait; "
+                            "TROVE session-end lifecycle finalization skipped due to SQLite lock after short wait; "
                             "raw messages were ingested but lifecycle state may be finalized later: %s",
                             exc,
                         )
                         return
                     raise
         except KeyboardInterrupt:
-            logger.warning("LCM session-end ingest/finalize interrupted before bounded flush completed")
+            logger.warning("TROVE session-end ingest/finalize interrupted before bounded flush completed")
             return
         except Exception as exc:
             if _is_sqlite_locked_error(exc):
                 logger.warning(
-                    "LCM session-end ingest/finalize skipped due to SQLite lock before bounded flush: %s",
+                    "TROVE session-end ingest/finalize skipped due to SQLite lock before bounded flush: %s",
                     exc,
                 )
                 return
@@ -3698,7 +3698,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 try:
                     on_session_reset()
                 except Exception:
-                    logger.debug("LCM host fallback compressor reset failed", exc_info=True)
+                    logger.debug("TROVE host fallback compressor reset failed", exc_info=True)
             self._host_fallback_compressor = None
             self._host_fallback_session_id = ""
         self._pending_reset_session_id = self._session_id
@@ -3756,7 +3756,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 store.close()
         except Exception:  # pragma: no cover - defensive; purge is best-effort
             logger.debug(
-                "LCM embedding purge for deleted nodes failed", exc_info=True
+                "TROVE embedding purge for deleted nodes failed", exc_info=True
             )
 
     def _archive_chunks_for_messages(
@@ -3793,7 +3793,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 store.close()
         except Exception:  # pragma: no cover - defensive; archive is best-effort
             logger.debug(
-                "LCM chunk archive for purged messages failed", exc_info=True
+                "TROVE chunk archive for purged messages failed", exc_info=True
             )
 
     def carry_over_new_session_context(self, old_session_id: str, new_session_id: str) -> int:
@@ -3809,7 +3809,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         (period_kind, period_start, scope=session_id) with a UNIQUE constraint, so
         rewriting scope on rollover could collide with the new session's own
         rollups and would need a core-schema change to do safely. Rotation is the
-        documented rollup scope boundary; ``lcm_recent`` compensates at read time
+        documented rollup scope boundary; ``trove_recent`` compensates at read time
         by spanning the same current + last-finalized sessions its leaf fallback
         uses (see ``_recent_ready_rollups``), so no window content is dropped.
         """
@@ -3817,7 +3817,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             return 0
         if self._session_ignored and new_session_id == self._session_id:
             logger.debug(
-                "LCM carry-over skipped for ignored session %s",
+                "TROVE carry-over skipped for ignored session %s",
                 new_session_id,
             )
             return 0
@@ -3854,7 +3854,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 self.on_session_end(old_session_id, previous_messages)
             else:
                 logger.warning(
-                    "LCM compression rollover old_session_id=%s does not match bound session=%s; using boundary handler fallback",
+                    "TROVE compression rollover old_session_id=%s does not match bound session=%s; using boundary handler fallback",
                     old_session_id,
                     bound_session_id,
                 )
@@ -3871,13 +3871,13 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             self.on_session_reset()
         elif old_session_id and not carry_over_context:
             logger.warning(
-                "LCM rollover skipped old-session finalization: old_session_id=%s does not match bound session=%s",
+                "TROVE rollover skipped old-session finalization: old_session_id=%s does not match bound session=%s",
                 old_session_id,
                 bound_session_id,
             )
         elif old_session_id and not can_carry_over:
             logger.warning(
-                "LCM carry-over skipped: old_session_id=%s does not match bound session=%s",
+                "TROVE carry-over skipped: old_session_id=%s does not match bound session=%s",
                 old_session_id,
                 bound_session_id,
             )
@@ -3892,28 +3892,28 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
 
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
         return [
-            LCM_GREP,
-            LCM_RECALL,
-            LCM_QUERY_STATE,
-            LCM_COMPUTE,
-            LCM_COMPILE_EVIDENCE,
-            LCM_EVIDENCE_PACK,
-            LCM_RETRIEVE,
-            LCM_RECENT,
-            LCM_LOAD_SESSION,
-            LCM_DESCRIBE,
-            LCM_EXPAND,
-            LCM_EXPAND_QUERY,
-            LCM_STATUS,
-            LCM_INSPECT,
-            LCM_DOCTOR,
+            TROVE_GREP,
+            TROVE_RECALL,
+            TROVE_QUERY_STATE,
+            TROVE_COMPUTE,
+            TROVE_COMPILE_EVIDENCE,
+            TROVE_EVIDENCE_PACK,
+            TROVE_RETRIEVE,
+            TROVE_RECENT,
+            TROVE_LOAD_SESSION,
+            TROVE_DESCRIBE,
+            TROVE_EXPAND,
+            TROVE_EXPAND_QUERY,
+            TROVE_STATUS,
+            TROVE_INSPECT,
+            TROVE_DOCTOR,
         ]
 
     def handle_tool_call(self, name: str, args: Dict[str, Any], **kwargs) -> str:
         # Ingest live messages if passed (enables current-turn search)
         messages = kwargs.get("messages")
 
-        if name != "lcm_inspect" and messages and self._session_id:
+        if name != "trove_inspect" and messages and self._session_id:
             # Serialize with claimed compression exactly like ingest(): a
             # tool-call ingest must not advance _ingest_cursor /
             # _foreground_ingest_revision underneath a validated sanitation
@@ -3921,7 +3921,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             # no longer matches active replay.
             with self._sanitation_claim_lock:
                 if self._maybe_reclassify_current_session_as_auxiliary_before_message_ingest():
-                    self._remember_lcm_bypass_message_prefix(self._bypass_lcm_session_id(), messages)
+                    self._remember_trove_bypass_message_prefix(self._bypass_trove_session_id(), messages)
                 elif not (
                     self._session_ignored or self._session_stateless or self._thread_context_stateless()
                 ):
@@ -3933,26 +3933,26 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                         self._record_ingest_failure("tool-call ingest", e)
 
         handlers = {
-            "lcm_grep": lcm_tools.lcm_grep,
-            "lcm_recall": lcm_tools.lcm_recall,
-            "lcm_query_state": lcm_tools.lcm_query_state,
-            "lcm_compute": lcm_tools.lcm_compute,
-            "lcm_compile_evidence": lcm_tools.lcm_compile_evidence,
-            "lcm_evidence_pack": lcm_tools.lcm_evidence_pack,
-            "lcm_retrieve": lcm_tools.lcm_retrieve,
-            "lcm_recent": lcm_tools.lcm_recent,
-            "lcm_load_session": lcm_tools.lcm_load_session,
-            "lcm_describe": lcm_tools.lcm_describe,
-            "lcm_expand": lcm_tools.lcm_expand,
-            "lcm_expand_query": lcm_tools.lcm_expand_query,
-            "lcm_status": lcm_tools.lcm_status,
-            "lcm_inspect": lcm_tools.lcm_inspect,
-            "lcm_doctor": lcm_tools.lcm_doctor,
+            "trove_grep": trove_tools.trove_grep,
+            "trove_recall": trove_tools.trove_recall,
+            "trove_query_state": trove_tools.trove_query_state,
+            "trove_compute": trove_tools.trove_compute,
+            "trove_compile_evidence": trove_tools.trove_compile_evidence,
+            "trove_evidence_pack": trove_tools.trove_evidence_pack,
+            "trove_retrieve": trove_tools.trove_retrieve,
+            "trove_recent": trove_tools.trove_recent,
+            "trove_load_session": trove_tools.trove_load_session,
+            "trove_describe": trove_tools.trove_describe,
+            "trove_expand": trove_tools.trove_expand,
+            "trove_expand_query": trove_tools.trove_expand_query,
+            "trove_status": trove_tools.trove_status,
+            "trove_inspect": trove_tools.trove_inspect,
+            "trove_doctor": trove_tools.trove_doctor,
         }
         handler = handlers.get(name)
         if handler:
             return handler(args, engine=self)
-        return json.dumps({"error": f"Unknown LCM tool: {name}"})
+        return json.dumps({"error": f"Unknown TROVE tool: {name}"})
 
     def _database_path_source(self) -> str:
         if self._config.database_path:
@@ -3962,10 +3962,10 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         return "default_home"
 
     def get_runtime_identity(self) -> Dict[str, Any]:
-        """Return operator-facing identity for the loaded LCM runtime.
+        """Return operator-facing identity for the loaded TROVE runtime.
 
         The public identity follows the same foreground-session view as
-        ``lcm_status`` and other tools. When a side-channel session is bound,
+        ``trove_status`` and other tools. When a side-channel session is bound,
         the bound session details are still exposed separately for diagnostics.
         """
         metadata = _plugin_metadata()
@@ -3982,7 +3982,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
 
         identity: Dict[str, Any] = {
             "engine": self.name,
-            "plugin_name": metadata.get("name", "hermes-lcm"),
+            "plugin_name": metadata.get("name", "hermes-trove"),
             "plugin_version": metadata.get("version", "unknown"),
             "plugin_path": str(_PLUGIN_ROOT),
             "module_path": str(Path(__file__).resolve()),
@@ -4047,7 +4047,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             "context_threshold_autoraised": self._context_threshold_autoraised,
             "config_sources": dict(getattr(self._config, "config_sources", {}) or {}),
             "config_source_warnings": list(getattr(self._config, "config_source_warnings", []) or []),
-            "ignored_config_yaml_lcm_keys": list(getattr(self._config, "ignored_config_yaml_lcm_keys", []) or []),
+            "ignored_config_yaml_trove_keys": list(getattr(self._config, "ignored_config_yaml_trove_keys", []) or []),
         })
         with self._assertion_extraction_metrics_lock:
             status["assertion_extraction"] = {
@@ -4096,7 +4096,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             total_compactions += pending_compactions
         status["total_compactions"] = total_compactions
         status["total_compactions_scope"] = _TOTAL_COMPACTIONS_SCOPE
-        status["engine"] = "lcm"
+        status["engine"] = "trove"
         status["runtime_identity"] = self.get_runtime_identity()
         status["ingest_protection"] = sensitive_pattern_status(self._config)
         try:
@@ -4198,7 +4198,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         parent_session_id = self._in_process_parent_session_id({})
         if parent_session_id:
             logger.debug(
-                "LCM model update ignored for auxiliary child of %s",
+                "TROVE model update ignored for auxiliary child of %s",
                 parent_session_id,
             )
             return
@@ -4223,8 +4223,8 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             not self._session_ignored
             and (
                 (
-                    self._lcm_current_start_allows_bypass_lineage
-                    and self._has_lcm_bypass_lineage_session(self._session_id, platform=self._session_platform)
+                    self._trove_current_start_allows_bypass_lineage
+                    and self._has_trove_bypass_lineage_session(self._session_id, platform=self._session_platform)
                 )
                 or matches_session_pattern(
                     self._session_match_keys,
@@ -4233,44 +4233,44 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             )
         )
         if self._session_id:
-            self._lcm_session_last_platform[self._session_id] = self._session_platform
-            self._lcm_session_last_bypassed[self._session_id] = bool(self._session_ignored or self._session_stateless)
+            self._trove_session_last_platform[self._session_id] = self._session_platform
+            self._trove_session_last_bypassed[self._session_id] = bool(self._session_ignored or self._session_stateless)
             if not self._session_ignored and not self._session_stateless:
-                self._lcm_non_bypass_platforms.setdefault(self._session_id, set()).add(self._session_platform)
-                self._lcm_session_last_normal_platform[self._session_id] = self._session_platform
+                self._trove_non_bypass_platforms.setdefault(self._session_id, set()).add(self._session_platform)
+                self._trove_session_last_normal_platform[self._session_id] = self._session_platform
         if self._session_ignored or self._session_stateless:
-            self._mark_lcm_bypass_lineage_session(self._session_id, platform=self._session_platform)
+            self._mark_trove_bypass_lineage_session(self._session_id, platform=self._session_platform)
 
     def _log_session_filter_diagnostics(self) -> None:
         if not self._logged_filter_config:
             if self._config.ignore_session_patterns:
                 logger.info(
-                    "LCM ignore_session_patterns from %s: %s",
+                    "TROVE ignore_session_patterns from %s: %s",
                     self._config.ignore_session_patterns_source,
                     ", ".join(self._config.ignore_session_patterns),
                 )
             if self._config.stateless_session_patterns:
                 logger.info(
-                    "LCM stateless_session_patterns from %s: %s",
+                    "TROVE stateless_session_patterns from %s: %s",
                     self._config.stateless_session_patterns_source,
                     ", ".join(self._config.stateless_session_patterns),
                 )
             if self._config.ignore_message_patterns:
                 logger.info(
-                    "LCM ignore_message_patterns from %s: %s",
+                    "TROVE ignore_message_patterns from %s: %s",
                     self._config.ignore_message_patterns_source,
                     ", ".join(self._config.ignore_message_patterns),
                 )
             self._logged_filter_config = True
         if self._session_ignored:
             logger.info(
-                "LCM session %s matched ignore_session_patterns via %s — skipping writes and compaction",
+                "TROVE session %s matched ignore_session_patterns via %s — skipping writes and compaction",
                 self._session_id,
                 ", ".join(self._session_match_keys),
             )
         elif self._session_stateless:
             logger.info(
-                "LCM session %s matched stateless_session_patterns via %s — read-only mode (no LCM writes)",
+                "TROVE session %s matched stateless_session_patterns via %s — read-only mode (no TROVE writes)",
                 self._session_id,
                 ", ".join(self._session_match_keys),
             )
@@ -4285,7 +4285,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         try:
             self._ingest_cursor_needs_reconcile = self._store.get_session_count(self._session_id) > 0
         except Exception as exc:  # pragma: no cover - defensive only
-            logger.debug("LCM ingest cursor reconciliation probe failed: %s", exc)
+            logger.debug("TROVE ingest cursor reconciliation probe failed: %s", exc)
             self._ingest_cursor_needs_reconcile = False
 
     def _stored_row_externalized_text_parts_for_pattern_matching(self, msg: Dict[str, Any]) -> list[str]:
@@ -4394,7 +4394,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         try:
             stored = self._store.get(int(store_id))
         except Exception:
-            logger.debug("LCM stored ignore-pattern lookup failed", exc_info=True)
+            logger.debug("TROVE stored ignore-pattern lookup failed", exc_info=True)
             return False
         return bool(stored and self._matches_ignore_message_patterns(stored, stored_row=True))
 
@@ -4451,7 +4451,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         content = normalize_content_value(msg.get("content")) or ""
         if role == "system":
             return (
-                "[Note: This conversation uses Lossless Context Management (LCM)." in content
+                "[Note: This conversation uses Lossless Context Management (TROVE)." in content
                 and "Earlier turns have been compacted into hierarchical summaries below." in content
             )
         if content.lstrip().startswith(_PRESERVED_OBJECTIVE_CONTEXT_PREFIX):
@@ -4531,7 +4531,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         )
         if recovered_identity_content == durable_content:
             return True
-        redaction_names = sorted(set(re.findall(r"\[LCM sensitive redaction: name=([^;\]]+)", durable_content)))
+        redaction_names = sorted(set(re.findall(r"\[TROVE sensitive redaction: name=([^;\]]+)", durable_content)))
         if not redaction_names or bool(getattr(self._config, "sensitive_patterns_enabled", False)):
             return False
         compat_config = copy.copy(self._config)
@@ -4985,7 +4985,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                         # substantive turns is at least visible to the operator.
                         self._ignore_pattern_dropped_count += 1
                         logger.info(
-                            "LCM ignore_message_patterns dropped %s message "
+                            "TROVE ignore_message_patterns dropped %s message "
                             "(not persisted; total dropped=%d): %r",
                             original_msg.get("role", "unknown"),
                             self._ignore_pattern_dropped_count,
@@ -4993,7 +4993,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                         )
                     else:
                         logger.debug(
-                            "LCM ignore_message_patterns dropped %s message: %r",
+                            "TROVE ignore_message_patterns dropped %s message: %r",
                             original_msg.get("role", "unknown"),
                             excerpt,
                         )
@@ -5073,7 +5073,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         self._compression_boundary_active_placeholder_digest_budget = {}
         self._compression_boundary_active_placeholder_digest_ordinals = {}
         self._compression_boundary_stored_placeholder_digest_counts = {}
-        logger.debug("Ingested %d messages into LCM store", len(messages_to_store_with_index))
+        logger.debug("Ingested %d messages into TROVE store", len(messages_to_store_with_index))
         self._clear_foreground_rebind_candidate_if_bound_session_confirmed()
         # Most ``protected_messages`` changes are storage-only: inline media and
         # data/base64 substrings stay provider-usable in active replay. The
@@ -5106,7 +5106,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             output_path = self._config.extraction_output_path
             if not output_path:
                 base = self._hermes_home or os.path.expanduser("~/.hermes")
-                output_path = os.path.join(base, "lcm-extractions")
+                output_path = os.path.join(base, "trove-extractions")
             extraction_model = self._config.extraction_model or self._config.summary_model
             extract_before_compaction(
                 serialized_messages=serialized,
@@ -5242,7 +5242,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         worker = threading.Thread(
             target=self._run_assertion_extraction_batch,
             args=(str(self._store.db_path), tuple(snapshots), model, timeout_seconds),
-            name="lcm-assertion-extraction",
+            name="trove-assertion-extraction",
             daemon=True,
         )
         try:
@@ -5438,12 +5438,12 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
 
         if dropped_assistant_messages:
             logger.info(
-                "LCM active-context cleanup: dropped %d assistant message(s) with no visible content",
+                "TROVE active-context cleanup: dropped %d assistant message(s) with no visible content",
                 dropped_assistant_messages,
             )
         if stripped_assistant_messages:
             logger.info(
-                "LCM active-context cleanup: stripped internal content from %d assistant message(s)",
+                "TROVE active-context cleanup: stripped internal content from %d assistant message(s)",
                 stripped_assistant_messages,
             )
 
@@ -5515,7 +5515,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 "output_text",
             }:
                 return False
-            if LCMEngine._structured_text_block_value(block) is None:
+            if TROVEEngine._structured_text_block_value(block) is None:
                 return False
         return True
 
@@ -5533,7 +5533,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 call_id = _tool_call_id(tool_call)
                 function = tool_call.get("function") or {}
                 tool_name = str(function.get("name") or "") if isinstance(function, dict) else ""
-                if call_id and tool_name in {"lcm_describe", "lcm_expand"}:
+                if call_id and tool_name in {"trove_describe", "trove_expand"}:
                     recovery_tool_call_ids.add(call_id)
         return recovery_tool_call_ids
 
@@ -5628,7 +5628,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
 
         if stubbed_count:
             logger.info(
-                "LCM active replay stubbing: replaced %d evictable tool result(s), saved about %d tokens",
+                "TROVE active replay stubbing: replaced %d evictable tool result(s), saved about %d tokens",
                 stubbed_count,
                 tokens_saved,
             )
@@ -5699,12 +5699,12 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
 
         if dropped_tool_results:
             logger.info(
-                "LCM tool-pair guardrail: dropped %d late/orphan/duplicate tool result(s)",
+                "TROVE tool-pair guardrail: dropped %d late/orphan/duplicate tool result(s)",
                 dropped_tool_results,
             )
         if inserted_stub_results:
             logger.info(
-                "LCM tool-pair guardrail: inserted %d missing tool-result stub(s)",
+                "TROVE tool-pair guardrail: inserted %d missing tool-result stub(s)",
                 inserted_stub_results,
             )
 
@@ -5791,7 +5791,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             condensed_any = True
 
             logger.info(
-                "LCM condensation: d%d × %d → d%d (L%d, %d→%d tokens)",
+                "TROVE condensation: d%d × %d → d%d (L%d, %d→%d tokens)",
                 depth, len(to_condense), depth + 1, level,
                 source_tokens, summary_tokens,
             )
@@ -5929,7 +5929,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 )
             except Exception as exc:
                 logger.warning(
-                    "LCM threshold full sweep condensation stopped after %d pass(es): %s",
+                    "TROVE threshold full sweep condensation stopped after %d pass(es): %s",
                     passes,
                     exc,
                 )
@@ -5943,12 +5943,12 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
     # -- Internal: context assembly ----------------------------------------
 
     @staticmethod
-    def _append_lcm_note_to_content(content: Any) -> Any:
+    def _append_trove_note_to_content(content: Any) -> Any:
         note = (
-            "\n\n[Note: This conversation uses Lossless Context Management (LCM). "
+            "\n\n[Note: This conversation uses Lossless Context Management (TROVE). "
             "Earlier turns have been compacted into hierarchical summaries below. "
-            "Use lcm_grep to search history, lcm_describe to inspect the DAG, "
-            "and lcm_expand to recover original details from any summary.]"
+            "Use trove_grep to search history, trove_describe to inspect the DAG, "
+            "and trove_expand to recover original details from any summary.]"
         )
         if isinstance(content, str):
             return content + note
@@ -6076,7 +6076,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         """Build the single proactive "relevant memories" block, or None.
 
         SPEC F: at assembly time embed the newest user message, run the
-        lcm_recall pipeline (k=6, moderate scope bias), drop hits already in the
+        trove_recall pipeline (k=6, moderate scope bias), drop hits already in the
         active context (summary-prefix node ids + current session) and hits
         below the relevance floor, then render ONE budget-capped block. Any
         failure or timeout injects nothing — assembly is never blocked. Wrapped
@@ -6106,7 +6106,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         provider_override = getattr(config, "proactive_recall_provider", "") or ""
 
         try:
-            raw = lcm_tools.lcm_recall(
+            raw = trove_tools.trove_recall(
                 {
                     "query": query,
                     "limit": recall_k,
@@ -6118,7 +6118,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             )
             payload = json.loads(raw)
         except Exception:  # noqa: BLE001 - never let recall break assembly
-            logger.debug("LCM proactive recall failed; injecting nothing", exc_info=True)
+            logger.debug("TROVE proactive recall failed; injecting nothing", exc_info=True)
             self._proactive_recall_skipped_count += 1
             return None
 
@@ -6193,7 +6193,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         system_msg: Optional[Dict[str, Any]],
         tail_messages: List[Dict[str, Any]],
         assembly_cap_override: Optional[int] = None,
-        include_lcm_note: bool = True,
+        include_trove_note: bool = True,
     ) -> List[Dict[str, Any]]:
         """Build the active context from DAG summaries + fresh tail.
 
@@ -6204,7 +6204,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         """
         result = []
 
-        # Leading anchor with optional LCM annotation. Only a true system prompt
+        # Leading anchor with optional TROVE annotation. Only a true system prompt
         # is a safe permanent anchor; gateway sessions can start directly with
         # user messages, and those user turns must remain compactable.
         leading_msg = system_msg.copy() if system_msg is not None else None
@@ -6212,9 +6212,9 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             if (
                 leading_msg.get("role") == "system"
                 and self.compression_count == 0
-                and include_lcm_note
+                and include_trove_note
             ):
-                leading_msg["content"] = self._append_lcm_note_to_content(
+                leading_msg["content"] = self._append_trove_note_to_content(
                     leading_msg.get("content", "")
                 )
             result.append(leading_msg)
@@ -6393,7 +6393,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             self._ingest_cursor = len(compressed)
             self._ingest_cursor_needs_reconcile = False
             logger.info(
-                "LCM assembly guardrail recovery: %d messages → %d (no new summary node)",
+                "TROVE assembly guardrail recovery: %d messages → %d (no new summary node)",
                 len(original_messages),
                 len(compressed),
             )
@@ -6414,7 +6414,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             self._last_overflow_recovery_failed = count_messages_tokens(compressed) > effective_cap
             if self._last_overflow_recovery_failed:
                 logger.warning(
-                    "LCM overflow recovery could not get under cap=%d; returning best-effort context (%d tokens)",
+                    "TROVE overflow recovery could not get under cap=%d; returning best-effort context (%d tokens)",
                     effective_cap,
                     count_messages_tokens(compressed),
                 )
@@ -6484,7 +6484,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                 caps.append(reserve_cap)
             else:
                 logger.warning(
-                    "LCM reserve_tokens_floor=%d disables reserve-based assembly cap because context_length=%d",
+                    "TROVE reserve_tokens_floor=%d disables reserve-based assembly cap because context_length=%d",
                     self._config.reserve_tokens_floor,
                     self.context_length,
                 )
@@ -6511,7 +6511,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
                     system_msg,
                     tail_messages[1:],
                     assembly_cap_override=assembly_cap_override,
-                    include_lcm_note=False,
+                    include_trove_note=False,
                 )
                 if any(
                     (msg.get("content") or "") == content
@@ -6523,7 +6523,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             system_msg,
             tail_messages,
             assembly_cap_override=assembly_cap_override,
-            include_lcm_note=False,
+            include_trove_note=False,
         )
         minimum_candidate_len = 1 if system_msg is not None else 0
         if len(candidate) == minimum_candidate_len and tail_messages:
@@ -6613,7 +6613,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
     def _is_context_summary_content(content: Any) -> bool:
         """Check whether message content is a synthetic context summary.
 
-        Only checks string content — LCM/ Hermes compression summaries are
+        Only checks string content — TROVE/ Hermes compression summaries are
         always stored as plain strings, never as structured multimodal parts.
         """
         if not isinstance(content, str):
@@ -6639,10 +6639,10 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
     # -- Rotate ------------------------------------------------------------
 
     def backup_dir(self) -> Path:
-        """Return the directory where LCM backup snapshots are written.
+        """Return the directory where TROVE backup snapshots are written.
 
-        Centralized so the timestamped ``/lcm backup`` slot and the rolling
-        ``/lcm rotate apply`` slot share the same directory derivation.
+        Centralized so the timestamped ``/trove backup`` slot and the rolling
+        ``/trove rotate apply`` slot share the same directory derivation.
         """
         db_path = Path(self._store.db_path)
         backup_root = (
@@ -6650,7 +6650,7 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
             if getattr(self, "_hermes_home", "")
             else db_path.parent
         )
-        return backup_root / "backups" / "lcm"
+        return backup_root / "backups" / "trove"
 
     def rotate_backup_path(self) -> Path:
         """Return the rolling rotate-latest SQLite backup path for this engine.
@@ -6672,8 +6672,8 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
         what would change. When ``apply=True``, advances the lifecycle frontier
         marker past the pre-tail raw messages so they are no longer replayed
         into active context on subsequent bootstrap. Raw messages remain in
-        the SQLite store and are recoverable through ``lcm_load_session`` and
-        ``lcm_expand`` — the lossless raw recovery contract is preserved.
+        the SQLite store and are recoverable through ``trove_load_session`` and
+        ``trove_expand`` — the lossless raw recovery contract is preserved.
 
         Refuses on sessions that are unbound, ignored, or stateless.
 
@@ -6702,9 +6702,9 @@ class LCMEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySessi
 
         - ``no_active_session``: engine has no bound session or conversation.
         - ``session_ignored``: foreground session matched
-          ``LCM_IGNORE_SESSION_PATTERNS``.
+          ``TROVE_IGNORE_SESSION_PATTERNS``.
         - ``session_stateless``: foreground session matched
-          ``LCM_STATELESS_SESSION_PATTERNS``.
+          ``TROVE_STATELESS_SESSION_PATTERNS``.
         - ``no_pre_tail_content``: no stored messages precede the resolved
           count/token-bounded fresh tail; nothing to rotate.
         - ``empty_tail``: tail query returned no rows despite a non-zero

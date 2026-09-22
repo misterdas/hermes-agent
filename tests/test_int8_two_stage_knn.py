@@ -11,9 +11,9 @@ from __future__ import annotations
 import sqlite3
 
 import numpy as np
-import hermes_lcm.vector_store as vector_store_module
+import hermes_trove.vector_store as vector_store_module
 
-from hermes_lcm.vector_store import (
+from hermes_trove.vector_store import (
     EmbeddingIdentity,
     VectorStore,
     _decode_int8_vector,
@@ -99,7 +99,7 @@ def test_sign_bits_match_numpy_packbits():
 
 
 def test_int8_identity_distinct_and_writes_binary(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _seed_messages(db_path, 3)
     vs = VectorStore(db_path)
     try:
@@ -113,17 +113,17 @@ def test_int8_identity_distinct_and_writes_binary(tmp_path):
             char_start=0, char_end=1, token_estimate=1, identity=f32,
         )
         # float32 writes NO binary row (byte-identical legacy behavior).
-        assert vs.connection.execute("SELECT COUNT(*) FROM lcm_chunk_binary").fetchone()[0] == 0
+        assert vs.connection.execute("SELECT COUNT(*) FROM trove_chunk_binary").fetchone()[0] == 0
 
         vs.register_profile(MODEL, PROVIDER, 4, dtype="int8", task="chunk")
         vs.record_chunk_embedding(
             "1:0", MODEL, [0.0, 1.0, 0.0, 0.0], store_id=1, chunk_index=0,
             char_start=0, char_end=1, token_estimate=1, identity=i8,
         )
-        assert vs.connection.execute("SELECT COUNT(*) FROM lcm_chunk_binary").fetchone()[0] == 1
+        assert vs.connection.execute("SELECT COUNT(*) FROM trove_chunk_binary").fetchone()[0] == 1
         # int8 vec blob is dim + 4 bytes, distinct layout from float32 (dim*4).
         blob = vs.connection.execute(
-            "SELECT vec FROM lcm_chunk_vectors WHERE identity_hash = ?",
+            "SELECT vec FROM trove_chunk_vectors WHERE identity_hash = ?",
             (i8.identity_hash,),
         ).fetchone()[0]
         assert len(blob) == 4 + 4
@@ -132,7 +132,7 @@ def test_int8_identity_distinct_and_writes_binary(tmp_path):
 
 
 def test_two_stage_reports_full_coverage(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _seed_messages(db_path, 3)
     vs = VectorStore(db_path, bounded_scan_rows=1)  # tiny bound: proves it is NOT bounded
     try:
@@ -207,7 +207,7 @@ def test_in_memory_two_stage_query_with_deadline_uses_current_connection():
 
 
 def test_chunk_deadline_bounds_a_synced_binary_prescreen(tmp_path, monkeypatch):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _seed_messages(db_path, 2)
     vs = VectorStore(db_path, bounded_scan_rows=1)
     try:
@@ -304,7 +304,7 @@ def test_stage1_hamming_recall_at_4k_on_synthetic_5k():
 
 def test_two_stage_recall_vs_exact_float_through_store(tmp_path):
     """End-to-end store two-stage top-k recovers the exact float top-k on planted data."""
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     n, dim, k = 2000, 256, 10
     _seed_messages(db_path, n)
     rng = np.random.default_rng(11)
@@ -341,7 +341,7 @@ def test_two_stage_recall_vs_exact_float_through_store(tmp_path):
 
 
 def test_store_dim_truncates_and_renormalizes(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _seed_messages(db_path, 2)
     vs = VectorStore(db_path)
     try:
@@ -354,7 +354,7 @@ def test_store_dim_truncates_and_renormalizes(tmp_path):
             char_start=0, char_end=1, token_estimate=1, identity=i8,
         )
         blob = vs.connection.execute(
-            "SELECT vec FROM lcm_chunk_vectors WHERE chunk_id = '0:0'"
+            "SELECT vec FROM trove_chunk_vectors WHERE chunk_id = '0:0'"
         ).fetchone()[0]
         assert len(blob) == store_dim + 4
         decoded = np.asarray(_decode_int8_vector(blob, store_dim))
@@ -365,10 +365,10 @@ def test_store_dim_truncates_and_renormalizes(tmp_path):
 
 
 def test_prescreen_multiplier_respected(tmp_path):
-    from hermes_lcm.config import LCMConfig
+    from hermes_trove.config import TROVEConfig
 
-    cfg = LCMConfig(knn_prescreen_multiplier=9)
-    db_path = tmp_path / "lcm.db"
+    cfg = TROVEConfig(knn_prescreen_multiplier=9)
+    db_path = tmp_path / "trove.db"
     _seed_messages(db_path, 1)
     vs = VectorStore(db_path, config=cfg)
     try:
@@ -381,11 +381,11 @@ def test_prescreen_multiplier_respected(tmp_path):
 
 
 def test_float32_prescreen_opt_in_writes_binary_and_stays_exact(tmp_path):
-    """A float32 identity with LCM_EMBEDDING_BINARY_PRESCREEN keeps float32 vec
+    """A float32 identity with TROVE_EMBEDDING_BINARY_PRESCREEN keeps float32 vec
     bytes but gains a prescreen, giving the two-stage path with exact rescore."""
-    from hermes_lcm.config import LCMConfig
+    from hermes_trove.config import TROVEConfig
 
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     n, dim, k = 1500, 128, 10
     _seed_messages(db_path, n)
     rng = np.random.default_rng(5)
@@ -397,7 +397,7 @@ def test_float32_prescreen_opt_in_writes_binary_and_stays_exact(tmp_path):
         vecs[j] = (base + 0.4 * u / np.linalg.norm(u))
         vecs[j] /= np.linalg.norm(vecs[j])
 
-    cfg = LCMConfig(embedding_binary_prescreen=True)
+    cfg = TROVEConfig(embedding_binary_prescreen=True)
     vs = VectorStore(db_path, config=cfg)
     try:
         # Distinct identity (revision) so prescreen rows never mix with a legacy
@@ -413,10 +413,10 @@ def test_float32_prescreen_opt_in_writes_binary_and_stays_exact(tmp_path):
             )
         # float32 layout preserved (dim*4 bytes), and a binary row was written.
         blob = vs.connection.execute(
-            "SELECT vec FROM lcm_chunk_vectors WHERE chunk_id='0:0'"
+            "SELECT vec FROM trove_chunk_vectors WHERE chunk_id='0:0'"
         ).fetchone()[0]
         assert len(blob) == dim * 4
-        assert vs.connection.execute("SELECT COUNT(*) FROM lcm_chunk_binary").fetchone()[0] == n
+        assert vs.connection.execute("SELECT COUNT(*) FROM trove_chunk_binary").fetchone()[0] == n
 
         result = vs.knn_chunks(base.tolist(), k=k, model=MODEL, provider=PROVIDER)
         assert result.coverage == "full_approx"

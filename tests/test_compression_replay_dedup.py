@@ -9,25 +9,25 @@ Expected: exactly the NEW rows are stored; the REPLAY rows map to their
 existing store_ids and appear in the store exactly once each.
 
 Harness note: the engine has no host-facing compress() beyond
-LCMEngine.compress (CompactionMixin), and the compression boundary in the
+TROVEEngine.compress (CompactionMixin), and the compression boundary in the
 same session is driven by on_session_start(boundary_reason="compression").
-We mirror tests/test_lcm_engine.py's ``engine`` fixture (direct _session_id,
+We mirror tests/test_trove_engine.py's ``engine`` fixture (direct _session_id,
 low leaf threshold) and force compression so no LLM provider is required.
 """
 
 import pytest
 
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.engine import LCMEngine
+from hermes_trove.config import TROVEConfig
+from hermes_trove.engine import TROVEEngine
 
 
 @pytest.fixture
 def env(tmp_path):
-    config = LCMConfig()
+    config = TROVEConfig()
     config.fresh_tail_count = 4  # small for testing
     config.leaf_chunk_tokens = 100  # low threshold for testing
-    config.database_path = str(tmp_path / "lcm_test.db")
-    e = LCMEngine(config=config)
+    config.database_path = str(tmp_path / "trove_test.db")
+    e = TROVEEngine(config=config)
     e._session_id = "dedup-session"
     e.context_length = 200000
     e.threshold_tokens = int(200000 * config.context_threshold)

@@ -1,4 +1,4 @@
-"""Tests for the lossless-claw/OpenClaw LCM importer."""
+"""Tests for the lossless-claw/OpenClaw TROVE importer."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from hermes_lcm.dag import SummaryDAG
-from hermes_lcm.store import MessageStore
+from hermes_trove.dag import SummaryDAG
+from hermes_trove.store import MessageStore
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -263,14 +263,14 @@ def add_partially_unresolved_parent_summary(db_path: Path) -> None:
 def test_import_preserves_concrete_session_ids_when_session_key_is_shared(tmp_path: Path):
     importer = load_importer_module()
     source_db = tmp_path / "lossless.db"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     create_lossless_source(source_db)
     add_shared_session_key_conversation(source_db)
 
     result = importer.import_lossless_claw(
         source_db=source_db,
         target_db=target_db,
-        namespace="openclaw-lcm",
+        namespace="openclaw-trove",
         agent="sammy",
         import_id="fixture-import",
         apply=True,
@@ -287,22 +287,22 @@ def test_import_preserves_concrete_session_ids_when_session_key_is_shared(tmp_pa
     db.close()
 
     assert imported_sessions == [
-        ("openclaw-lcm:agent:sammy:runtime-session-1",),
-        ("openclaw-lcm:agent:sammy:runtime-session-2",),
+        ("openclaw-trove:agent:sammy:runtime-session-1",),
+        ("openclaw-trove:agent:sammy:runtime-session-2",),
     ]
 
 
 def test_import_can_group_by_session_key_when_explicitly_requested(tmp_path: Path):
     importer = load_importer_module()
     source_db = tmp_path / "lossless.db"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     create_lossless_source(source_db)
     add_shared_session_key_conversation(source_db)
 
     result = importer.import_lossless_claw(
         source_db=source_db,
         target_db=target_db,
-        namespace="openclaw-lcm",
+        namespace="openclaw-trove",
         agent="sammy",
         import_id="fixture-import",
         session_identity="session_key",
@@ -315,20 +315,20 @@ def test_import_can_group_by_session_key_when_explicitly_requested(tmp_path: Pat
     db.close()
 
     assert imported_sessions == [
-        ("openclaw-lcm:agent:sammy:telegram:direct:503782402:conversation:88",),
+        ("openclaw-trove:agent:sammy:telegram:direct:503782402:conversation:88",),
     ]
 
 
 def test_dry_run_does_not_create_target_db(tmp_path: Path):
     importer = load_importer_module()
     source_db = tmp_path / "lossless.db"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     create_lossless_source(source_db)
 
     result = importer.import_lossless_claw(
         source_db=source_db,
         target_db=target_db,
-        namespace="openclaw-lcm",
+        namespace="openclaw-trove",
         agent="sammy",
         import_id="fixture-import",
         apply=False,
@@ -346,13 +346,13 @@ def test_dry_run_does_not_create_target_db(tmp_path: Path):
 def test_dry_run_handles_uri_reserved_source_db_path(tmp_path: Path):
     importer = load_importer_module()
     source_db = tmp_path / "lossless#archive?.db"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     create_lossless_source(source_db)
 
     result = importer.import_lossless_claw(
         source_db=source_db,
         target_db=target_db,
-        namespace="openclaw-lcm",
+        namespace="openclaw-trove",
         agent="sammy",
         import_id="fixture-import",
         apply=False,
@@ -367,14 +367,14 @@ def test_dry_run_handles_uri_reserved_source_db_path(tmp_path: Path):
 def test_apply_imports_lossless_summaries_as_summary_nodes(tmp_path: Path):
     importer = load_importer_module()
     source_db = tmp_path / "lossless.db"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     create_lossless_source(source_db)
     add_lossless_summaries(source_db)
 
     result = importer.import_lossless_claw(
         source_db=source_db,
         target_db=target_db,
-        namespace="openclaw-lcm",
+        namespace="openclaw-trove",
         agent="sammy",
         import_id="fixture-import",
         include_summaries=True,
@@ -389,7 +389,7 @@ def test_apply_imports_lossless_summaries_as_summary_nodes(tmp_path: Path):
         int(row["source_message_id"]): int(row["target_store_id"])
         for row in conn.execute(
             """SELECT source_message_id, target_store_id
-               FROM lcm_imported_messages
+               FROM trove_imported_messages
                WHERE import_id = 'fixture-import'"""
         )
     }
@@ -442,7 +442,7 @@ def test_apply_imports_lossless_summaries_as_summary_nodes(tmp_path: Path):
 def test_apply_summary_import_is_idempotent_for_same_import_id(tmp_path: Path):
     importer = load_importer_module()
     source_db = tmp_path / "lossless.db"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     create_lossless_source(source_db)
     add_lossless_summaries(source_db)
 
@@ -468,14 +468,14 @@ def test_apply_summary_import_is_idempotent_for_same_import_id(tmp_path: Path):
     assert second.summaries_skipped_existing == 2
     conn = sqlite3.connect(target_db)
     assert conn.execute("SELECT COUNT(*) FROM summary_nodes").fetchone()[0] == 2
-    assert conn.execute("SELECT COUNT(*) FROM lcm_imported_summaries").fetchone()[0] == 2
+    assert conn.execute("SELECT COUNT(*) FROM trove_imported_summaries").fetchone()[0] == 2
     conn.close()
 
 
 def test_summary_leaf_with_only_skipped_empty_messages_is_skipped(tmp_path: Path):
     importer = load_importer_module()
     source_db = tmp_path / "lossless.db"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     create_lossless_source(source_db)
     add_unresolved_leaf_summary(source_db)
 
@@ -500,7 +500,7 @@ def test_summary_leaf_with_only_skipped_empty_messages_is_skipped(tmp_path: Path
 def test_summary_leaf_with_partially_unresolved_messages_is_skipped(tmp_path: Path):
     importer = load_importer_module()
     source_db = tmp_path / "lossless.db"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     create_lossless_source(source_db)
     add_partially_unresolved_leaf_summary(source_db)
 
@@ -518,14 +518,14 @@ def test_summary_leaf_with_partially_unresolved_messages_is_skipped(tmp_path: Pa
     assert result.summaries_skipped_unresolved == 1
     conn = sqlite3.connect(target_db)
     assert conn.execute("SELECT COUNT(*) FROM summary_nodes").fetchone()[0] == 0
-    assert conn.execute("SELECT COUNT(*) FROM lcm_imported_summaries").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM trove_imported_summaries").fetchone()[0] == 0
     conn.close()
 
 
 def test_summary_condensed_with_partially_unresolved_parents_is_skipped(tmp_path: Path):
     importer = load_importer_module()
     source_db = tmp_path / "lossless.db"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     create_lossless_source(source_db)
     add_partially_unresolved_parent_summary(source_db)
 
@@ -546,14 +546,14 @@ def test_summary_condensed_with_partially_unresolved_parents_is_skipped(tmp_path
         "SELECT depth, summary, source_type FROM summary_nodes ORDER BY node_id"
     ).fetchall()
     assert rows == [(0, "leaf parent can import", "messages")]
-    assert conn.execute("SELECT COUNT(*) FROM lcm_imported_summaries").fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM trove_imported_summaries").fetchone()[0] == 1
     conn.close()
 
 
 def test_dry_run_include_summaries_does_not_create_target_db(tmp_path: Path):
     importer = load_importer_module()
     source_db = tmp_path / "lossless.db"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     create_lossless_source(source_db)
     add_lossless_summaries(source_db)
 
@@ -573,7 +573,7 @@ def test_dry_run_include_summaries_does_not_create_target_db(tmp_path: Path):
 def test_apply_import_routes_oversized_payloads_through_ingest_protection(tmp_path: Path, monkeypatch):
     importer = load_importer_module()
     source_db = tmp_path / "lossless.db"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     externalized_dir = tmp_path / "externalized"
     create_lossless_source(source_db)
 
@@ -583,14 +583,14 @@ def test_apply_import_routes_oversized_payloads_through_ingest_protection(tmp_pa
     conn.commit()
     conn.close()
 
-    monkeypatch.setenv("LCM_LARGE_OUTPUT_EXTERNALIZATION_ENABLED", "1")
-    monkeypatch.setenv("LCM_LARGE_OUTPUT_EXTERNALIZATION_THRESHOLD_CHARS", "200")
-    monkeypatch.setenv("LCM_LARGE_OUTPUT_EXTERNALIZATION_PATH", str(externalized_dir))
+    monkeypatch.setenv("TROVE_LARGE_OUTPUT_EXTERNALIZATION_ENABLED", "1")
+    monkeypatch.setenv("TROVE_LARGE_OUTPUT_EXTERNALIZATION_THRESHOLD_CHARS", "200")
+    monkeypatch.setenv("TROVE_LARGE_OUTPUT_EXTERNALIZATION_PATH", str(externalized_dir))
 
     result = importer.import_lossless_claw(
         source_db=source_db,
         target_db=target_db,
-        namespace="openclaw-lcm",
+        namespace="openclaw-trove",
         agent="sammy",
         import_id="fixture-import",
         apply=True,
@@ -609,14 +609,14 @@ def test_apply_import_routes_oversized_payloads_through_ingest_protection(tmp_pa
     assert len(payload_files) == 1
     payload = json.loads(payload_files[0].read_text())
     assert payload["kind"] == "raw_payload"
-    assert payload["session_id"] == "openclaw-lcm:agent:sammy:runtime-session-1"
+    assert payload["session_id"] == "openclaw-trove:agent:sammy:runtime-session-1"
     assert payload["content"] == large_content
 
 
 def test_apply_imports_messages_with_provenance_backup_and_search(tmp_path: Path):
     importer = load_importer_module()
     source_db = tmp_path / "lossless.db"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     create_lossless_source(source_db)
     existing_store = MessageStore(target_db)  # existing DB should be backed up before import writes
     existing_store.append(
@@ -629,7 +629,7 @@ def test_apply_imports_messages_with_provenance_backup_and_search(tmp_path: Path
     result = importer.import_lossless_claw(
         source_db=source_db,
         target_db=target_db,
-        namespace="openclaw-lcm",
+        namespace="openclaw-trove",
         agent="sammy",
         import_id="fixture-import",
         apply=True,
@@ -653,7 +653,7 @@ def test_apply_imports_messages_with_provenance_backup_and_search(tmp_path: Path
     ).fetchall()
     conn.close()
 
-    expected_session = "openclaw-lcm:agent:sammy:runtime-session-1"
+    expected_session = "openclaw-trove:agent:sammy:runtime-session-1"
     assert rows[0][0] == expected_session
     assert rows[0][1] == expected_session
     assert rows[0][2] == "user"
@@ -685,7 +685,7 @@ def test_apply_backs_up_uri_reserved_target_db_path(tmp_path: Path):
     result = importer.import_lossless_claw(
         source_db=source_db,
         target_db=target_db,
-        namespace="openclaw-lcm",
+        namespace="openclaw-trove",
         agent="sammy",
         import_id="fixture-import",
         apply=True,
@@ -706,7 +706,7 @@ def test_apply_backs_up_uri_reserved_target_db_path(tmp_path: Path):
 def test_apply_is_idempotent_for_same_import_id(tmp_path: Path):
     importer = load_importer_module()
     source_db = tmp_path / "lossless.db"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     create_lossless_source(source_db)
 
     first = importer.import_lossless_claw(
@@ -731,14 +731,14 @@ def test_apply_is_idempotent_for_same_import_id(tmp_path: Path):
 
     conn = sqlite3.connect(target_db)
     assert conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 2
-    assert conn.execute("SELECT COUNT(*) FROM lcm_imported_messages").fetchone()[0] == 2
+    assert conn.execute("SELECT COUNT(*) FROM trove_imported_messages").fetchone()[0] == 2
     conn.close()
 
 
 def test_invalid_source_schema_reports_required_columns(tmp_path: Path):
     importer = load_importer_module()
     source_db = tmp_path / "invalid-lossless.db"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     conn = sqlite3.connect(source_db)
     conn.execute("CREATE TABLE conversations (conversation_id INTEGER PRIMARY KEY)")
     conn.execute("CREATE TABLE messages (message_id INTEGER PRIMARY KEY, conversation_id INTEGER)")
@@ -757,7 +757,7 @@ def test_invalid_source_schema_reports_required_columns(tmp_path: Path):
 def test_apply_maps_tool_metadata_from_message_parts(tmp_path: Path):
     importer = load_importer_module()
     source_db = tmp_path / "lossless.db"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     create_lossless_source(source_db)
     conn = sqlite3.connect(source_db)
     conn.execute(
@@ -920,7 +920,7 @@ def jsonl_message(
 def test_jsonl_import_dry_run_reports_without_creating_target(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "sessions" / "session-a.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -954,7 +954,7 @@ def test_jsonl_import_dry_run_reports_without_creating_target(tmp_path: Path):
 def test_jsonl_import_apply_preserves_fields_and_search(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "session-a.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     tool_calls = [
         {
             "id": "call_123",
@@ -1006,7 +1006,7 @@ def test_jsonl_import_apply_preserves_fields_and_search(tmp_path: Path):
     ).fetchall()
     import_rows = conn.execute(
         """SELECT source_message_key, source_session
-           FROM lcm_imported_messages
+           FROM trove_imported_messages
            WHERE import_id = 'jsonl-import'
            ORDER BY target_store_id"""
     ).fetchall()
@@ -1027,7 +1027,7 @@ def test_jsonl_import_apply_preserves_fields_and_search(tmp_path: Path):
 def test_jsonl_import_is_idempotent_for_same_import_id(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "session-a.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [jsonl_header("session-a"), jsonl_message("m1", "user", "hello jsonl")],
@@ -1046,14 +1046,14 @@ def test_jsonl_import_is_idempotent_for_same_import_id(tmp_path: Path):
     assert second.backup_path is None
     conn = sqlite3.connect(target_db)
     assert conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 1
-    assert conn.execute("SELECT COUNT(*) FROM lcm_imported_messages").fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM trove_imported_messages").fetchone()[0] == 1
     conn.close()
 
 
 def test_jsonl_import_reports_invalid_and_empty_rows_without_aborting(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "mixed.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1083,7 +1083,7 @@ def test_jsonl_import_reports_invalid_and_empty_rows_without_aborting(tmp_path: 
 def test_jsonl_import_reports_non_string_type_rows_without_aborting(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "non-string-type.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1113,7 +1113,7 @@ def test_jsonl_import_reports_non_string_type_rows_without_aborting(tmp_path: Pa
 def test_jsonl_import_wrapped_metadata_message_does_not_drive_leaf_pruning(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "wrapped-metadata-tail.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1142,7 +1142,7 @@ def test_jsonl_import_wrapped_metadata_message_does_not_drive_leaf_pruning(tmp_p
 def test_jsonl_import_untyped_envelope_metadata_without_content_does_not_drive_leaf_pruning(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "untyped-envelope-metadata-tail.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1176,7 +1176,7 @@ def test_jsonl_import_untyped_envelope_metadata_without_content_does_not_drive_l
 def test_jsonl_import_maps_openclaw_tool_call_and_tool_result_entries(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "session-a.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1237,7 +1237,7 @@ def test_jsonl_import_maps_openclaw_tool_call_and_tool_result_entries(tmp_path: 
 def test_jsonl_import_prefers_responses_function_call_call_id_over_item_id(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "responses-function-call.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1295,7 +1295,7 @@ def test_jsonl_import_prefers_responses_function_call_call_id_over_item_id(tmp_p
 def test_jsonl_import_rejects_nested_responses_function_call_without_call_id(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "responses-function-call-missing-call-id.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1341,7 +1341,7 @@ def test_jsonl_import_rejects_responses_function_object_without_call_id(
 ):
     importer = load_importer_module()
     session_file = tmp_path / f"responses-function-object-missing-call-id-{row_shape}.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     function_call = {
         "type": "function_call",
         "id": "fc_1",
@@ -1383,7 +1383,7 @@ def test_jsonl_import_rejects_malformed_message_tool_calls_array(
 ):
     importer = load_importer_module()
     session_file = tmp_path / f"malformed-{tool_calls_key}.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1417,7 +1417,7 @@ def test_jsonl_import_rejects_malformed_message_tool_calls_array(
 def test_jsonl_import_reads_tool_calls_when_both_array_spellings_are_present(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "both-tool-call-array-spellings.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1459,7 +1459,7 @@ def test_jsonl_import_reads_tool_calls_when_both_array_spellings_are_present(tmp
 def test_jsonl_import_deduplicates_same_tool_call_from_both_array_spellings(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "duplicate-tool-call-array-spellings.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     call = {"id": "call_1", "type": "function", "function": {"name": "lookup", "arguments": "{}"}}
     write_jsonl_session(
         session_file,
@@ -1493,7 +1493,7 @@ def test_jsonl_import_deduplicates_same_tool_call_from_both_array_spellings(tmp_
 def test_jsonl_import_rejects_malformed_tool_calls_when_both_array_spellings_are_present(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "both-tool-call-array-spellings-malformed.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1531,7 +1531,7 @@ def test_jsonl_import_rejects_non_string_message_tool_call_type_and_skips_output
 ):
     importer = load_importer_module()
     session_file = tmp_path / "non-string-tool-call-type.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1574,7 +1574,7 @@ def test_jsonl_import_rejects_non_string_message_tool_call_type_and_skips_output
 def test_jsonl_import_rejects_non_list_message_tool_calls(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "non-list-tool-calls.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1614,7 +1614,7 @@ def test_jsonl_import_rejects_non_list_message_tool_calls(tmp_path: Path):
 def test_jsonl_import_maps_native_responses_function_call_and_output_items(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "responses-native-items.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1644,7 +1644,7 @@ def test_jsonl_import_maps_native_responses_function_call_and_output_items(tmp_p
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -1668,7 +1668,7 @@ def test_jsonl_import_maps_native_responses_function_call_and_output_items(tmp_p
 def test_jsonl_import_maps_bare_untyped_responses_function_call_and_output_items(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "responses-bare-items.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1707,7 +1707,7 @@ def test_jsonl_import_maps_bare_untyped_responses_function_call_and_output_items
 def test_jsonl_import_maps_bare_content_responses_function_output_item(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "responses-bare-content-output.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1733,7 +1733,7 @@ def test_jsonl_import_maps_bare_content_responses_function_output_item(tmp_path:
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -1752,7 +1752,7 @@ def test_jsonl_import_maps_bare_content_responses_function_output_item(tmp_path:
 def test_jsonl_import_maps_typed_wrapped_responses_function_call_and_output_items(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "wrapped-responses.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1789,7 +1789,7 @@ def test_jsonl_import_maps_typed_wrapped_responses_function_call_and_output_item
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -1808,7 +1808,7 @@ def test_jsonl_import_maps_typed_wrapped_responses_function_call_and_output_item
 def test_jsonl_import_maps_untyped_wrapped_responses_function_call_and_output_items(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "untyped-wrapped-responses.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1843,7 +1843,7 @@ def test_jsonl_import_maps_untyped_wrapped_responses_function_call_and_output_it
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -1861,7 +1861,7 @@ def test_jsonl_import_maps_untyped_wrapped_responses_function_call_and_output_it
 def test_jsonl_import_preserves_untyped_top_level_message_with_nested_metadata(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "untyped-top-level-with-message-metadata.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1897,7 +1897,7 @@ def test_jsonl_import_preserves_untyped_top_level_message_with_nested_metadata(t
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT role, content FROM messages ORDER BY store_id").fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -1912,7 +1912,7 @@ def test_jsonl_import_preserves_typed_top_level_message_with_nested_metadata(
 ):
     importer = load_importer_module()
     session_file = tmp_path / f"{wrapper_type}-top-level-with-message-metadata.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -1950,7 +1950,7 @@ def test_jsonl_import_preserves_typed_top_level_message_with_nested_metadata(
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT role, content FROM messages ORDER BY store_id").fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -1965,7 +1965,7 @@ def test_jsonl_import_preserves_typed_top_level_message_when_nested_role_metadat
 ):
     importer = load_importer_module()
     session_file = tmp_path / f"{wrapper_type}-top-level-with-role-metadata.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -2002,7 +2002,7 @@ def test_jsonl_import_preserves_typed_top_level_message_when_nested_role_metadat
 def test_jsonl_import_does_not_alias_nested_metadata_id_over_top_level_message(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "typed-top-level-metadata-id-collision.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -2036,7 +2036,7 @@ def test_jsonl_import_does_not_alias_nested_metadata_id_over_top_level_message(t
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT role, content FROM messages ORDER BY store_id").fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -2051,7 +2051,7 @@ def test_jsonl_import_empty_tool_calls_metadata_does_not_prune_real_leaf(
 ):
     importer = load_importer_module()
     session_file = tmp_path / f"empty-{tool_calls_key}-metadata-branch.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -2087,7 +2087,7 @@ def test_jsonl_import_empty_tool_calls_metadata_does_not_prune_real_leaf(
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT role, content FROM messages ORDER BY store_id").fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -2098,7 +2098,7 @@ def test_jsonl_import_empty_tool_calls_metadata_does_not_prune_real_leaf(
 def test_jsonl_import_prunes_untyped_wrapped_native_call_branch_by_nested_parent(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "untyped-wrapped-native-call-branch.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -2142,7 +2142,7 @@ def test_jsonl_import_prunes_untyped_wrapped_native_call_branch_by_nested_parent
         "SELECT role, content, tool_calls FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -2162,7 +2162,7 @@ def test_jsonl_import_prunes_untyped_wrapped_native_call_branch_by_nested_parent
 def test_jsonl_import_rejects_non_string_nested_message_type(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "nested-nonstring.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -2194,7 +2194,7 @@ def test_jsonl_import_imports_responses_function_output_from_later_catchup(
     importer = load_importer_module()
     first_file = tmp_path / "responses-catchup-1.jsonl"
     second_file = tmp_path / "responses-catchup-2.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         first_file,
         [
@@ -2238,7 +2238,7 @@ def test_jsonl_import_imports_responses_function_output_from_later_catchup(
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -2264,7 +2264,7 @@ def test_jsonl_import_resolves_responses_output_before_call_file_in_same_run(
     importer = load_importer_module()
     output_file = tmp_path / "a-output.jsonl"
     call_file = tmp_path / "b-call.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         output_file,
         [{"type": "function_call_output", "call_id": "call_1", "output": "result"}],
@@ -2308,7 +2308,7 @@ def test_jsonl_import_resolves_responses_output_before_call_file_in_same_run(
     ).fetchall()
     import_rows = conn.execute(
         """SELECT source_session, source_message_key
-           FROM lcm_imported_messages
+           FROM trove_imported_messages
            ORDER BY source_message_key"""
     ).fetchall()
     conn.close()
@@ -2335,7 +2335,7 @@ def test_jsonl_import_idless_native_function_output_key_survives_line_shift(
 ):
     importer = load_importer_module()
     session_file = tmp_path / "responses-native-line-shift.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -2386,7 +2386,7 @@ def test_jsonl_import_idless_native_function_output_key_survives_line_shift(
     assert second.skipped_existing == 2
     conn = sqlite3.connect(target_db)
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     message_count = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
     conn.close()
@@ -2409,7 +2409,7 @@ def test_jsonl_import_idless_responses_function_call_key_survives_line_shift(
 ):
     importer = load_importer_module()
     session_file = tmp_path / "responses-idless-call-line-shift.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -2451,7 +2451,7 @@ def test_jsonl_import_idless_responses_function_call_key_survives_line_shift(
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -2482,7 +2482,7 @@ def test_jsonl_import_idless_responses_function_call_skips_legacy_line_key_catch
 ):
     importer = load_importer_module()
     session_file = tmp_path / "responses-idless-call-legacy-catchup.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     import_id = "responses-idless-call-legacy-catchup"
     write_jsonl_session(
         session_file,
@@ -2503,13 +2503,13 @@ def test_jsonl_import_idless_responses_function_call_skips_legacy_line_key_catch
     target_store_ids = [
         store_id
         for (store_id,) in conn.execute(
-            "SELECT target_store_id FROM lcm_imported_messages ORDER BY target_store_id"
+            "SELECT target_store_id FROM trove_imported_messages ORDER BY target_store_id"
         ).fetchall()
     ]
     for target_store_id, row_id in zip(target_store_ids, ["line:2", "line:3"], strict=True):
         source_message_key = jsonl_key("s", row_id)
         conn.execute(
-            """UPDATE lcm_imported_messages
+            """UPDATE trove_imported_messages
                SET source_message_id = ?, source_message_key = ?
                WHERE import_id = ? AND target_store_id = ?""",
             (
@@ -2538,7 +2538,7 @@ def test_jsonl_import_idless_responses_function_call_skips_legacy_line_key_catch
     conn = sqlite3.connect(target_db)
     message_count = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
     assert message_count == 2
@@ -2550,7 +2550,7 @@ def test_jsonl_import_idless_responses_function_call_skips_legacy_grouped_line_k
 ):
     importer = load_importer_module()
     session_file = tmp_path / "responses-idless-grouped-call-legacy-catchup.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     import_id = "responses-idless-grouped-call-legacy-catchup"
     write_jsonl_session(
         session_file,
@@ -2575,11 +2575,11 @@ def test_jsonl_import_idless_responses_function_call_skips_legacy_grouped_line_k
     legacy_grouped_key = jsonl_key("s", legacy_grouped_row_id)
     conn = sqlite3.connect(target_db)
     target_store_id = conn.execute(
-        "SELECT target_store_id FROM lcm_imported_messages WHERE import_id = ?",
+        "SELECT target_store_id FROM trove_imported_messages WHERE import_id = ?",
         (import_id,),
     ).fetchone()[0]
     conn.execute(
-        """UPDATE lcm_imported_messages
+        """UPDATE trove_imported_messages
            SET source_message_id = ?, source_message_key = ?
            WHERE import_id = ? AND target_store_id = ?""",
         (
@@ -2610,7 +2610,7 @@ def test_jsonl_import_idless_responses_function_call_skips_legacy_grouped_line_k
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT role, content, tool_calls FROM messages ORDER BY store_id").fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -2628,7 +2628,7 @@ def test_jsonl_import_appended_responses_function_call_does_not_reimport_existin
 ):
     importer = load_importer_module()
     session_file = tmp_path / "responses-native-appended-sibling.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     import_id = "responses-native-appended-sibling"
     first_rows = [
         {"type": "session", "id": "s"},
@@ -2667,7 +2667,7 @@ def test_jsonl_import_appended_responses_function_call_does_not_reimport_existin
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT role, content, tool_calls FROM messages ORDER BY store_id").fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -2687,7 +2687,7 @@ def test_jsonl_import_malformed_row_does_not_split_existing_responses_group_on_c
 ):
     importer = load_importer_module()
     session_file = tmp_path / "responses-native-malformed-row-catchup.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     import_id = "responses-native-malformed-row-catchup"
     first_rows = [
         {"type": "session", "id": "s"},
@@ -2730,7 +2730,7 @@ def test_jsonl_import_malformed_row_does_not_split_existing_responses_group_on_c
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT role, content, tool_calls FROM messages ORDER BY store_id").fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -2748,7 +2748,7 @@ def test_jsonl_import_malformed_json_object_does_not_split_existing_responses_gr
 ):
     importer = load_importer_module()
     session_file = tmp_path / "responses-native-malformed-object-catchup.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     import_id = "responses-native-malformed-object-catchup"
     first_rows = [
         {"type": "session", "id": "s"},
@@ -2794,7 +2794,7 @@ def test_jsonl_import_malformed_json_object_does_not_split_existing_responses_gr
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT role, content, tool_calls FROM messages ORDER BY store_id").fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -2812,7 +2812,7 @@ def test_jsonl_import_nested_non_string_type_does_not_split_existing_responses_g
 ):
     importer = load_importer_module()
     session_file = tmp_path / "responses-native-nested-nonstring-type-catchup.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     import_id = "responses-native-nested-nonstring-type-catchup"
     first_rows = [
         {"type": "session", "id": "s"},
@@ -2858,7 +2858,7 @@ def test_jsonl_import_nested_non_string_type_does_not_split_existing_responses_g
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT role, content, tool_calls FROM messages ORDER BY store_id").fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -2876,7 +2876,7 @@ def test_jsonl_import_unsupported_metadata_does_not_split_existing_responses_gro
 ):
     importer = load_importer_module()
     session_file = tmp_path / "responses-native-unsupported-metadata-catchup.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     import_id = "responses-native-unsupported-metadata-catchup"
     first_rows = [
         {"type": "session", "id": "s"},
@@ -2933,7 +2933,7 @@ def test_jsonl_import_unsupported_metadata_does_not_split_existing_responses_gro
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT role, content, tool_calls FROM messages ORDER BY store_id").fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -2955,7 +2955,7 @@ def test_jsonl_import_wrapped_metadata_does_not_split_existing_responses_group_o
 ):
     importer = load_importer_module()
     session_file = tmp_path / "responses-native-wrapped-metadata-catchup.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     import_id = "responses-native-wrapped-metadata-catchup"
     first_rows = [
         {"type": "session", "id": "s"},
@@ -3013,7 +3013,7 @@ def test_jsonl_import_wrapped_metadata_does_not_split_existing_responses_group_o
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT role, content, tool_calls FROM messages ORDER BY store_id").fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -3033,7 +3033,7 @@ def test_jsonl_import_wrapped_metadata_does_not_split_existing_responses_group_o
 def test_jsonl_import_groups_consecutive_native_responses_function_calls(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "responses-native-parallel.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -3070,7 +3070,7 @@ def test_jsonl_import_groups_consecutive_native_responses_function_calls(tmp_pat
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -3110,7 +3110,7 @@ def test_jsonl_import_groups_consecutive_native_responses_function_calls(tmp_pat
 def test_jsonl_import_keeps_parent_linked_parallel_native_function_calls(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "responses-native-parent-parallel.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -3150,7 +3150,7 @@ def test_jsonl_import_keeps_parent_linked_parallel_native_function_calls(tmp_pat
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -3192,7 +3192,7 @@ def test_jsonl_import_keeps_parent_linked_parallel_native_function_calls(tmp_pat
 def test_jsonl_import_keeps_responses_siblings_with_alias_equivalent_parents(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "responses-native-alias-parent-parallel.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -3235,7 +3235,7 @@ def test_jsonl_import_keeps_responses_siblings_with_alias_equivalent_parents(tmp
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -3264,7 +3264,7 @@ def test_jsonl_import_splits_pending_responses_function_calls_on_parent_change(
     importer = load_importer_module()
     test_id = f"responses-parent-split-{function_call_shape}"
     session_file = tmp_path / f"{test_id}.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
 
     def function_call_row(parent_id: str, call_id: str, name: str) -> dict[str, object]:
         message = {
@@ -3351,7 +3351,7 @@ def test_jsonl_import_metadata_wrappers_do_not_split_responses_group_on_catchup(
 ):
     importer = load_importer_module()
     session_file = tmp_path / "responses-metadata-catchup.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     import_id = f"responses-metadata-catchup-{wrapper_type or 'untyped'}-{len(metadata_message)}"
     initial_rows: list[dict[str, object]] = [
         {"type": "session", "id": "s"},
@@ -3404,7 +3404,7 @@ def test_jsonl_import_metadata_wrappers_do_not_split_responses_group_on_catchup(
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -3429,7 +3429,7 @@ def test_jsonl_import_metadata_parented_to_previous_function_call_does_not_split
 ):
     importer = load_importer_module()
     session_file = tmp_path / "responses-metadata-previous-call-catchup.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     initial_rows: list[dict[str, object]] = [
         {"type": "session", "id": "s"},
         {"type": "message", "id": "root", "message": {"role": "user", "content": "root"}},
@@ -3487,7 +3487,7 @@ def test_jsonl_import_metadata_parented_to_previous_function_call_does_not_split
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -3512,7 +3512,7 @@ def test_jsonl_import_bare_metadata_parented_to_call_id_does_not_split_group_on_
 ):
     importer = load_importer_module()
     session_file = tmp_path / "responses-bare-metadata-call-id-catchup.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     initial_rows: list[dict[str, object]] = [
         {"type": "session", "id": "s"},
         {"type": "message", "id": "root", "message": {"role": "user", "content": "root"}},
@@ -3556,7 +3556,7 @@ def test_jsonl_import_bare_metadata_parented_to_call_id_does_not_split_group_on_
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -3593,7 +3593,7 @@ def test_jsonl_import_keeps_parent_linked_native_function_call_siblings_across_r
 ):
     importer = load_importer_module()
     session_file = tmp_path / "responses-native-parent-parallel-reasoning.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -3673,7 +3673,7 @@ def test_jsonl_import_keeps_parent_linked_native_function_call_siblings_across_r
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -3749,7 +3749,7 @@ def test_jsonl_import_maps_top_level_openclaw_tool_call_rows(
 ):
     importer = load_importer_module()
     session_file = tmp_path / f"top-level-{row_type}.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -3784,7 +3784,7 @@ def test_jsonl_import_maps_top_level_openclaw_tool_call_rows(
 def test_jsonl_import_maps_top_level_tool_use_name_on_result_rows(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "top-level-tool-use-name.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -3825,7 +3825,7 @@ def test_jsonl_import_maps_top_level_tool_use_name_on_result_rows(tmp_path: Path
 def test_jsonl_import_accepts_openclaw_tool_use_with_empty_string_input(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "openclaw-tool-use-empty-string-input.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -3870,7 +3870,7 @@ def test_jsonl_import_accepts_openclaw_tool_use_with_empty_string_input(tmp_path
 def test_jsonl_import_rejects_openclaw_tool_use_without_input(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "openclaw-tool-use-missing-input.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -3901,7 +3901,7 @@ def test_jsonl_import_rejects_openclaw_tool_use_without_input(tmp_path: Path):
 def test_jsonl_import_maps_bare_untyped_openclaw_tool_use_and_result_rows(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "bare-openclaw-tool-use-result.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -3946,7 +3946,7 @@ def test_jsonl_import_maps_bare_untyped_openclaw_tool_use_and_result_rows(tmp_pa
 def test_jsonl_import_maps_bare_openclaw_tool_use_with_generic_name_and_input_aliases(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "bare-openclaw-generic-alias-tool-use-result.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -3983,7 +3983,7 @@ def test_jsonl_import_maps_bare_openclaw_tool_use_with_generic_name_and_input_al
 def test_jsonl_import_maps_bare_content_openclaw_tool_result_without_name(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "bare-openclaw-content-result.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -4009,7 +4009,7 @@ def test_jsonl_import_maps_bare_content_openclaw_tool_result_without_name(tmp_pa
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -4028,7 +4028,7 @@ def test_jsonl_import_maps_bare_content_openclaw_tool_result_without_name(tmp_pa
 def test_jsonl_import_maps_wrapped_openclaw_tool_use_and_result_rows(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "wrapped-openclaw-tool-use-result.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -4074,7 +4074,7 @@ def test_jsonl_import_maps_wrapped_openclaw_tool_use_and_result_rows(tmp_path: P
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -4095,7 +4095,7 @@ def test_jsonl_import_skips_wrapped_openclaw_tool_result_for_malformed_wrapped_t
 ):
     importer = load_importer_module()
     session_file = tmp_path / "wrapped-openclaw-tool-result-orphan.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -4142,7 +4142,7 @@ def test_jsonl_import_rejects_wrapped_openclaw_tool_use_without_call_id_and_skip
 ):
     importer = load_importer_module()
     session_file = tmp_path / "wrapped-openclaw-tool-use-missing-call-id.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -4188,7 +4188,7 @@ def test_jsonl_import_rejects_wrapped_openclaw_tool_use_without_call_id_and_skip
 def test_jsonl_import_maps_untyped_wrapped_openclaw_tool_use_and_result_rows(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "untyped-wrapped-openclaw-tool-use-result.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -4230,7 +4230,7 @@ def test_jsonl_import_maps_untyped_wrapped_openclaw_tool_use_and_result_rows(tmp
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -4251,7 +4251,7 @@ def test_jsonl_import_skips_untyped_wrapped_openclaw_tool_result_for_malformed_t
 ):
     importer = load_importer_module()
     session_file = tmp_path / "untyped-wrapped-openclaw-tool-result-orphan.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -4296,7 +4296,7 @@ def test_jsonl_import_idless_openclaw_tool_result_key_survives_line_shift(
 ):
     importer = load_importer_module()
     session_file = tmp_path / "top-level-tool-result-line-shift.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -4350,7 +4350,7 @@ def test_jsonl_import_idless_openclaw_tool_result_key_survives_line_shift(
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -4373,7 +4373,7 @@ def test_jsonl_import_idless_openclaw_tool_use_key_survives_line_shift(
 ):
     importer = load_importer_module()
     session_file = tmp_path / "openclaw-idless-tool-use-line-shift.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -4415,7 +4415,7 @@ def test_jsonl_import_idless_openclaw_tool_use_key_survives_line_shift(
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -4457,7 +4457,7 @@ def test_jsonl_import_imports_openclaw_tool_result_from_later_catchup(
     test_id = result_type.replace("_", "-")
     first_file = tmp_path / f"openclaw-tool-catchup-{test_id}-1.jsonl"
     second_file = tmp_path / f"openclaw-tool-catchup-{test_id}-2.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         first_file,
         [
@@ -4502,7 +4502,7 @@ def test_jsonl_import_imports_openclaw_tool_result_from_later_catchup(
     ).fetchall()
     import_rows = conn.execute(
         """SELECT source_session, source_message_key
-           FROM lcm_imported_messages
+           FROM trove_imported_messages
            ORDER BY target_store_id"""
     ).fetchall()
     conn.close()
@@ -4533,7 +4533,7 @@ def test_jsonl_import_resolves_openclaw_tool_result_before_call_file_in_same_run
     importer = load_importer_module()
     output_file = tmp_path / "a-output.jsonl"
     call_file = tmp_path / "b-call.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         output_file,
         [
@@ -4584,7 +4584,7 @@ def test_jsonl_import_resolves_openclaw_tool_result_before_call_file_in_same_run
     ).fetchall()
     import_rows = conn.execute(
         """SELECT source_session, source_message_key
-           FROM lcm_imported_messages
+           FROM trove_imported_messages
            ORDER BY source_message_key"""
     ).fetchall()
     conn.close()
@@ -4611,7 +4611,7 @@ def test_jsonl_import_skipped_changed_openclaw_tool_use_does_not_authorize_resul
 ):
     importer = load_importer_module()
     session_file = tmp_path / "changed-openclaw-tool-use.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -4668,7 +4668,7 @@ def test_jsonl_import_skipped_changed_openclaw_tool_use_does_not_authorize_resul
     rows = conn.execute(
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
-    keys = conn.execute("SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id").fetchall()
+    keys = conn.execute("SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id").fetchall()
     conn.close()
 
     assert rows[0][0:3] == ("assistant", None, None)
@@ -4684,7 +4684,7 @@ def test_jsonl_import_skips_openclaw_tool_result_for_malformed_tool_use(
 ):
     importer = load_importer_module()
     session_file = tmp_path / "openclaw-tool-result-orphan.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -4714,7 +4714,7 @@ def test_jsonl_import_rejects_top_level_openclaw_tool_use_without_call_id_and_sk
 ):
     importer = load_importer_module()
     session_file = tmp_path / "openclaw-tool-use-missing-call-id.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -4744,7 +4744,7 @@ def test_jsonl_import_idless_wrapped_tool_result_key_survives_line_shift(
 ):
     importer = load_importer_module()
     session_file = tmp_path / "wrapped-tool-result-line-shift.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -4804,7 +4804,7 @@ def test_jsonl_import_idless_wrapped_tool_result_key_survives_line_shift(
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
 
@@ -4825,7 +4825,7 @@ def test_jsonl_import_idless_wrapped_tool_result_key_survives_line_shift(
 def test_jsonl_import_keeps_parent_linked_top_level_tool_use_siblings(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "top-level-tool-use-parent-siblings.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -4882,7 +4882,7 @@ def test_jsonl_import_keeps_parent_linked_top_level_tool_use_siblings(tmp_path: 
 def test_jsonl_import_follows_active_leaf_path_for_branched_exports(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "branched.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -4903,7 +4903,7 @@ def test_jsonl_import_follows_active_leaf_path_for_branched_exports(tmp_path: Pa
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT content FROM messages ORDER BY store_id").fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
     assert rows == [("root message",), ("current branch",)]
@@ -4913,7 +4913,7 @@ def test_jsonl_import_follows_active_leaf_path_for_branched_exports(tmp_path: Pa
 def test_jsonl_import_prunes_untyped_envelope_branch_with_nested_parent_ids(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "untyped-envelope-nested-parents.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -4941,7 +4941,7 @@ def test_jsonl_import_prunes_untyped_envelope_branch_with_nested_parent_ids(tmp_
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT content FROM messages ORDER BY store_id").fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
     assert rows == [("root",), ("current",)]
@@ -4951,7 +4951,7 @@ def test_jsonl_import_prunes_untyped_envelope_branch_with_nested_parent_ids(tmp_
 def test_jsonl_import_prunes_untyped_envelope_branch_with_mixed_parent_aliases(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "untyped-envelope-mixed-parents.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -4980,7 +4980,7 @@ def test_jsonl_import_prunes_untyped_envelope_branch_with_mixed_parent_aliases(t
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT content FROM messages ORDER BY store_id").fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
     assert rows == [("root",), ("current",)]
@@ -4990,7 +4990,7 @@ def test_jsonl_import_prunes_untyped_envelope_branch_with_mixed_parent_aliases(t
 def test_jsonl_import_metadata_id_does_not_overwrite_importable_leaf_parent(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "metadata-id-collision.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5023,7 +5023,7 @@ def test_jsonl_import_metadata_id_does_not_overwrite_importable_leaf_parent(tmp_
 def test_jsonl_import_falls_back_to_no_pruning_for_dangling_parent_chain(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "dangling-parent.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5050,7 +5050,7 @@ def test_jsonl_import_falls_back_to_no_pruning_for_dangling_parent_chain(tmp_pat
 def test_jsonl_import_falls_back_to_no_pruning_for_parent_cycle(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "parent-cycle.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5078,7 +5078,7 @@ def test_jsonl_import_falls_back_to_no_pruning_for_parent_cycle(tmp_path: Path):
 def test_jsonl_import_malformed_message_rows_do_not_drive_leaf_pruning(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "malformed-tail.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5109,7 +5109,7 @@ def test_jsonl_import_malformed_message_rows_do_not_drive_leaf_pruning(tmp_path:
 def test_jsonl_import_leaf_path_traverses_malformed_importable_middle_node(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "malformed-middle.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5138,7 +5138,7 @@ def test_jsonl_import_leaf_path_traverses_malformed_importable_middle_node(tmp_p
 def test_jsonl_import_malformed_native_function_call_does_not_drive_leaf_pruning(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "malformed-native-function-call.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5169,7 +5169,7 @@ def test_jsonl_import_malformed_native_function_call_does_not_drive_leaf_pruning
 def test_jsonl_import_malformed_nested_tool_call_content_does_not_drive_leaf_pruning(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "malformed-nested-tool-call.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5214,7 +5214,7 @@ def test_jsonl_import_malformed_nested_tool_call_content_does_not_drive_leaf_pru
 def test_jsonl_import_reports_non_string_nested_tool_call_type_with_leaf_pruning(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "malformed-nested-tool-call-type.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5265,7 +5265,7 @@ def test_jsonl_import_reports_non_string_nested_tool_call_type_with_leaf_pruning
 def test_jsonl_import_skips_typed_non_message_content_rows(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "typed-metadata.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5294,7 +5294,7 @@ def test_jsonl_import_skips_typed_non_message_content_rows(tmp_path: Path):
 def test_jsonl_import_preserves_custom_message_rows(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "custom-message.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5320,7 +5320,7 @@ def test_jsonl_import_preserves_custom_message_rows(tmp_path: Path):
 def test_jsonl_import_keeps_idless_bare_rows_when_pruning_leaf_paths(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "mixed-bare.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5347,7 +5347,7 @@ def test_jsonl_import_keeps_idless_bare_rows_when_pruning_leaf_paths(tmp_path: P
 def test_jsonl_import_preserves_bare_generic_tool_role_without_call_id(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "bare-legacy-tool-role.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5368,7 +5368,7 @@ def test_jsonl_import_preserves_bare_generic_tool_role_without_call_id(tmp_path:
     rows = conn.execute(
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
-    keys = conn.execute("SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id").fetchall()
+    keys = conn.execute("SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id").fetchall()
     conn.close()
 
     assert rows == [("tool", "standalone legacy payload", None, None, None)]
@@ -5378,7 +5378,7 @@ def test_jsonl_import_preserves_bare_generic_tool_role_without_call_id(tmp_path:
 def test_jsonl_import_preserves_wrapped_generic_tool_role_without_call_id(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "wrapped-legacy-tool-role.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5403,7 +5403,7 @@ def test_jsonl_import_preserves_wrapped_generic_tool_role_without_call_id(tmp_pa
     rows = conn.execute(
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
-    keys = conn.execute("SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id").fetchall()
+    keys = conn.execute("SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id").fetchall()
     conn.close()
 
     assert rows == [("tool", "standalone legacy payload", None, None, None)]
@@ -5413,7 +5413,7 @@ def test_jsonl_import_preserves_wrapped_generic_tool_role_without_call_id(tmp_pa
 def test_jsonl_import_leaf_path_traverses_non_message_metadata_nodes(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "metadata-chain.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5446,7 +5446,7 @@ def test_jsonl_import_leaf_path_traverses_non_message_metadata_nodes(tmp_path: P
 def test_jsonl_import_keeps_active_top_level_tool_result_with_leaf_path(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "tool-branch.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5490,7 +5490,7 @@ def test_jsonl_import_keeps_active_top_level_tool_result_with_leaf_path(tmp_path
 def test_jsonl_import_keeps_responses_top_level_tool_result_with_leaf_path(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "responses-tool-branch.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5540,7 +5540,7 @@ def test_jsonl_import_keeps_responses_top_level_tool_result_with_leaf_path(tmp_p
 def test_jsonl_import_keeps_native_responses_function_call_output_with_leaf_path(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "responses-native-output-branch.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5609,7 +5609,7 @@ def test_jsonl_import_keeps_native_responses_function_call_output_with_leaf_path
 def test_jsonl_import_prunes_idless_native_function_call_on_abandoned_branch(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "responses-idless-native-abandoned-branch.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5638,7 +5638,7 @@ def test_jsonl_import_prunes_idless_native_function_call_on_abandoned_branch(tmp
         "SELECT role, content, tool_call_id, tool_calls, tool_name FROM messages ORDER BY store_id"
     ).fetchall()
     import_keys = conn.execute(
-        "SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id"
+        "SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id"
     ).fetchall()
     conn.close()
     assert rows == [
@@ -5654,7 +5654,7 @@ def test_jsonl_import_prunes_idless_native_function_call_on_abandoned_branch(tmp
 def test_jsonl_import_keeps_active_nested_tool_result_with_leaf_path(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "nested-tool-branch.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5707,7 +5707,7 @@ def test_jsonl_import_keeps_active_nested_tool_result_with_leaf_path(tmp_path: P
 def test_jsonl_import_follows_leaf_path_through_tool_result_parent(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "tool-parent-chain.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5758,7 +5758,7 @@ def test_jsonl_import_follows_leaf_path_through_tool_result_parent(tmp_path: Pat
 def test_jsonl_import_does_not_prune_when_only_tool_result_has_parent_edge(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "tool-only-parent.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5806,7 +5806,7 @@ def test_jsonl_import_does_not_prune_when_only_tool_result_has_parent_edge(tmp_p
 def test_jsonl_import_applies_leaf_path_per_session_section(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "multi-session.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5842,7 +5842,7 @@ def test_jsonl_import_applies_leaf_path_per_session_section(tmp_path: Path):
 def test_jsonl_import_leaf_path_uses_nested_message_ids(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "nested-id-branch.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5862,7 +5862,7 @@ def test_jsonl_import_leaf_path_uses_nested_message_ids(tmp_path: Path):
     assert result.imported == 2
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT content FROM messages ORDER BY store_id").fetchall()
-    keys = conn.execute("SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id").fetchall()
+    keys = conn.execute("SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id").fetchall()
     conn.close()
     assert rows == [("root",), ("current branch",)]
     assert keys == [(jsonl_key("nested-id-branch", "root"),), (jsonl_key("nested-id-branch", "leaf"),)]
@@ -5871,7 +5871,7 @@ def test_jsonl_import_leaf_path_uses_nested_message_ids(tmp_path: Path):
 def test_jsonl_import_leaf_path_aliases_typed_wrapper_ids_and_preserves_nested_keys(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "mixed-id-namespace.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5899,7 +5899,7 @@ def test_jsonl_import_leaf_path_aliases_typed_wrapper_ids_and_preserves_nested_k
     assert result.imported == 2
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT content FROM messages ORDER BY store_id").fetchall()
-    keys = conn.execute("SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id").fetchall()
+    keys = conn.execute("SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id").fetchall()
     conn.close()
     assert rows == [("root",), ("current",)]
     assert keys == [
@@ -5911,7 +5911,7 @@ def test_jsonl_import_leaf_path_aliases_typed_wrapper_ids_and_preserves_nested_k
 def test_jsonl_import_prunes_typed_wrapper_branch_with_mixed_parent_aliases(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "typed-wrapper-mixed-parents.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -5941,7 +5941,7 @@ def test_jsonl_import_prunes_typed_wrapper_branch_with_mixed_parent_aliases(tmp_
     assert result.invalid_rows == 0
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT content FROM messages ORDER BY store_id").fetchall()
-    keys = conn.execute("SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id").fetchall()
+    keys = conn.execute("SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id").fetchall()
     conn.close()
     assert rows == [("root",), ("current",)]
     assert keys == [(jsonl_key("s", "root"),), (jsonl_key("s", "leaf"),)]
@@ -5952,7 +5952,7 @@ def test_jsonl_import_typed_wrapper_catchup_respects_origin_main_nested_source_k
 ):
     importer = load_importer_module()
     session_file = tmp_path / "typed-wrapper-origin-main-catchup.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     import_id = "typed-wrapper-origin-main-catchup"
     initial_rows = [
         {"type": "session", "id": "s"},
@@ -5972,7 +5972,7 @@ def test_jsonl_import_typed_wrapper_catchup_respects_origin_main_nested_source_k
     for target_store_id, row_id in [(1, "root"), (2, "old")]:
         source_message_key = jsonl_key("s", row_id)
         conn.execute(
-            """UPDATE lcm_imported_messages
+            """UPDATE trove_imported_messages
                SET source_message_id = ?, source_message_key = ?
                WHERE import_id = ? AND target_store_id = ?""",
             (
@@ -6009,7 +6009,7 @@ def test_jsonl_import_typed_wrapper_catchup_respects_origin_main_nested_source_k
     assert second.invalid_rows == 0
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT content FROM messages ORDER BY store_id").fetchall()
-    keys = conn.execute("SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id").fetchall()
+    keys = conn.execute("SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id").fetchall()
     conn.close()
     assert rows == [("root",), ("old",), ("new",)]
     assert keys == [
@@ -6024,7 +6024,7 @@ def test_jsonl_import_untyped_envelope_keys_survive_envelope_parent_catchup(
 ):
     importer = load_importer_module()
     session_file = tmp_path / "untyped-envelope-catchup.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     initial_rows = [
         {"type": "session", "id": "s"},
         {"id": "env-root", "message": {"id": "root", "role": "user", "content": "root"}},
@@ -6067,7 +6067,7 @@ def test_jsonl_import_untyped_envelope_keys_survive_envelope_parent_catchup(
     assert second.invalid_rows == 0
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT content FROM messages ORDER BY store_id").fetchall()
-    keys = conn.execute("SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id").fetchall()
+    keys = conn.execute("SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id").fetchall()
     conn.close()
     assert rows == [("root",), ("leaf",), ("new",)]
     assert keys == [
@@ -6082,7 +6082,7 @@ def test_jsonl_import_untyped_envelope_keys_survive_nested_parent_catchup(
 ):
     importer = load_importer_module()
     session_file = tmp_path / "untyped-envelope-nested-catchup.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     initial_rows = [
         {"type": "session", "id": "s"},
         {"id": "env-root", "message": {"id": "root", "role": "user", "content": "root"}},
@@ -6125,7 +6125,7 @@ def test_jsonl_import_untyped_envelope_keys_survive_nested_parent_catchup(
     assert second.invalid_rows == 0
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT content FROM messages ORDER BY store_id").fetchall()
-    keys = conn.execute("SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id").fetchall()
+    keys = conn.execute("SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id").fetchall()
     conn.close()
     assert rows == [("root",), ("leaf",), ("new",)]
     assert keys == [
@@ -6138,7 +6138,7 @@ def test_jsonl_import_untyped_envelope_keys_survive_nested_parent_catchup(
 def test_jsonl_import_uses_nested_message_id_when_top_level_id_is_missing(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "session-a.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -6153,7 +6153,7 @@ def test_jsonl_import_uses_nested_message_id_when_top_level_id_is_missing(tmp_pa
 
     assert result.imported == 1
     conn = sqlite3.connect(target_db)
-    assert conn.execute("SELECT source_message_key FROM lcm_imported_messages").fetchall() == [
+    assert conn.execute("SELECT source_message_key FROM trove_imported_messages").fetchall() == [
         (jsonl_key("session-a", "nested-m1"),)
     ]
     conn.close()
@@ -6163,7 +6163,7 @@ def test_jsonl_import_source_message_keys_are_unambiguous_with_colons(tmp_path: 
     importer = load_importer_module()
     first_file = tmp_path / "first.jsonl"
     second_file = tmp_path / "second.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(first_file, [jsonl_header("a:b"), jsonl_message("c", "user", "first")])
     write_jsonl_session(second_file, [jsonl_header("a"), jsonl_message("b:c", "user", "second")])
 
@@ -6174,7 +6174,7 @@ def test_jsonl_import_source_message_keys_are_unambiguous_with_colons(tmp_path: 
     assert result.imported == 2
     assert result.invalid_rows == 0
     conn = sqlite3.connect(target_db)
-    rows = conn.execute("SELECT source_message_key, source_session FROM lcm_imported_messages ORDER BY source_session").fetchall()
+    rows = conn.execute("SELECT source_message_key, source_session FROM trove_imported_messages ORDER BY source_session").fetchall()
     conn.close()
     assert rows == [(jsonl_key("a", "b:c"), "a"), (jsonl_key("a:b", "c"), "a:b")]
 
@@ -6183,7 +6183,7 @@ def test_jsonl_cli_empty_source_dir_non_json_output_labels_jsonl(tmp_path: Path,
     importer = load_importer_module()
     empty_dir = tmp_path / "empty-sessions"
     empty_dir.mkdir()
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
 
     exit_code = importer.main(["--source-jsonl-dir", str(empty_dir), "--target-db", str(target_db)])
 
@@ -6194,7 +6194,7 @@ def test_jsonl_cli_empty_source_dir_non_json_output_labels_jsonl(tmp_path: Path,
 def test_jsonl_import_missing_file_is_fatal_before_apply_writes(tmp_path: Path):
     importer = load_importer_module()
     missing_file = tmp_path / "missing.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
 
     with pytest.raises(FileNotFoundError, match="source JSONL file not found"):
         importer.import_jsonl_sessions(files=[missing_file], target_db=target_db, import_id="missing", apply=True)
@@ -6206,7 +6206,7 @@ def test_jsonl_import_file_stem_fallback_does_not_collide_across_directories(tmp
     importer = load_importer_module()
     first_file = tmp_path / "a" / "session.jsonl"
     second_file = tmp_path / "b" / "session.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(first_file, [jsonl_message("m1", "user", "first without header")])
     write_jsonl_session(second_file, [jsonl_message("m1", "user", "second without header")])
 
@@ -6218,7 +6218,7 @@ def test_jsonl_import_file_stem_fallback_does_not_collide_across_directories(tmp
     assert result.invalid_rows == 0
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT session_id, content FROM messages ORDER BY content").fetchall()
-    keys = conn.execute("SELECT source_message_key FROM lcm_imported_messages ORDER BY source_message_key").fetchall()
+    keys = conn.execute("SELECT source_message_key FROM trove_imported_messages ORDER BY source_message_key").fetchall()
     conn.close()
     assert [row[1] for row in rows] == ["first without header", "second without header"]
     assert len({row[0] for row in rows}) == 2
@@ -6228,7 +6228,7 @@ def test_jsonl_import_file_stem_fallback_does_not_collide_across_directories(tmp
 def test_jsonl_import_accepts_top_level_typed_message_rows(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "typed.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -6259,7 +6259,7 @@ def test_jsonl_import_accepts_top_level_typed_message_rows(tmp_path: Path):
 def test_jsonl_import_accepts_untyped_envelope_message_rows(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "untyped-envelope.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -6281,7 +6281,7 @@ def test_jsonl_import_accepts_untyped_envelope_message_rows(tmp_path: Path):
     assert result.invalid_rows == 0
     conn = sqlite3.connect(target_db)
     rows = conn.execute("SELECT role, content FROM messages ORDER BY store_id").fetchall()
-    keys = conn.execute("SELECT source_message_key FROM lcm_imported_messages ORDER BY target_store_id").fetchall()
+    keys = conn.execute("SELECT source_message_key FROM trove_imported_messages ORDER BY target_store_id").fetchall()
     conn.close()
     assert rows == [("user", "hi"), ("assistant", "hello")]
     assert keys == [
@@ -6293,7 +6293,7 @@ def test_jsonl_import_accepts_untyped_envelope_message_rows(tmp_path: Path):
 def test_jsonl_cli_directory_default_import_id_is_stable_for_catchup(tmp_path: Path, capsys):
     importer = load_importer_module()
     sessions_dir = tmp_path / "sessions"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     first_file = sessions_dir / "session-a.jsonl"
     write_jsonl_session(first_file, [jsonl_header("session-a"), jsonl_message("m1", "user", "first")])
 
@@ -6321,7 +6321,7 @@ def test_jsonl_cli_directory_default_import_id_is_stable_for_catchup(tmp_path: P
 def test_jsonl_import_preserves_generic_row_session_identity(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "export.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [
@@ -6350,7 +6350,7 @@ def test_jsonl_import_preserves_generic_row_session_identity(tmp_path: Path):
     assert conn.execute("SELECT session_id, source FROM messages").fetchall() == [
         ("hermes-jsonl:agent:nabu:generic-session-42", "hermes-jsonl:agent:nabu:generic-session-42")
     ]
-    assert conn.execute("SELECT source_message_key, source_session FROM lcm_imported_messages").fetchall() == [
+    assert conn.execute("SELECT source_message_key, source_session FROM trove_imported_messages").fetchall() == [
         (jsonl_key("generic-session-42", "r1"), "generic-session-42")
     ]
     conn.close()
@@ -6359,7 +6359,7 @@ def test_jsonl_import_preserves_generic_row_session_identity(tmp_path: Path):
 def test_jsonl_cli_json_report_contains_reconciliation_fields(tmp_path: Path, capsys):
     importer = load_importer_module()
     session_file = tmp_path / "session-a.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [jsonl_header("session-a"), jsonl_message("m1", "user", "hello jsonl")],
@@ -6394,7 +6394,7 @@ def test_jsonl_cli_allows_empty_source_dir_as_zero_row_dry_run(tmp_path: Path, c
     importer = load_importer_module()
     empty_dir = tmp_path / "empty-sessions"
     empty_dir.mkdir()
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
 
     exit_code = importer.main(
         [
@@ -6419,7 +6419,7 @@ def test_jsonl_cli_allows_empty_source_dir_as_zero_row_dry_run(tmp_path: Path, c
 def test_jsonl_import_backs_up_existing_target_before_writes(tmp_path: Path):
     importer = load_importer_module()
     session_file = tmp_path / "session-a.jsonl"
-    target_db = tmp_path / "target-lcm.db"
+    target_db = tmp_path / "target-trove.db"
     write_jsonl_session(
         session_file,
         [jsonl_header("session-a"), jsonl_message("m1", "user", "hello jsonl")],

@@ -13,24 +13,24 @@ from pathlib import Path
 
 import pytest
 
-from hermes_lcm import db_bootstrap
-from hermes_lcm.command import (
+from hermes_trove import db_bootstrap
+from hermes_trove.command import (
     _doctor_repair_schema_stamp_apply_text,
     _doctor_repair_schema_stamp_text,
 )
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.dag import SummaryDAG
-from hermes_lcm.db_bootstrap import (
+from hermes_trove.config import TROVEConfig
+from hermes_trove.dag import SummaryDAG
+from hermes_trove.db_bootstrap import (
     SchemaVersionTooNewError,
     classify_version_mismatch,
     remediate_interim_schema_stamp,
 )
-from hermes_lcm.engine import LCMEngine
-from hermes_lcm.query_view_store import QueryViewStore
-from hermes_lcm.rollup_store import RollupStore
-from hermes_lcm.store import MessageStore
-from hermes_lcm.trajectory_store import CorpusIdentity, TrajectoryStore
-from hermes_lcm.vector_store import VectorStore
+from hermes_trove.engine import TROVEEngine
+from hermes_trove.query_view_store import QueryViewStore
+from hermes_trove.rollup_store import RollupStore
+from hermes_trove.store import MessageStore
+from hermes_trove.trajectory_store import CorpusIdentity, TrajectoryStore
+from hermes_trove.vector_store import VectorStore
 
 
 def _build_v5_db(path: Path, *, with_features: bool = False) -> None:
@@ -54,37 +54,37 @@ def _add_early_feature_tables(path: Path) -> None:
     """Create EARLY-variant feature tables (missing later-added columns/tables).
 
     Mirrors the real interim operator DB: family-prefixed tables that predate
-    later schema additions (lcm_rollups without generation/lease_nonce/failed_at
-    and no lcm_rollup_invalidations; lcm_embedding_profile keyed on model_name
+    later schema additions (trove_rollups without generation/lease_nonce/failed_at
+    and no trove_rollup_invalidations; trove_embedding_profile keyed on model_name
     without identity_hash/data_version). These fail the final-shape verifiers.
     """
     conn = sqlite3.connect(path)
     try:
         conn.executescript(
             """
-            CREATE TABLE lcm_rollups (
+            CREATE TABLE trove_rollups (
                 rollup_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 period_kind TEXT, period_start TEXT, scope TEXT,
                 summary TEXT, token_count INTEGER, status TEXT,
                 built_at TEXT, source_fingerprint TEXT, error TEXT
             );
-            CREATE TABLE lcm_rollup_sources (
+            CREATE TABLE trove_rollup_sources (
                 rollup_id INTEGER, node_id INTEGER,
                 PRIMARY KEY(rollup_id, node_id)
             );
-            CREATE TABLE lcm_rollup_state (
+            CREATE TABLE trove_rollup_state (
                 period_kind TEXT PRIMARY KEY,
                 last_build_cursor TEXT, last_built_at TEXT
             );
-            CREATE TABLE lcm_embedding_profile (
+            CREATE TABLE trove_embedding_profile (
                 model_name TEXT PRIMARY KEY, provider TEXT, dim INTEGER,
                 registered_at TEXT, active INTEGER DEFAULT 1, archived_at TEXT
             );
-            CREATE TABLE lcm_embedding_meta (
+            CREATE TABLE trove_embedding_meta (
                 embedded_id TEXT, embedded_kind TEXT, model_name TEXT,
                 embedded_at TEXT, PRIMARY KEY(embedded_id, embedded_kind)
             );
-            CREATE TABLE lcm_embedding_vectors (
+            CREATE TABLE trove_embedding_vectors (
                 embedded_id TEXT PRIMARY KEY, vec BLOB
             );
             """
@@ -105,12 +105,12 @@ def _add_early_chunk_tables(path: Path) -> None:
     try:
         conn.executescript(
             """
-            CREATE TABLE lcm_chunk_meta (
+            CREATE TABLE trove_chunk_meta (
                 chunk_id TEXT, identity_hash TEXT, store_id INTEGER,
                 chunk_index INTEGER, embedded_at TEXT, archived INTEGER DEFAULT 0,
                 PRIMARY KEY(chunk_id, identity_hash)
             );
-            CREATE TABLE lcm_chunk_vectors (
+            CREATE TABLE trove_chunk_vectors (
                 chunk_id TEXT, identity_hash TEXT, vec BLOB NOT NULL,
                 PRIMARY KEY(chunk_id, identity_hash)
             );
@@ -176,7 +176,7 @@ def _stored_version(path: Path) -> int:
 
 
 def test_classify_interim_stamp_on_v5_shape(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path)
     _stamp(db_path, db_bootstrap.SCHEMA_VERSION + 1)
     conn = sqlite3.connect(db_path)
@@ -187,7 +187,7 @@ def test_classify_interim_stamp_on_v5_shape(tmp_path):
 
 
 def test_classify_interim_stamp_with_feature_marker_tables(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path, with_features=True)
     _stamp(db_path, db_bootstrap.SCHEMA_VERSION + 1)
     conn = sqlite3.connect(db_path)
@@ -201,14 +201,14 @@ def test_classify_interim_stamp_with_feature_marker_tables(tmp_path):
 
 def test_classify_genuinely_newer_with_partial_query_and_trajectory_tables(tmp_path):
     """Preserved families cannot be re-stamped from unverified marker tables."""
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path)
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(
             """
-            CREATE TABLE lcm_query_views (view_id TEXT PRIMARY KEY);
-            CREATE TABLE lcm_trajectory_corpora (corpus_id TEXT PRIMARY KEY);
+            CREATE TABLE trove_query_views (view_id TEXT PRIMARY KEY);
+            CREATE TABLE trove_trajectory_corpora (corpus_id TEXT PRIMARY KEY);
             """
         )
         conn.commit()
@@ -228,13 +228,13 @@ def test_classify_genuinely_newer_with_partial_query_and_trajectory_tables(tmp_p
     assert result["dropped_tables"] == []
     assert _stored_version(db_path) == db_bootstrap.SCHEMA_VERSION + 1
     assert {
-        "lcm_query_views",
-        "lcm_trajectory_corpora",
+        "trove_query_views",
+        "trove_trajectory_corpora",
     } <= _table_names(db_path)
 
 
 def test_classify_interim_stamp_with_current_query_and_trajectory_tables(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path)
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
@@ -260,22 +260,22 @@ def test_classify_interim_stamp_with_current_query_and_trajectory_tables(tmp_pat
     "ddl",
     (
         """
-        CREATE TRIGGER lcm_query_future_trigger
-        AFTER INSERT ON lcm_query_views
+        CREATE TRIGGER trove_query_future_trigger
+        AFTER INSERT ON trove_query_views
         BEGIN
             SELECT 1;
         END;
         """,
         """
-        CREATE INDEX idx_lcm_query_future
-        ON lcm_query_views(view_id);
+        CREATE INDEX idx_trove_query_future
+        ON trove_query_views(view_id);
         """,
     ),
 )
 def test_classify_genuinely_newer_on_unknown_query_schema_object(
     tmp_path, ddl
 ):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path)
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
@@ -305,14 +305,14 @@ def test_classify_genuinely_newer_on_unknown_query_schema_object(
 @pytest.mark.parametrize(
     ("table", "column"),
     (
-        ("lcm_query_views", "future_query_column"),
-        ("lcm_trajectory_corpora", "future_trajectory_column"),
+        ("trove_query_views", "future_query_column"),
+        ("trove_trajectory_corpora", "future_trajectory_column"),
     ),
 )
 def test_classify_genuinely_newer_on_unverified_feature_column(
     tmp_path, table, column
 ):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path)
     conn = sqlite3.connect(db_path)
     try:
@@ -335,11 +335,11 @@ def test_classify_genuinely_newer_on_unverified_feature_column(
 
 
 def test_classify_genuinely_newer_on_unknown_query_family_table(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path)
     conn = sqlite3.connect(db_path)
     try:
-        conn.execute("CREATE TABLE lcm_querycache (id TEXT)")
+        conn.execute("CREATE TABLE trove_querycache (id TEXT)")
         conn.commit()
     finally:
         conn.close()
@@ -358,11 +358,11 @@ def test_classify_genuinely_newer_on_unknown_query_family_table(tmp_path):
 
 
 def test_classify_genuinely_newer_on_unknown_table(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path)
     conn = sqlite3.connect(db_path)
     try:
-        conn.execute("CREATE TABLE lcm_future_widgets (id INTEGER PRIMARY KEY)")
+        conn.execute("CREATE TABLE trove_future_widgets (id INTEGER PRIMARY KEY)")
         conn.commit()
     finally:
         conn.close()
@@ -378,16 +378,16 @@ def test_classify_genuinely_newer_on_extra_feature_family_column(tmp_path):
     """An EXTRA column on a feature-family table is a newer-build signature.
 
     Reproduces F2-schema-stamp-drops-newer-data: a future release adds a column
-    to ``lcm_rollups``. The old classifier ignored feature-table internal shape
+    to ``trove_rollups``. The old classifier ignored feature-table internal shape
     and called this an interim stamp, so remediation DROPPED the table and its
     siblings. It must classify ``genuinely_newer`` instead — an unexpected
     (extra) column is never an early-variant signature.
     """
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path, with_features=True)
     conn = sqlite3.connect(db_path)
     try:
-        conn.execute("ALTER TABLE lcm_rollups ADD COLUMN future_col INTEGER DEFAULT 0")
+        conn.execute("ALTER TABLE trove_rollups ADD COLUMN future_col INTEGER DEFAULT 0")
         conn.commit()
     finally:
         conn.close()
@@ -405,15 +405,15 @@ def test_classify_genuinely_newer_on_extra_feature_family_column(tmp_path):
 def test_remediate_apply_refuses_and_preserves_extra_column_family(tmp_path):
     """Remediation must NOT drop a family table that carries an extra column.
 
-    The data-destruction guard: with an extra ``lcm_rollups`` column present,
+    The data-destruction guard: with an extra ``trove_rollups`` column present,
     ``remediate_interim_schema_stamp(apply=True)`` refuses and leaves every
     feature table (and the stamp) untouched.
     """
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path, with_features=True)
     conn = sqlite3.connect(db_path)
     try:
-        conn.execute("ALTER TABLE lcm_rollups ADD COLUMN future_col INTEGER DEFAULT 0")
+        conn.execute("ALTER TABLE trove_rollups ADD COLUMN future_col INTEGER DEFAULT 0")
         conn.commit()
     finally:
         conn.close()
@@ -430,17 +430,17 @@ def test_remediate_apply_refuses_and_preserves_extra_column_family(tmp_path):
     assert result["dropped_tables"] == []
     # Nothing dropped, stamp untouched — real data survives.
     assert _stored_version(db_path) == stamped
-    assert "lcm_rollups" in _table_names(db_path)
+    assert "trove_rollups" in _table_names(db_path)
 
 
 def test_classify_interim_stamp_on_missing_feature_family_column(tmp_path):
     """A feature table only MISSING a later-added column stays an interim stamp.
 
     The counterpart to the extra-column case: an early variant omits pieces (no
-    ``generation``/``lease_nonce``/``failed_at`` on ``lcm_rollups``) and must
+    ``generation``/``lease_nonce``/``failed_at`` on ``trove_rollups``) and must
     still be classified interim so remediation can drop-and-rebuild it.
     """
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path)
     _add_early_feature_tables(db_path)
     _stamp(db_path, db_bootstrap.SCHEMA_VERSION + 1)
@@ -455,7 +455,7 @@ def test_classify_interim_stamp_on_missing_feature_family_column(tmp_path):
 
 
 def test_classify_genuinely_newer_on_unknown_core_column(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path)
     conn = sqlite3.connect(db_path)
     try:
@@ -475,7 +475,7 @@ def test_classify_genuinely_newer_on_unknown_core_column(tmp_path):
 
 
 def test_refuse_message_points_at_remediation_for_interim_stamp(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path)
     _stamp(db_path, db_bootstrap.SCHEMA_VERSION + 1)
     with pytest.raises(SchemaVersionTooNewError) as excinfo:
@@ -486,11 +486,11 @@ def test_refuse_message_points_at_remediation_for_interim_stamp(tmp_path):
 
 
 def test_refuse_message_stays_generic_for_genuinely_newer(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path)
     conn = sqlite3.connect(db_path)
     try:
-        conn.execute("CREATE TABLE lcm_future_widgets (id INTEGER PRIMARY KEY)")
+        conn.execute("CREATE TABLE trove_future_widgets (id INTEGER PRIMARY KEY)")
         conn.commit()
     finally:
         conn.close()
@@ -506,7 +506,7 @@ def test_refuse_message_stays_generic_for_genuinely_newer(tmp_path):
 
 
 def test_remediate_dry_run_reports_without_mutating(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path)
     stamped = db_bootstrap.SCHEMA_VERSION + 1
     _stamp(db_path, stamped)
@@ -522,7 +522,7 @@ def test_remediate_dry_run_reports_without_mutating(tmp_path):
 
 
 def test_remediate_apply_resets_stamp_and_db_reopens(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path)
     _stamp(db_path, db_bootstrap.SCHEMA_VERSION + 1)
     conn = sqlite3.connect(db_path)
@@ -539,11 +539,11 @@ def test_remediate_apply_resets_stamp_and_db_reopens(tmp_path):
 
 
 def test_remediate_refuses_genuinely_newer(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path)
     conn = sqlite3.connect(db_path)
     try:
-        conn.execute("CREATE TABLE lcm_future_widgets (id INTEGER PRIMARY KEY)")
+        conn.execute("CREATE TABLE trove_future_widgets (id INTEGER PRIMARY KEY)")
         conn.commit()
     finally:
         conn.close()
@@ -566,7 +566,7 @@ def test_early_variant_feature_tables_remediate_end_to_end(tmp_path):
     This is the real-operator-DB shape: clean v5 core plus family-prefixed
     tables that are EARLY variants failing the final-shape verifiers.
     """
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path)
     _add_early_feature_tables(db_path)
     stamped = db_bootstrap.SCHEMA_VERSION + 1
@@ -581,10 +581,10 @@ def test_early_variant_feature_tables_remediate_end_to_end(tmp_path):
         conn.close()
     assert dry["status"] == "dry-run"
     would_drop = {t for fam in dry["drop_plan"] for t in fam["tables"]}
-    assert {"lcm_rollups", "lcm_embedding_profile"} <= would_drop
+    assert {"trove_rollups", "trove_embedding_profile"} <= would_drop
     # Dry-run mutates nothing.
     assert _stored_version(db_path) == stamped
-    assert "lcm_rollups" in _table_names(db_path)
+    assert "trove_rollups" in _table_names(db_path)
 
     conn = sqlite3.connect(db_path)
     try:
@@ -593,12 +593,12 @@ def test_early_variant_feature_tables_remediate_end_to_end(tmp_path):
         conn.close()
     assert result["status"] == "ok"
     dropped = set(result["dropped_tables"])
-    assert {"lcm_rollups", "lcm_rollup_sources", "lcm_rollup_state"} <= dropped
-    assert {"lcm_embedding_profile", "lcm_embedding_meta", "lcm_embedding_vectors"} <= dropped
+    assert {"trove_rollups", "trove_rollup_sources", "trove_rollup_state"} <= dropped
+    assert {"trove_embedding_profile", "trove_embedding_meta", "trove_embedding_vectors"} <= dropped
     assert _stored_version(db_path) == db_bootstrap.SCHEMA_VERSION
     # Early feature tables are gone; core tables remain untouched.
     remaining = _table_names(db_path)
-    assert not any(t.startswith(("lcm_rollup", "lcm_embedding")) for t in remaining)
+    assert not any(t.startswith(("trove_rollup", "trove_embedding")) for t in remaining)
     assert {"messages", "summary_nodes"} <= remaining
 
     # refuse now passes, and each feature store reconstructs the final shape.
@@ -623,12 +623,12 @@ def test_early_variant_chunk_family_remediates(tmp_path):
     """A broken chunk schema is dropped by remediation, not silently kept.
 
     Reproduces F2-schema-stamp-chunk-family-missing / F4-chunk-family-verifier-
-    missing: with no ``lcm_chunk`` entry in the interim feature families the
+    missing: with no ``trove_chunk`` entry in the interim feature families the
     remediator reported ``status: ok, dropped_tables: []`` while leaving a broken
-    ``lcm_chunk_meta``/``lcm_chunk_vectors`` in place. The family must now be
+    ``trove_chunk_meta``/``trove_chunk_vectors`` in place. The family must now be
     verified and dropped so its marker-gated init rebuilds the final shape.
     """
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path, with_features=True)
     _add_early_chunk_tables(db_path)
     _stamp(db_path, db_bootstrap.SCHEMA_VERSION + 1)
@@ -649,8 +649,8 @@ def test_early_variant_chunk_family_remediates(tmp_path):
         conn.close()
     assert result["status"] == "ok"
     dropped = set(result["dropped_tables"])
-    assert {"lcm_chunk_meta", "lcm_chunk_vectors"} <= dropped
-    assert not any(t.startswith("lcm_chunk") for t in _table_names(db_path))
+    assert {"trove_chunk_meta", "trove_chunk_vectors"} <= dropped
+    assert not any(t.startswith("trove_chunk") for t in _table_names(db_path))
 
     # The chunk feature's own init recreates the final, verifier-clean shape.
     conn = sqlite3.connect(db_path)
@@ -664,7 +664,7 @@ def test_early_variant_chunk_family_remediates(tmp_path):
 
 
 def test_remediate_noop_when_version_supported(tmp_path):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _build_v5_db(db_path)
     conn = sqlite3.connect(db_path)
     try:
@@ -675,12 +675,12 @@ def test_remediate_noop_when_version_supported(tmp_path):
     assert result["applied"] is False
 
 
-# --- /lcm doctor repair schema-stamp command path --------------------------
+# --- /trove doctor repair schema-stamp command path --------------------------
 
 
-def _healthy_engine(tmp_path: Path) -> LCMEngine:
-    config = LCMConfig(database_path=str(tmp_path / "lcm.db"))
-    return LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+def _healthy_engine(tmp_path: Path) -> TROVEEngine:
+    config = TROVEConfig(database_path=str(tmp_path / "trove.db"))
+    return TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
 
 
 def test_doctor_repair_schema_stamp_dry_run_and_apply(tmp_path):
@@ -694,22 +694,22 @@ def test_doctor_repair_schema_stamp_dry_run_and_apply(tmp_path):
     dry = _doctor_repair_schema_stamp_text(engine)
     assert "status: repair-needed" in dry
     assert "classification: interim_stamp" in dry
-    assert "would_drop: lcm_rollups" in dry
-    assert "/lcm rollups rebuild" in dry
-    assert "would_drop: lcm_embedding_profile" in dry
+    assert "would_drop: trove_rollups" in dry
+    assert "/trove rollups rebuild" in dry
+    assert "would_drop: trove_embedding_profile" in dry
     assert "no schema changes were made" in dry
     # Dry-run must not mutate the stamp or drop anything.
     assert _stored_version(db_path) == db_bootstrap.SCHEMA_VERSION + 1
-    assert "lcm_rollups" in _table_names(db_path)
+    assert "trove_rollups" in _table_names(db_path)
 
     applied = _doctor_repair_schema_stamp_apply_text(engine)
     assert "status: ok" in applied
     assert "backup_path:" in applied
     assert f"schema_version_reset_to: {db_bootstrap.SCHEMA_VERSION}" in applied
-    assert "dropped: lcm_rollups" in applied
+    assert "dropped: trove_rollups" in applied
     assert _stored_version(db_path) == db_bootstrap.SCHEMA_VERSION
     assert not any(
-        t.startswith(("lcm_rollup", "lcm_embedding")) for t in _table_names(db_path)
+        t.startswith(("trove_rollup", "trove_embedding")) for t in _table_names(db_path)
     )
 
 
@@ -718,7 +718,7 @@ def test_doctor_repair_schema_stamp_apply_refuses_genuinely_newer(tmp_path):
     db_path = Path(engine._store.db_path)
     conn = sqlite3.connect(db_path)
     try:
-        conn.execute("CREATE TABLE lcm_future_widgets (id INTEGER PRIMARY KEY)")
+        conn.execute("CREATE TABLE trove_future_widgets (id INTEGER PRIMARY KEY)")
         conn.commit()
     finally:
         conn.close()

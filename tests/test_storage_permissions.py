@@ -11,11 +11,11 @@ from types import SimpleNamespace
 
 import pytest
 
-import hermes_lcm.db_bootstrap as db_bootstrap_module
-import hermes_lcm.maintenance as maintenance_module
-import hermes_lcm.sqlite_util as sqlite_util_module
-from hermes_lcm.maintenance import backup_database, rotate_backup_database
-from hermes_lcm.store import MessageStore, build_message_fts_spec
+import hermes_trove.db_bootstrap as db_bootstrap_module
+import hermes_trove.maintenance as maintenance_module
+import hermes_trove.sqlite_util as sqlite_util_module
+from hermes_trove.maintenance import backup_database, rotate_backup_database
+from hermes_trove.store import MessageStore, build_message_fts_spec
 
 
 _SQLITE_SIDECAR_SUFFIXES = ("-wal", "-shm", "-journal")
@@ -75,7 +75,7 @@ def _assert_searchable_store_integrity(store: MessageStore) -> None:
 
 
 def test_message_store_creates_private_database_and_sidecars_under_umask_022(tmp_path):
-    db_path = tmp_path / "database" / "lcm.db"
+    db_path = tmp_path / "database" / "trove.db"
 
     with _process_umask(0o022):
         store = MessageStore(db_path)
@@ -96,7 +96,7 @@ def test_message_store_refuses_created_directory_swap_before_chmod(tmp_path, mon
     shared_parent.mkdir(mode=0o777)
     shared_parent.chmod(0o777)
     db_dir = shared_parent / "database"
-    db_path = db_dir / "lcm.db"
+    db_path = db_dir / "trove.db"
     displaced_dir = shared_parent / "database-displaced"
     unrelated_target = tmp_path / "unrelated-target"
     unrelated_target.mkdir(mode=0o755)
@@ -139,7 +139,7 @@ def test_message_store_tightens_compatible_existing_database_artifacts(tmp_path)
     db_dir = tmp_path / "existing"
     db_dir.mkdir(mode=0o755)
     db_dir.chmod(0o755)
-    db_path = db_dir / "lcm.db"
+    db_path = db_dir / "trove.db"
     existing = sqlite3.connect(db_path)
     try:
         existing.execute("PRAGMA journal_mode=WAL")
@@ -168,7 +168,7 @@ def test_message_store_tightens_compatible_existing_database_artifacts(tmp_path)
 
 @pytest.mark.parametrize("suffix", _SQLITE_SIDECAR_SUFFIXES)
 def test_message_store_refuses_symlinked_sidecar_before_chmod(tmp_path, suffix):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     target = tmp_path / "unrelated.txt"
     target.write_text("shared", encoding="utf-8")
     target.chmod(0o644)
@@ -182,7 +182,7 @@ def test_message_store_refuses_symlinked_sidecar_before_chmod(tmp_path, suffix):
 
 @pytest.mark.parametrize("suffix", _SQLITE_SIDECAR_SUFFIXES)
 def test_message_store_refuses_hardlinked_sidecar_before_chmod(tmp_path, suffix):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     target = tmp_path / "unrelated.txt"
     target.write_text("shared", encoding="utf-8")
     target.chmod(0o644)
@@ -200,7 +200,7 @@ def test_message_store_refuses_sidecar_link_swap_before_chmod(
     monkeypatch,
     link_kind,
 ):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     sidecar = db_path.with_name(db_path.name + "-wal")
     sidecar.write_text("replace me", encoding="utf-8")
     target = tmp_path / "unrelated.txt"
@@ -235,7 +235,7 @@ def test_message_store_refuses_sidecar_replacement_after_open_before_fstat(
     tmp_path,
     monkeypatch,
 ):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     sidecar = db_path.with_name(db_path.name + "-journal")
     replacement = tmp_path / "replacement-journal"
     sidecar.write_bytes(b"replace me")
@@ -269,7 +269,7 @@ def test_message_store_tolerates_sidecar_disappearing_between_stat_and_open(
     tmp_path,
     monkeypatch,
 ):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _seed_searchable_store(db_path)
     journal = db_path.with_name(db_path.name + "-journal")
     journal.write_bytes(b"transient rollback journal")
@@ -299,7 +299,7 @@ def test_message_store_tolerates_sidecar_unlinked_between_open_and_fstat(
     tmp_path,
     monkeypatch,
 ):
-    db_path = tmp_path / "lcm.db"
+    db_path = tmp_path / "trove.db"
     _seed_searchable_store(db_path)
     journal = db_path.with_name(db_path.name + "-journal")
     journal.write_bytes(b"transient rollback journal")
@@ -343,7 +343,7 @@ def test_message_store_preserves_sqlite_memory_sentinel_and_cwd_permissions(tmp_
 
 
 def test_maintenance_creates_private_backups_and_tightens_existing_slot(tmp_path):
-    db_path = tmp_path / "database" / "lcm.db"
+    db_path = tmp_path / "database" / "trove.db"
     store = MessageStore(db_path)
     store.append("session", {"role": "user", "content": "backup"})
     store.commit()
@@ -392,7 +392,7 @@ def test_maintenance_creates_private_backups_and_tightens_existing_slot(tmp_path
 
 @pytest.mark.parametrize("operation", ["timestamped", "rotate"])
 def test_maintenance_backups_work_without_fchmod(tmp_path, monkeypatch, operation):
-    db_path = tmp_path / "database" / "lcm.db"
+    db_path = tmp_path / "database" / "trove.db"
     store = MessageStore(db_path)
     store.append("session", {"role": "user", "content": "backup"})
     store.commit()
@@ -435,14 +435,14 @@ def test_maintenance_rejects_symlinked_backup_directory_before_chmod(
     tmp_path,
     operation,
 ):
-    db_path = tmp_path / "database" / "lcm.db"
+    db_path = tmp_path / "database" / "trove.db"
     store = MessageStore(db_path)
     store.append("session", {"role": "user", "content": "backup"})
     store.commit()
 
     backup_parent = tmp_path / "backups"
     backup_parent.mkdir()
-    backup_dir = backup_parent / "lcm"
+    backup_dir = backup_parent / "trove"
     unrelated_target = tmp_path / "unrelated-target"
     unrelated_target.mkdir(mode=0o755)
     unrelated_target.chmod(0o755)
@@ -471,7 +471,7 @@ def test_maintenance_rejects_symlinked_backup_directory_before_chmod(
 
 
 def test_rotate_backup_failure_preserves_existing_atomic_slot(tmp_path, monkeypatch):
-    db_path = tmp_path / "database" / "lcm.db"
+    db_path = tmp_path / "database" / "trove.db"
     store = MessageStore(db_path)
     store.append("session", {"role": "user", "content": "backup"})
     store.commit()
@@ -508,7 +508,7 @@ def test_rotate_backup_failure_preserves_existing_atomic_slot(tmp_path, monkeypa
 
 
 def test_timestamped_backup_flush_failure_leaves_no_empty_artifact(tmp_path, monkeypatch):
-    db_path = tmp_path / "database" / "lcm.db"
+    db_path = tmp_path / "database" / "trove.db"
     store = MessageStore(db_path)
     backup_dir = tmp_path / "backups"
     engine = SimpleNamespace(

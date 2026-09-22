@@ -1,9 +1,9 @@
 # Dependency assurance contract
 
-Hermes-LCM uses a **host-owned dependency boundary**. It is installed as source
+Hermes-TROVE uses a **host-owned dependency boundary**. It is installed as source
 inside Hermes Agent rather than as an independently resolved Python package, so
 Hermes Agent owns the environment, lock, upgrades, and any vulnerability scan of
-the resolved environment. Hermes-LCM must not silently create a second resolver
+the resolved environment. Hermes-TROVE must not silently create a second resolver
 or install packages to make an assurance tool pass.
 
 The authoritative, versioned contract is
@@ -16,7 +16,7 @@ The authoritative, versioned contract is
 - explicitly listed compatibility-path and optional feature imports, with the
   imported API each host-resolved version must provide
 
-The Hermes-LCM maintainers own contract updates. Increment the contract version
+The Hermes-TROVE maintainers own contract updates. Increment the contract version
 and review the boundary whenever a scanned runtime import, supported Python or
 Hermes Agent version, or required imported API changes.
 

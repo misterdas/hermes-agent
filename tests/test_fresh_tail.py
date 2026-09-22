@@ -1,9 +1,9 @@
 """Tests for count/token-bounded fresh-tail selection."""
 
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.engine import LCMEngine
-from hermes_lcm.fresh_tail import resolve_fresh_tail_boundary
-from hermes_lcm.tokens import count_message_tokens
+from hermes_trove.config import TROVEConfig
+from hermes_trove.engine import TROVEEngine
+from hermes_trove.fresh_tail import resolve_fresh_tail_boundary
+from hermes_trove.tokens import count_message_tokens
 
 
 def _user(content):
@@ -109,11 +109,11 @@ def test_orphan_tool_result_does_not_create_a_phantom_group():
 
 
 def test_stored_tail_expands_backward_until_tool_group_is_complete(tmp_path):
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / "fresh-tail.db"),
         fresh_tail_count=1,
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes"))
     engine.on_session_start(
         "fresh-tail-session",
         conversation_id="fresh-tail-conversation",
@@ -131,12 +131,12 @@ def test_stored_tail_expands_backward_until_tool_group_is_complete(tmp_path):
 
 
 def test_raw_backlog_uses_token_bounded_tail(tmp_path):
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / "backlog.db"),
         fresh_tail_count=10,
         fresh_tail_max_tokens=5,
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes"))
     messages = [
         {"role": "system", "content": "system"},
         _user("old " * 20),
@@ -150,12 +150,12 @@ def test_raw_backlog_uses_token_bounded_tail(tmp_path):
 
 
 def test_rotate_uses_effective_token_bounded_tail(tmp_path):
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / "rotate.db"),
         fresh_tail_count=10,
         fresh_tail_max_tokens=5,
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes"))
     engine.on_session_start(
         "rotate-tail-session",
         conversation_id="rotate-tail-conversation",

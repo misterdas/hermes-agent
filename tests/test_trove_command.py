@@ -1,4 +1,4 @@
-"""Tests for /lcm command surface and diagnostics."""
+"""Tests for /trove command surface and diagnostics."""
 
 import json
 from pathlib import Path
@@ -9,23 +9,23 @@ from types import SimpleNamespace
 
 import pytest
 
-from hermes_lcm import tools as lcm_tools
-import hermes_lcm.command as command_mod
-from hermes_lcm.command import _fmt_size, handle_lcm_command
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.dag import SummaryNode
-from hermes_lcm.db_bootstrap import check_external_content_fts_integrity
-from hermes_lcm.diagnostics import doctor_guidance_for_check
-from hermes_lcm.engine import LCMEngine
-from hermes_lcm.store import build_message_fts_spec
+from hermes_trove import tools as trove_tools
+import hermes_trove.command as command_mod
+from hermes_trove.command import _fmt_size, handle_trove_command
+from hermes_trove.config import TROVEConfig
+from hermes_trove.dag import SummaryNode
+from hermes_trove.db_bootstrap import check_external_content_fts_integrity
+from hermes_trove.diagnostics import doctor_guidance_for_check
+from hermes_trove.engine import TROVEEngine
+from hermes_trove.store import build_message_fts_spec
 
 
 @pytest.fixture
 def engine(tmp_path):
-    config = LCMConfig()
-    config.database_path = str(tmp_path / "lcm_test.db")
+    config = TROVEConfig()
+    config.database_path = str(tmp_path / "trove_test.db")
     hermes_home = tmp_path / "hermes_home"
-    e = LCMEngine(config=config, hermes_home=str(hermes_home))
+    e = TROVEEngine(config=config, hermes_home=str(hermes_home))
     e._session_id = "test-session"
     e._session_platform = "telegram"
     e.update_model(
@@ -37,7 +37,7 @@ def engine(tmp_path):
     return e
 
 
-def _replace_with_header_only_sqlite_db(e: LCMEngine) -> Path:
+def _replace_with_header_only_sqlite_db(e: TROVEEngine) -> Path:
     """Replace the active DB file with a valid SQLite header and no tables."""
     db_path = Path(e._store.db_path)
     e.shutdown()
@@ -58,16 +58,16 @@ def _replace_with_header_only_sqlite_db(e: LCMEngine) -> Path:
     return db_path
 
 
-def test_lcm_engine_declares_automatic_compaction_silent(engine):
+def test_trove_engine_declares_automatic_compaction_silent(engine):
     assert engine.emit_automatic_compaction_status is False
     assert engine.quiet_mode is True
 
 
-def test_lcm_status_default_reports_current_session(engine):
-    result = handle_lcm_command("", engine)
+def test_trove_status_default_reports_current_session(engine):
+    result = handle_trove_command("", engine)
 
-    assert "LCM status" in result
-    assert "engine: lcm" in result
+    assert "TROVE status" in result
+    assert "engine: trove" in result
     assert "session_id: test-session" in result
     assert "cache_metrics_available: no" in result
     assert "last_cache_read_tokens: 0" in result
@@ -84,9 +84,9 @@ def test_lcm_status_default_reports_current_session(engine):
     assert "dag_nodes: 0" in result
 
 
-def test_lcm_status_json_reports_runtime_context_indicators(engine):
+def test_trove_status_json_reports_runtime_context_indicators(engine):
     status = engine.get_status()
-    payload = json.loads(lcm_tools.lcm_status({}, engine=engine))
+    payload = json.loads(trove_tools.trove_status({}, engine=engine))
 
     assert status["model"] == "gpt-test"
     assert status["provider"] == "openai-codex"
@@ -102,7 +102,7 @@ def test_lcm_status_json_reports_runtime_context_indicators(engine):
     assert payload["threshold_tokens"] == int(200000 * engine._config.context_threshold)
 
 
-def test_lcm_status_uses_dag_aggregates_without_loading_all_nodes(engine, monkeypatch):
+def test_trove_status_uses_dag_aggregates_without_loading_all_nodes(engine, monkeypatch):
     engine._dag.add_node(SummaryNode(
         session_id="test-session",
         depth=0,
@@ -132,7 +132,7 @@ def test_lcm_status_uses_dag_aggregates_without_loading_all_nodes(engine, monkey
     monkeypatch.setattr(engine._dag, "get_session_nodes", fail_get_session_nodes)
 
     status = engine.get_status()
-    payload = json.loads(lcm_tools.lcm_status({}, engine=engine))
+    payload = json.loads(trove_tools.trove_status({}, engine=engine))
 
     assert status["dag_nodes"] == 2
     assert payload["dag"]["total_nodes"] == 2
@@ -143,7 +143,7 @@ def test_lcm_status_uses_dag_aggregates_without_loading_all_nodes(engine, monkey
     }
 
 
-def test_lcm_describe_overview_uses_dag_aggregates_without_loading_all_nodes(engine, monkeypatch):
+def test_trove_describe_overview_uses_dag_aggregates_without_loading_all_nodes(engine, monkeypatch):
     for idx in range(25):
         engine._dag.add_node(SummaryNode(
             session_id="test-session",
@@ -173,7 +173,7 @@ def test_lcm_describe_overview_uses_dag_aggregates_without_loading_all_nodes(eng
 
     monkeypatch.setattr(engine._dag, "get_session_nodes", fail_get_session_nodes)
 
-    overview = json.loads(lcm_tools.lcm_describe({}, engine=engine))
+    overview = json.loads(trove_tools.trove_describe({}, engine=engine))
 
     assert overview["depths"]["d0"]["count"] == 25
     assert overview["depths"]["d0"]["total_tokens"] == sum(range(1, 26))
@@ -183,7 +183,7 @@ def test_lcm_describe_overview_uses_dag_aggregates_without_loading_all_nodes(eng
     assert overview["depths"]["d1"]["nodes"][0]["expand_hint"] == "Expand for details about: parent"
 
 
-def test_lcm_status_and_describe_count_more_than_default_node_page(engine):
+def test_trove_status_and_describe_count_more_than_default_node_page(engine):
     node_count = 1005
     for idx in range(node_count):
         engine._dag.add_node(SummaryNode(
@@ -199,8 +199,8 @@ def test_lcm_status_and_describe_count_more_than_default_node_page(engine):
         ))
 
     status = engine.get_status()
-    payload = json.loads(lcm_tools.lcm_status({}, engine=engine))
-    overview = json.loads(lcm_tools.lcm_describe({}, engine=engine))
+    payload = json.loads(trove_tools.trove_status({}, engine=engine))
+    overview = json.loads(trove_tools.trove_describe({}, engine=engine))
 
     assert status["dag_nodes"] == node_count
     assert payload["dag"]["total_nodes"] == node_count
@@ -215,11 +215,11 @@ def test_lcm_status_and_describe_count_more_than_default_node_page(engine):
     assert len(overview["depths"]["d0"]["nodes"]) == 20
 
 
-def test_lcm_status_json_reports_effective_config_sources(tmp_path, monkeypatch):
+def test_trove_status_json_reports_effective_config_sources(tmp_path, monkeypatch):
     hermes_home = tmp_path / "hermes_home"
     hermes_home.mkdir()
     (hermes_home / "config.yaml").write_text(
-        "lcm:\n"
+        "trove:\n"
         "  context_threshold: 0.61\n"
         "  fresh_tail_count: 999\n"
         "compression:\n"
@@ -229,19 +229,19 @@ def test_lcm_status_json_reports_effective_config_sources(tmp_path, monkeypatch)
         "    timeout: 42\n"
     )
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-    monkeypatch.delenv("LCM_CONTEXT_THRESHOLD", raising=False)
-    monkeypatch.delenv("LCM_SUMMARY_TIMEOUT_MS", raising=False)
-    monkeypatch.setenv("LCM_SUMMARY_SPEND_MAX_CALLS", "0")
-    monkeypatch.setenv("LCM_SUMMARY_SPEND_WINDOW_SECONDS", "123.5")
-    monkeypatch.setenv("LCM_SUMMARY_SPEND_BACKOFF_SECONDS", "456.5")
-    monkeypatch.setenv("LCM_FRESH_TAIL_COUNT", "17")
+    monkeypatch.delenv("TROVE_CONTEXT_THRESHOLD", raising=False)
+    monkeypatch.delenv("TROVE_SUMMARY_TIMEOUT_MS", raising=False)
+    monkeypatch.setenv("TROVE_SUMMARY_SPEND_MAX_CALLS", "0")
+    monkeypatch.setenv("TROVE_SUMMARY_SPEND_WINDOW_SECONDS", "123.5")
+    monkeypatch.setenv("TROVE_SUMMARY_SPEND_BACKOFF_SECONDS", "456.5")
+    monkeypatch.setenv("TROVE_FRESH_TAIL_COUNT", "17")
 
-    config = LCMConfig.from_env()
-    config.database_path = str(tmp_path / "lcm_sources.db")
-    engine = LCMEngine(config=config, hermes_home=str(hermes_home))
+    config = TROVEConfig.from_env()
+    config.database_path = str(tmp_path / "trove_sources.db")
+    engine = TROVEEngine(config=config, hermes_home=str(hermes_home))
     engine.on_session_start("source-session", platform="telegram", context_length=100000)
 
-    payload = json.loads(lcm_tools.lcm_status({}, engine=engine))
+    payload = json.loads(trove_tools.trove_status({}, engine=engine))
 
     assert payload["config"]["fresh_tail_count"] == 17
     assert payload["config"]["context_threshold"] == 0.61
@@ -249,82 +249,82 @@ def test_lcm_status_json_reports_effective_config_sources(tmp_path, monkeypatch)
     assert payload["config"]["summary_spend_max_calls"] == 0
     assert payload["config"]["summary_spend_window_seconds"] == 123.5
     assert payload["config"]["summary_spend_backoff_seconds"] == 456.5
-    assert payload["config_sources"]["fresh_tail_count"] == "env:LCM_FRESH_TAIL_COUNT"
-    assert payload["config_sources"]["context_threshold"] == "config_yaml:lcm.context_threshold"
+    assert payload["config_sources"]["fresh_tail_count"] == "env:TROVE_FRESH_TAIL_COUNT"
+    assert payload["config_sources"]["context_threshold"] == "config_yaml:trove.context_threshold"
     assert payload["config_sources"]["summary_timeout_ms"] == "config_yaml:auxiliary.compression.timeout"
-    assert payload["config_sources"]["summary_spend_max_calls"] == "env:LCM_SUMMARY_SPEND_MAX_CALLS"
-    assert payload["config_sources"]["summary_spend_window_seconds"] == "env:LCM_SUMMARY_SPEND_WINDOW_SECONDS"
-    assert payload["config_sources"]["summary_spend_backoff_seconds"] == "env:LCM_SUMMARY_SPEND_BACKOFF_SECONDS"
+    assert payload["config_sources"]["summary_spend_max_calls"] == "env:TROVE_SUMMARY_SPEND_MAX_CALLS"
+    assert payload["config_sources"]["summary_spend_window_seconds"] == "env:TROVE_SUMMARY_SPEND_WINDOW_SECONDS"
+    assert payload["config_sources"]["summary_spend_backoff_seconds"] == "env:TROVE_SUMMARY_SPEND_BACKOFF_SECONDS"
     assert engine._summary_spend_guard.max_calls == 0
-    assert "fresh_tail_count" in payload["ignored_config_yaml_lcm_keys"]
+    assert "fresh_tail_count" in payload["ignored_config_yaml_trove_keys"]
 
 
-def test_lcm_status_does_not_report_invalid_env_as_effective_source(tmp_path, monkeypatch):
+def test_trove_status_does_not_report_invalid_env_as_effective_source(tmp_path, monkeypatch):
     hermes_home = tmp_path / "hermes_home"
     hermes_home.mkdir()
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-    monkeypatch.setenv("LCM_LEAF_CHUNK_TOKENS", "not-an-int")
-    monkeypatch.delenv("LCM_CONTEXT_THRESHOLD", raising=False)
+    monkeypatch.setenv("TROVE_LEAF_CHUNK_TOKENS", "not-an-int")
+    monkeypatch.delenv("TROVE_CONTEXT_THRESHOLD", raising=False)
 
-    config = LCMConfig.from_env()
-    config.database_path = str(tmp_path / "lcm_invalid_source.db")
-    engine = LCMEngine(config=config, hermes_home=str(hermes_home))
+    config = TROVEConfig.from_env()
+    config.database_path = str(tmp_path / "trove_invalid_source.db")
+    engine = TROVEEngine(config=config, hermes_home=str(hermes_home))
     engine.on_session_start("invalid-source-session", platform="telegram", context_length=100000)
 
-    payload = json.loads(lcm_tools.lcm_status({}, engine=engine))
+    payload = json.loads(trove_tools.trove_status({}, engine=engine))
 
     assert payload["config"]["leaf_chunk_tokens"] == 20000
     assert payload["config_sources"]["leaf_chunk_tokens"] == "default"
-    assert any("LCM_LEAF_CHUNK_TOKENS" in warning for warning in payload["config_source_warnings"])
+    assert any("TROVE_LEAF_CHUNK_TOKENS" in warning for warning in payload["config_source_warnings"])
 
 
-def test_lcm_status_text_reports_config_source_for_context_threshold(tmp_path, monkeypatch):
+def test_trove_status_text_reports_config_source_for_context_threshold(tmp_path, monkeypatch):
     hermes_home = tmp_path / "hermes_home"
     hermes_home.mkdir()
     (hermes_home / "config.yaml").write_text("compression:\n  threshold: 0.44\n")
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-    monkeypatch.delenv("LCM_CONTEXT_THRESHOLD", raising=False)
+    monkeypatch.delenv("TROVE_CONTEXT_THRESHOLD", raising=False)
 
-    config = LCMConfig.from_env()
-    config.database_path = str(tmp_path / "lcm_text_source.db")
-    engine = LCMEngine(config=config, hermes_home=str(hermes_home))
+    config = TROVEConfig.from_env()
+    config.database_path = str(tmp_path / "trove_text_source.db")
+    engine = TROVEEngine(config=config, hermes_home=str(hermes_home))
     engine.on_session_start("text-source-session", platform="telegram", context_length=100000)
 
-    result = handle_lcm_command("status", engine)
+    result = handle_trove_command("status", engine)
 
     assert "context_threshold: 0.44" in result
     assert "context_threshold_source: config_yaml:compression.threshold" in result
 
 
-def test_lcm_doctor_warns_about_ignored_lcm_config_yaml_keys(tmp_path, monkeypatch):
+def test_trove_doctor_warns_about_ignored_trove_config_yaml_keys(tmp_path, monkeypatch):
     hermes_home = tmp_path / "hermes_home"
     hermes_home.mkdir()
     (hermes_home / "config.yaml").write_text(
-        "lcm:\n"
+        "trove:\n"
         "  context_threshold: 0.52\n"
         "  leaf_chunk_tokens: 12345\n"
     )
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-    monkeypatch.delenv("LCM_CONTEXT_THRESHOLD", raising=False)
+    monkeypatch.delenv("TROVE_CONTEXT_THRESHOLD", raising=False)
 
-    config = LCMConfig.from_env()
-    config.database_path = str(tmp_path / "lcm_doctor_source.db")
-    engine = LCMEngine(config=config, hermes_home=str(hermes_home))
+    config = TROVEConfig.from_env()
+    config.database_path = str(tmp_path / "trove_doctor_source.db")
+    engine = TROVEEngine(config=config, hermes_home=str(hermes_home))
     engine.on_session_start("doctor-source-session", platform="telegram", context_length=100000)
 
-    payload = json.loads(lcm_tools.lcm_doctor({}, engine=engine))
+    payload = json.loads(trove_tools.trove_doctor({}, engine=engine))
     config_check = next(c for c in payload["checks"] if c["check"] == "config_validation")
 
     assert payload["overall"] == "warnings"
     assert config_check["status"] == "warn"
-    assert any("lcm.leaf_chunk_tokens" in warning for warning in config_check["detail"])
+    assert any("trove.leaf_chunk_tokens" in warning for warning in config_check["detail"])
 
 
-def test_lcm_status_reports_last_compression_noop_reason(engine):
+def test_trove_status_reports_last_compression_noop_reason(engine):
     engine._last_compression_status = "noop"
     engine._last_compression_noop_reason = "no eligible raw backlog outside fresh tail"
 
-    result = handle_lcm_command("status", engine)
+    result = handle_trove_command("status", engine)
 
     assert "last_compression_status: noop" in result
     assert (
@@ -333,7 +333,7 @@ def test_lcm_status_reports_last_compression_noop_reason(engine):
     )
 
 
-def test_lcm_status_reports_cache_usage_metrics_when_host_provides_them(engine):
+def test_trove_status_reports_cache_usage_metrics_when_host_provides_them(engine):
     engine.update_from_response({
         "prompt_tokens": 1050,
         "completion_tokens": 120,
@@ -345,7 +345,7 @@ def test_lcm_status_reports_cache_usage_metrics_when_host_provides_them(engine):
         "reasoning_tokens": 30,
     })
 
-    result = handle_lcm_command("status", engine)
+    result = handle_trove_command("status", engine)
 
     assert "cache_metrics_available: yes" in result
     assert "last_input_tokens: 600" in result
@@ -376,12 +376,12 @@ def test_update_from_response_treats_zero_cache_keys_as_available(engine):
     assert status["cache_read_ratio"] == 0.0
 
 
-def test_lcm_status_does_not_leak_prior_session_compaction_count_after_rebind(engine):
+def test_trove_status_does_not_leak_prior_session_compaction_count_after_rebind(engine):
     engine.compression_count = 4
     engine.last_prompt_tokens = 8000
     engine.on_session_start("fresh-session", platform="telegram", context_length=200000)
 
-    result = handle_lcm_command("status", engine)
+    result = handle_trove_command("status", engine)
 
     assert "session_id: fresh-session" in result
     assert "compression_count: 0" in result
@@ -389,14 +389,14 @@ def test_lcm_status_does_not_leak_prior_session_compaction_count_after_rebind(en
     assert "dag_nodes: 0" in result
 
 
-def test_lcm_status_explains_unbound_runtime_before_first_session(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm_unbound.db"))
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+def test_trove_status_explains_unbound_runtime_before_first_session(tmp_path):
+    config = TROVEConfig(database_path=str(tmp_path / "trove_unbound.db"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._store.append("telegram:chat-1", {"role": "user", "content": "hello"}, token_estimate=7)
 
-    result = handle_lcm_command("status", engine)
+    result = handle_trove_command("status", engine)
 
-    assert "LCM status" in result
+    assert "TROVE status" in result
     assert "session_id: (unbound)" in result
     assert "session_platform: (unbound)" in result
     assert "model: (uninitialized)" in result
@@ -409,14 +409,14 @@ def test_lcm_status_explains_unbound_runtime_before_first_session(tmp_path):
     assert "\nmessages_total:" not in result
     assert "\nsummary_nodes_total:" not in result
     assert "\nsummary_node_sessions_total:" not in result
-    assert "note: no active Hermes session has initialized LCM in this process yet" in result
+    assert "note: no active Hermes session has initialized TROVE in this process yet" in result
 
 
-def test_lcm_status_reports_runtime_identity(engine):
-    result = handle_lcm_command("status", engine)
+def test_trove_status_reports_runtime_identity(engine):
+    result = handle_trove_command("status", engine)
     repo_root = Path(__file__).resolve().parent.parent
 
-    assert "plugin_name: hermes-lcm" in result
+    assert "plugin_name: hermes-trove" in result
     assert "plugin_version: 1.0.0" in result
     assert f"plugin_path: {repo_root}" in result
     assert "module_path:" in result
@@ -425,7 +425,7 @@ def test_lcm_status_reports_runtime_identity(engine):
     assert "conversation_id:" in result
 
 
-def test_lcm_status_reports_source_lineage_breakdown(engine):
+def test_trove_status_reports_source_lineage_breakdown(engine):
     engine._store.append("test-session", {"role": "user", "content": "cli message"}, source="cli")
     engine._store.append("test-session", {"role": "user", "content": "unknown message"})
     engine._store._conn.execute(
@@ -436,7 +436,7 @@ def test_lcm_status_reports_source_lineage_breakdown(engine):
     )
     engine._store._conn.commit()
 
-    result = handle_lcm_command("status", engine)
+    result = handle_trove_command("status", engine)
 
     assert "plugin_git_commit:" in result
     assert "plugin_git_branch:" in result
@@ -448,27 +448,27 @@ def test_lcm_status_reports_source_lineage_breakdown(engine):
     assert "source_effective_unknown_messages: 2" in result
 
 
-def test_lcm_doctor_reports_health_checks(engine):
-    result = handle_lcm_command("doctor", engine)
+def test_trove_doctor_reports_health_checks(engine):
+    result = handle_trove_command("doctor", engine)
     repo_root = Path(__file__).resolve().parent.parent
 
-    assert "LCM doctor" in result
+    assert "TROVE doctor" in result
     assert "sqlite_integrity: ok" in result
     assert "messages_fts: ok" in result
     assert "nodes_fts: ok" in result
-    assert "plugin_name: hermes-lcm" in result
+    assert "plugin_name: hermes-trove" in result
     assert "plugin_version: 1.0.0" in result
     assert f"plugin_path: {repo_root}" in result
     assert "plugin_git_commit:" in result
     assert "triage_guidance:\n- none" in result
 
 
-def test_lcm_doctor_reports_heartbeat_noise_rows_without_mutating_or_leaking_content(engine):
+def test_trove_doctor_reports_heartbeat_noise_rows_without_mutating_or_leaking_content(engine):
     engine._store.append("heartbeat-session", {"role": "assistant", "content": "Still working..."}, token_estimate=2)
     engine._store.append("heartbeat-session", {"role": "user", "content": "Still working..."}, token_estimate=2)
     before = engine._store.get_session_count("heartbeat-session")
 
-    result = handle_lcm_command("doctor", engine)
+    result = handle_trove_command("doctor", engine)
     after = engine._store.get_session_count("heartbeat-session")
 
     assert after == before
@@ -477,11 +477,11 @@ def test_lcm_doctor_reports_heartbeat_noise_rows_without_mutating_or_leaking_con
     assert "Still working" not in result
 
 
-def test_lcm_doctor_tool_reports_heartbeat_noise_as_read_only_payload_detail(engine):
+def test_trove_doctor_tool_reports_heartbeat_noise_as_read_only_payload_detail(engine):
     engine._store.append("heartbeat-session", {"role": "assistant", "content": "Still working..."}, token_estimate=2)
     engine._store.append("heartbeat-session", {"role": "user", "content": "Still working..."}, token_estimate=2)
 
-    doctor = json.loads(lcm_tools.lcm_doctor({}, engine=engine))
+    doctor = json.loads(trove_tools.trove_doctor({}, engine=engine))
     payload = next(check for check in doctor["checks"] if check["check"] == "payload_storage")
     rows = payload["detail"]["heartbeat_noise_rows"]
 
@@ -501,18 +501,18 @@ def test_lcm_doctor_tool_reports_heartbeat_noise_as_read_only_payload_detail(eng
     assert "Still working" not in json.dumps(payload)
 
 
-def test_lcm_doctor_context_pressure_uses_runtime_threshold(tmp_path):
-    config = LCMConfig(
+def test_trove_doctor_context_pressure_uses_runtime_threshold(tmp_path):
+    config = TROVEConfig(
         context_threshold=0.68,
         database_path=str(tmp_path / "doctor-runtime-threshold.db"),
     )
     config.config_sources["context_threshold"] = "config_yaml:compression.threshold"
-    engine = LCMEngine(config=config)
+    engine = TROVEEngine(config=config)
     try:
         engine.update_model("gpt-5.5", 400_000, provider="openai-codex")
         engine.last_prompt_tokens = 225_000
 
-        doctor = json.loads(lcm_tools.lcm_doctor({}, engine=engine))
+        doctor = json.loads(trove_tools.trove_doctor({}, engine=engine))
         pressure = next(check for check in doctor["checks"] if check["check"] == "context_pressure")
 
         assert pressure["status"] == "pass"
@@ -521,17 +521,17 @@ def test_lcm_doctor_context_pressure_uses_runtime_threshold(tmp_path):
         engine.shutdown()
 
 
-def test_lcm_doctor_config_validation_uses_runtime_threshold_for_autoraised_context(tmp_path):
-    config = LCMConfig(
+def test_trove_doctor_config_validation_uses_runtime_threshold_for_autoraised_context(tmp_path):
+    config = TROVEConfig(
         context_threshold=0.20,
         database_path=str(tmp_path / "doctor-runtime-validation.db"),
     )
     config.config_sources["context_threshold"] = "config_yaml:compression.threshold"
-    engine = LCMEngine(config=config)
+    engine = TROVEEngine(config=config)
     try:
         engine.update_model("gpt-5.5", 400_000, provider="openai-codex")
 
-        doctor = json.loads(lcm_tools.lcm_doctor({}, engine=engine))
+        doctor = json.loads(trove_tools.trove_doctor({}, engine=engine))
         validation = next(check for check in doctor["checks"] if check["check"] == "config_validation")
 
         assert engine.context_threshold == 0.85
@@ -541,8 +541,8 @@ def test_lcm_doctor_config_validation_uses_runtime_threshold_for_autoraised_cont
         engine.shutdown()
 
 
-def test_lcm_doctor_text_reports_missing_externalized_payload_refs(engine):
-    storage_dir = Path(engine._hermes_home) / "lcm-large-outputs"
+def test_trove_doctor_text_reports_missing_externalized_payload_refs(engine):
+    storage_dir = Path(engine._hermes_home) / "trove-large-outputs"
     storage_dir.mkdir(parents=True)
     (storage_dir / "referenced.json").write_text(json.dumps({"content": "stored", "content_chars": 6}))
     (storage_dir / "unreferenced.json").write_text(json.dumps({"content": "orphaned", "content_chars": 8}))
@@ -552,7 +552,7 @@ def test_lcm_doctor_text_reports_missing_externalized_payload_refs(engine):
             "role": "assistant",
             "content": "\n".join(
                 [
-                    "[Externalized LCM ingest payload: kind=ingest_payload; field=content; chars=6; bytes=6; ref=referenced.json]",
+                    "[Externalized TROVE ingest payload: kind=ingest_payload; field=content; chars=6; bytes=6; ref=referenced.json]",
                     "[GC'd externalized payload: kind=raw_payload; role=assistant; chars=10; ref=missing.json]",
                 ]
             ),
@@ -560,7 +560,7 @@ def test_lcm_doctor_text_reports_missing_externalized_payload_refs(engine):
         token_estimate=2,
     )
 
-    result = handle_lcm_command("doctor", engine)
+    result = handle_trove_command("doctor", engine)
 
     assert "externalized_payload_refs_total: 2" in result
     assert "externalized_payload_refs_existing: 1" in result
@@ -573,7 +573,7 @@ def test_lcm_doctor_text_reports_missing_externalized_payload_refs(engine):
     assert "orphaned" not in result
 
 
-def test_lcm_doctor_finds_heartbeat_noise_after_many_short_nonmatches(engine):
+def test_trove_doctor_finds_heartbeat_noise_after_many_short_nonmatches(engine):
     for idx in range(120):
         engine._store.append(
             "heartbeat-session",
@@ -582,7 +582,7 @@ def test_lcm_doctor_finds_heartbeat_noise_after_many_short_nonmatches(engine):
         )
     engine._store.append("heartbeat-session", {"role": "assistant", "content": "Still working..."}, token_estimate=2)
 
-    doctor = json.loads(lcm_tools.lcm_doctor({}, engine=engine))
+    doctor = json.loads(trove_tools.trove_doctor({}, engine=engine))
     payload = next(check for check in doctor["checks"] if check["check"] == "payload_storage")
     rows = payload["detail"]["heartbeat_noise_rows"]
 
@@ -593,26 +593,26 @@ def test_lcm_doctor_finds_heartbeat_noise_after_many_short_nonmatches(engine):
     assert "Still working" not in json.dumps(payload)
 
 
-def test_lcm_doctor_flags_header_only_database_schema(engine):
+def test_trove_doctor_flags_header_only_database_schema(engine):
     db_path = _replace_with_header_only_sqlite_db(engine)
 
-    result = handle_lcm_command("doctor", engine)
+    result = handle_trove_command("doctor", engine)
 
-    assert "LCM doctor" in result
+    assert "TROVE doctor" in result
     assert "status: issues-found" in result
     assert f"database_path: {db_path}" in result
     assert "schema_core_tables: missing" in result
     assert "schema_missing_tables:" in result
     assert "messages" in result
     assert "summary_nodes" in result
-    assert "lcm_lifecycle_state" in result
-    assert "verify HERMES_HOME/LCM_DATABASE_PATH point at the database inspected by Hermes" in result
+    assert "trove_lifecycle_state" in result
+    assert "verify HERMES_HOME/TROVE_DATABASE_PATH point at the database inspected by Hermes" in result
 
 
-def test_lcm_doctor_tool_flags_header_only_database_schema(engine):
+def test_trove_doctor_tool_flags_header_only_database_schema(engine):
     db_path = _replace_with_header_only_sqlite_db(engine)
 
-    doctor = json.loads(lcm_tools.lcm_doctor({}, engine=engine))
+    doctor = json.loads(trove_tools.trove_doctor({}, engine=engine))
     schema_check = next(check for check in doctor["checks"] if check["check"] == "schema_core_tables")
 
     assert doctor["overall"] == "unhealthy"
@@ -621,23 +621,23 @@ def test_lcm_doctor_tool_flags_header_only_database_schema(engine):
     assert schema_check["detail"]["existing_tables"] == []
     assert "messages" in schema_check["detail"]["missing_tables"]
     assert "summary_nodes" in schema_check["detail"]["missing_tables"]
-    assert "lcm_lifecycle_state" in schema_check["detail"]["missing_tables"]
+    assert "trove_lifecycle_state" in schema_check["detail"]["missing_tables"]
 
 
-def test_lcm_doctor_handles_closed_store_connection(engine):
+def test_trove_doctor_handles_closed_store_connection(engine):
     db_path = Path(engine._store.db_path)
     engine.shutdown()
 
-    result = handle_lcm_command("doctor", engine)
+    result = handle_trove_command("doctor", engine)
 
-    assert "LCM doctor" in result
+    assert "TROVE doctor" in result
     assert "status: issues-found" in result
     assert f"database_path: {db_path}" in result
     assert "schema_core_tables: error:" in result
-    assert "LCM store connection is not initialized" in result
+    assert "TROVE store connection is not initialized" in result
 
 
-def test_lcm_doctor_prioritizes_schema_inspection_error(engine, monkeypatch):
+def test_trove_doctor_prioritizes_schema_inspection_error(engine, monkeypatch):
     def _schema_error(_conn, *, database_path="", required_tables=()):
         return {
             "database_path": database_path,
@@ -647,21 +647,21 @@ def test_lcm_doctor_prioritizes_schema_inspection_error(engine, monkeypatch):
             "error": "database disk image is malformed",
         }
 
-    monkeypatch.setattr(command_mod, "inspect_lcm_schema_health", _schema_error)
+    monkeypatch.setattr(command_mod, "inspect_trove_schema_health", _schema_error)
 
-    result = handle_lcm_command("doctor", engine)
+    result = handle_trove_command("doctor", engine)
 
     assert "schema_core_tables: error: database disk image is malformed" in result
     assert "schema_core_tables: missing" not in result
     assert "verify SQLite can read sqlite_master for the database inspected by Hermes" in result
 
 
-def test_lcm_doctor_distinguishes_observations_from_recommended_actions(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm_doctor_actions.db"),
+def test_trove_doctor_distinguishes_observations_from_recommended_actions(tmp_path):
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove_doctor_actions.db"),
         ignore_session_patterns=["cron*"],
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._session_id = "live-session"
     engine._session_platform = "telegram"
     engine._conversation_id = "live-session"
@@ -669,19 +669,19 @@ def test_lcm_doctor_distinguishes_observations_from_recommended_actions(tmp_path
     engine._lifecycle.record_debt("live-session", kind="raw_backlog", size_estimate=321)
     engine._store.append("cron_20260414", {"role": "user", "content": "scheduled report"}, token_estimate=12)
 
-    result = handle_lcm_command("doctor", engine)
+    result = handle_trove_command("doctor", engine)
 
     assert "observations:" in result
     assert "recommended_actions:" in result
     assert "maintenance_debt" in result
     assert "cleanup_candidates" in result
-    assert "/lcm doctor clean" in result
-    assert "/lcm backup" in result
+    assert "/trove doctor clean" in result
+    assert "/trove backup" in result
     assert "triage_guidance:" in result
     assert "cleanup_candidates: backup-first cleanup" in result
 
 
-def test_lcm_doctor_tool_guidance_maps_warning_classes_to_operator_actions(engine):
+def test_trove_doctor_tool_guidance_maps_warning_classes_to_operator_actions(engine):
     engine._store.append("heartbeat-session", {"role": "assistant", "content": "Still working..."}, token_estimate=2)
     engine._dag.add_node(
         SummaryNode(
@@ -696,7 +696,7 @@ def test_lcm_doctor_tool_guidance_maps_warning_classes_to_operator_actions(engin
         )
     )
 
-    doctor = json.loads(lcm_tools.lcm_doctor({}, engine=engine))
+    doctor = json.loads(trove_tools.trove_doctor({}, engine=engine))
     guidance = {item["check"]: item for item in doctor["guidance"]}
 
     assert guidance["payload_storage"]["action"] == "safe/ignore"
@@ -704,7 +704,7 @@ def test_lcm_doctor_tool_guidance_maps_warning_classes_to_operator_actions(engin
     assert guidance["summary_quality"]["warning_only"] is True
 
 
-def test_lcm_doctor_payload_failure_guidance_requires_inspection():
+def test_trove_doctor_payload_failure_guidance_requires_inspection():
     guidance = doctor_guidance_for_check({
         "check": "payload_storage",
         "status": "fail",
@@ -717,7 +717,7 @@ def test_lcm_doctor_payload_failure_guidance_requires_inspection():
     assert "could not read" in guidance["rationale"]
 
 
-def test_lcm_doctor_lifecycle_failure_guidance_requires_inspection():
+def test_trove_doctor_lifecycle_failure_guidance_requires_inspection():
     guidance = doctor_guidance_for_check({
         "check": "lifecycle_fragmentation",
         "status": "fail",
@@ -731,7 +731,7 @@ def test_lcm_doctor_lifecycle_failure_guidance_requires_inspection():
 
 
 @pytest.mark.parametrize("check_name", ["orphaned_dag_nodes", "summary_quality"])
-def test_lcm_doctor_dag_failure_guidance_requires_inspection(check_name):
+def test_trove_doctor_dag_failure_guidance_requires_inspection(check_name):
     guidance = doctor_guidance_for_check({
         "check": check_name,
         "status": "fail",
@@ -744,7 +744,7 @@ def test_lcm_doctor_dag_failure_guidance_requires_inspection(check_name):
     assert "could not read" in guidance["rationale"]
 
 
-def test_lcm_doctor_source_lineage_failure_guidance_requires_inspection():
+def test_trove_doctor_source_lineage_failure_guidance_requires_inspection():
     guidance = doctor_guidance_for_check({
         "check": "source_lineage_hygiene",
         "status": "fail",
@@ -758,7 +758,7 @@ def test_lcm_doctor_source_lineage_failure_guidance_requires_inspection():
     assert guidance["warning_only"] is False
 
 
-def test_lcm_doctor_source_lineage_warning_preserves_legacy_blank_source_guidance():
+def test_trove_doctor_source_lineage_warning_preserves_legacy_blank_source_guidance():
     guidance = doctor_guidance_for_check({
         "check": "source_lineage_hygiene",
         "status": "warn",
@@ -770,13 +770,13 @@ def test_lcm_doctor_source_lineage_warning_preserves_legacy_blank_source_guidanc
     assert "legacy blank-source" in guidance["operator_action"]
 
 
-def test_lcm_doctor_tool_source_lineage_read_error_guidance_requires_inspection(engine, monkeypatch):
+def test_trove_doctor_tool_source_lineage_read_error_guidance_requires_inspection(engine, monkeypatch):
     def fail_source_stats():
         raise RuntimeError("sqlite read error")
 
     monkeypatch.setattr(engine._store, "get_source_stats", fail_source_stats)
 
-    doctor = json.loads(lcm_tools.lcm_doctor({}, engine=engine))
+    doctor = json.loads(trove_tools.trove_doctor({}, engine=engine))
     guidance = {item["check"]: item for item in doctor["guidance"]}
 
     assert doctor["overall"] == "unhealthy"
@@ -785,26 +785,26 @@ def test_lcm_doctor_tool_source_lineage_read_error_guidance_requires_inspection(
     assert "source-lineage" in guidance["source_lineage_hygiene"]["operator_action"]
 
 
-def test_lcm_doctor_command_lifecycle_read_error_guidance_is_failure(engine, monkeypatch):
+def test_trove_doctor_command_lifecycle_read_error_guidance_is_failure(engine, monkeypatch):
     def fail_lifecycle_stats(*_args, **_kwargs):
         raise RuntimeError("lifecycle read error")
 
     monkeypatch.setattr(engine._lifecycle, "get_fragmentation_stats", fail_lifecycle_stats)
 
-    result = handle_lcm_command("doctor", engine)
+    result = handle_trove_command("doctor", engine)
 
     assert "status: issues-found" in result
     assert "lifecycle_fragmentation: inspect —" in result
     assert "lifecycle_fragmentation: inspect warning-only" not in result
 
 
-def test_lcm_doctor_command_payload_read_error_guidance_is_failure(engine, monkeypatch):
+def test_trove_doctor_command_payload_read_error_guidance_is_failure(engine, monkeypatch):
     def fail_payload_scan(*_args, **_kwargs):
         raise RuntimeError("payload read error")
 
     monkeypatch.setattr(command_mod, "scan_sqlite_payload_risks", fail_payload_scan)
 
-    result = handle_lcm_command("doctor", engine)
+    result = handle_trove_command("doctor", engine)
 
     assert "status: issues-found" in result
     assert "payload_storage_error: payload read error" in result
@@ -812,7 +812,7 @@ def test_lcm_doctor_command_payload_read_error_guidance_is_failure(engine, monke
     assert "payload_storage: inspect warning-only" not in result
 
 
-def test_lcm_doctor_command_payload_warning_drives_action_recommended(engine, monkeypatch):
+def test_trove_doctor_command_payload_warning_drives_action_recommended(engine, monkeypatch):
     def payload_warning(*_args, **_kwargs):
         return {
             "largest_content_rows": [],
@@ -827,14 +827,14 @@ def test_lcm_doctor_command_payload_warning_drives_action_recommended(engine, mo
 
     monkeypatch.setattr(command_mod, "scan_sqlite_payload_risks", payload_warning)
 
-    result = handle_lcm_command("doctor", engine)
+    result = handle_trove_command("doctor", engine)
 
     assert "status: action-recommended" in result
     assert "payload_storage: 1 suspicious inline/base64 payload row(s) need review" in result
     assert "payload_storage: inspect warning-only" in result
 
 
-def test_lcm_doctor_reports_legacy_blank_source_as_observation_without_warning(engine):
+def test_trove_doctor_reports_legacy_blank_source_as_observation_without_warning(engine):
     engine._store.append("sess-known", {"role": "user", "content": "cli message"}, source="cli")
     engine._store.append("sess-unknown", {"role": "user", "content": "unknown message"})
     engine._store._conn.execute(
@@ -845,7 +845,7 @@ def test_lcm_doctor_reports_legacy_blank_source_as_observation_without_warning(e
     )
     engine._store._conn.commit()
 
-    result = handle_lcm_command("doctor", engine)
+    result = handle_trove_command("doctor", engine)
 
     assert "status: ok" in result
     assert "source_lineage:" in result
@@ -855,7 +855,7 @@ def test_lcm_doctor_reports_legacy_blank_source_as_observation_without_warning(e
     assert "review legacy blank-source rows before any destructive cleanup" not in result
 
 
-def test_lcm_doctor_source_reports_dry_run_without_mutating(engine):
+def test_trove_doctor_source_reports_dry_run_without_mutating(engine):
     engine._store.append("sess-known", {"role": "user", "content": "cli message"}, source="cli")
     for source in (None, "", "   ", "\t\n"):
         engine._store._conn.execute(
@@ -866,23 +866,23 @@ def test_lcm_doctor_source_reports_dry_run_without_mutating(engine):
         )
     engine._store._conn.commit()
 
-    result = handle_lcm_command("doctor source", engine)
+    result = handle_trove_command("doctor source", engine)
     stats_after = engine._store.get_source_stats()
 
-    assert "LCM doctor source" in result
+    assert "TROVE doctor source" in result
     assert "status: normalization-needed" in result
     assert "legacy_blank_messages: 4" in result
     assert "would_update_messages: 4" in result
     assert "affected_sessions: 1" in result
     assert "target_source: unknown" in result
     assert "note: read-only scan only — no source rows were updated" in result
-    assert "note: use `/lcm doctor source apply` to create a backup and normalize legacy blank-source rows" in result
+    assert "note: use `/trove doctor source apply` to create a backup and normalize legacy blank-source rows" in result
     assert stats_after["legacy_blank_source_messages"] == 4
 
 
-def test_lcm_doctor_source_apply_is_backup_first_and_idempotent(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm_source_apply.db"))
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+def test_trove_doctor_source_apply_is_backup_first_and_idempotent(tmp_path):
+    config = TROVEConfig(database_path=str(tmp_path / "trove_source_apply.db"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._session_id = "live-session"
     engine._session_platform = "telegram"
     engine._conversation_id = "live-session"
@@ -896,11 +896,11 @@ def test_lcm_doctor_source_apply_is_backup_first_and_idempotent(tmp_path):
         )
     engine._store._conn.commit()
 
-    first = handle_lcm_command("doctor source apply", engine)
-    second = handle_lcm_command("doctor source apply", engine)
+    first = handle_trove_command("doctor source apply", engine)
+    second = handle_trove_command("doctor source apply", engine)
     stats_after = engine._store.get_source_stats()
 
-    assert "LCM doctor source apply" in first
+    assert "TROVE doctor source apply" in first
     assert "status: ok" in first
     assert "updated_messages: 4" in first
     assert "legacy_blank_before: 4" in first
@@ -915,7 +915,7 @@ def test_lcm_doctor_source_apply_is_backup_first_and_idempotent(tmp_path):
     assert stats_after["legacy_blank_source_messages"] == 0
 
 
-def test_lcm_doctor_reports_lifecycle_fragmentation_as_read_only_observation(engine):
+def test_trove_doctor_reports_lifecycle_fragmentation_as_read_only_observation(engine):
     state_db = Path(engine._hermes_home) / "state.db"
     state_db.parent.mkdir(parents=True, exist_ok=True)
     state_conn = sqlite3.connect(state_db)
@@ -940,40 +940,40 @@ def test_lcm_doctor_reports_lifecycle_fragmentation_as_read_only_observation(eng
         created_at=1.0,
     ))
     engine._lifecycle._conn.execute(
-        """INSERT INTO lcm_lifecycle_state
+        """INSERT INTO trove_lifecycle_state
            (conversation_id, current_session_id, last_finalized_session_id, current_frontier_store_id, last_finalized_frontier_store_id, updated_at)
            VALUES (?, ?, ?, ?, ?, ?)""",
         ("conv-current", "current-with-message", "node-missing-in-state", 0, 0, 1.0),
     )
     engine._lifecycle._conn.execute(
-        """INSERT INTO lcm_lifecycle_state
+        """INSERT INTO trove_lifecycle_state
            (conversation_id, current_session_id, last_finalized_session_id, current_frontier_store_id, last_finalized_frontier_store_id, updated_at)
            VALUES (?, ?, ?, ?, ?, ?)""",
         ("conv-stale", "missing-current", "missing-final", 0, 0, 1.0),
     )
     engine._lifecycle._conn.commit()
 
-    result = handle_lcm_command("doctor", engine)
+    result = handle_trove_command("doctor", engine)
 
     assert "status: action-recommended" in result
     assert "lifecycle_fragmentation:" in result
     assert "lifecycle_rows=2" in result
     assert "empty_lifecycle_rows=1" in result
-    assert "current_missing_in_lcm_any=1" in result
+    assert "current_missing_in_trove_any=1" in result
     assert "current_missing_in_state=1" in result
     assert "node_sessions_missing_in_state=1" in result
-    assert "state_sessions_missing_in_lcm_any=1" in result
+    assert "state_sessions_missing_in_trove_any=1" in result
     assert "lifecycle_fragmentation_classification: warn; 4 categories need review" in result
     assert "lifecycle_category stale_lifecycle_current: count=1 sample=missing-current" in result
     assert "lifecycle_category stale_lifecycle_finalized: count=1 sample=missing-final" in result
-    assert "lifecycle_category lcm_node_sessions_missing_in_state: count=1 sample=node-missing-in-state" in result
+    assert "lifecycle_category trove_node_sessions_missing_in_state: count=1 sample=node-missing-in-state" in result
     assert "lifecycle_category state_only_sessions: count=1 sample=state-only" in result
     assert "inspect lifecycle fragmentation before any cleanup/repair behavior mutates state" in result
     assert "read-only" in result
     assert engine._lifecycle.row_count() == 2
 
 
-def test_lcm_doctor_reports_lcm_sessions_without_lifecycle_references_as_observations(engine):
+def test_trove_doctor_reports_trove_sessions_without_lifecycle_references_as_observations(engine):
     engine.on_session_start("current-session", platform="cli", context_length=200000)
     engine._store.append("current-session", {"role": "user", "content": "covered"}, source="cli")
     engine._store.append("message-only-session", {"role": "user", "content": "missing lifecycle"}, source="cli")
@@ -988,7 +988,7 @@ def test_lcm_doctor_reports_lcm_sessions_without_lifecycle_references_as_observa
         created_at=1.0,
     ))
 
-    result = handle_lcm_command("doctor", engine)
+    result = handle_trove_command("doctor", engine)
 
     assert "status: ok" in result
     assert "lifecycle_fragmentation: lifecycle_rows=1" in result
@@ -1000,7 +1000,7 @@ def test_lcm_doctor_reports_lcm_sessions_without_lifecycle_references_as_observa
     assert "triage_guidance:\n- none" in result
 
 
-def test_lcm_doctor_does_not_warn_on_last_finalized_message_session(engine):
+def test_trove_doctor_does_not_warn_on_last_finalized_message_session(engine):
     engine.on_session_start(
         "current-session",
         platform="cli",
@@ -1015,7 +1015,7 @@ def test_lcm_doctor_does_not_warn_on_last_finalized_message_session(engine):
         new_session_id="current-session",
     )
 
-    result = handle_lcm_command("doctor", engine)
+    result = handle_trove_command("doctor", engine)
 
     assert "status: ok" in result
     assert "message_sessions_without_lifecycle_current=1" in result
@@ -1023,31 +1023,31 @@ def test_lcm_doctor_does_not_warn_on_last_finalized_message_session(engine):
     assert "inspect lifecycle fragmentation before any cleanup/repair behavior mutates state" not in result
 
 
-def test_lcm_help_on_unknown_subcommand(engine):
-    result = handle_lcm_command("wat", engine)
+def test_trove_help_on_unknown_subcommand(engine):
+    result = handle_trove_command("wat", engine)
 
     assert "Unknown subcommand: wat" in result
-    assert "/lcm status" in result
-    assert "/lcm doctor" in result
-    assert "/lcm doctor clean lifecycle" in result
-    assert "/lcm doctor clean lifecycle apply" in result
+    assert "/trove status" in result
+    assert "/trove doctor" in result
+    assert "/trove doctor clean lifecycle" in result
+    assert "/trove doctor clean lifecycle apply" in result
 
 
-def test_lcm_doctor_clean_rejects_unknown_extra_args(engine):
-    result = handle_lcm_command("doctor clean foo", engine)
+def test_trove_doctor_clean_rejects_unknown_extra_args(engine):
+    result = handle_trove_command("doctor clean foo", engine)
 
     assert "currently supports `clean`, `clean apply`, `clean lifecycle`, `clean lifecycle apply`, `repair`, `repair apply`, `repair schema-stamp`, `repair schema-stamp apply`, `source`, `source apply`, and `retention`" in result
-    assert "/lcm doctor clean apply" in result
-    assert "/lcm doctor clean lifecycle" in result
-    assert "/lcm doctor clean lifecycle apply" in result
-    assert "/lcm doctor repair" in result
-    assert "/lcm doctor repair apply" in result
-    assert "/lcm doctor source" in result
-    assert "/lcm doctor source apply" in result
-    assert "/lcm doctor retention" in result
+    assert "/trove doctor clean apply" in result
+    assert "/trove doctor clean lifecycle" in result
+    assert "/trove doctor clean lifecycle apply" in result
+    assert "/trove doctor repair" in result
+    assert "/trove doctor repair apply" in result
+    assert "/trove doctor source" in result
+    assert "/trove doctor source apply" in result
+    assert "/trove doctor retention" in result
 
 
-def test_lcm_doctor_text_reports_same_count_stale_message_fts(engine):
+def test_trove_doctor_text_reports_same_count_stale_message_fts(engine):
     engine._store.append(
         "test-session",
         {"role": "user", "content": "original searchable content"},
@@ -1061,18 +1061,18 @@ def test_lcm_doctor_text_reports_same_count_stale_message_fts(engine):
     engine._store._conn.commit()
 
     fts_integrity = check_external_content_fts_integrity(engine._store._conn, build_message_fts_spec())
-    json_result = json.loads(lcm_tools.lcm_doctor({}, engine=engine))
-    text_result = handle_lcm_command("doctor", engine)
+    json_result = json.loads(trove_tools.trove_doctor({}, engine=engine))
+    text_result = handle_trove_command("doctor", engine)
 
     assert fts_integrity["status"] == "fail"
     messages_check = next(check for check in json_result["checks"] if check["check"] == "messages_fts_integrity")
     assert messages_check["status"] == "fail"
     assert "status: issues-found" in text_result
     assert "messages_fts: fail" in text_result
-    assert "/lcm doctor repair" in text_result
+    assert "/trove doctor repair" in text_result
 
 
-def test_lcm_doctor_text_reports_unchecked_message_fts_as_warning(engine, monkeypatch):
+def test_trove_doctor_text_reports_unchecked_message_fts_as_warning(engine, monkeypatch):
     def fake_fts_integrity(_conn, spec):
         if spec.table_name == "messages_fts":
             return {"status": "unchecked", "detail": "attempt to write a readonly database"}
@@ -1080,7 +1080,7 @@ def test_lcm_doctor_text_reports_unchecked_message_fts_as_warning(engine, monkey
 
     monkeypatch.setattr(command_mod, "check_external_content_fts_integrity", fake_fts_integrity)
 
-    text_result = handle_lcm_command("doctor", engine)
+    text_result = handle_trove_command("doctor", engine)
 
     assert "status: action-recommended" in text_result
     assert "messages_fts: unchecked" in text_result
@@ -1088,18 +1088,18 @@ def test_lcm_doctor_text_reports_unchecked_message_fts_as_warning(engine, monkey
     assert "issues: none" in text_result
     assert "messages_fts_integrity: inspect warning-only" in text_result
     assert "read-write SQLite access" in text_result
-    assert "/lcm doctor repair" not in text_result
+    assert "/trove doctor repair" not in text_result
 
 
-def test_lcm_doctor_json_preserves_unchecked_fts_detail_for_guidance(engine, monkeypatch):
+def test_trove_doctor_json_preserves_unchecked_fts_detail_for_guidance(engine, monkeypatch):
     def fake_fts_integrity(_conn, spec):
         if spec.table_name == "messages_fts":
             return {"status": "unchecked", "detail": "attempt to write a readonly database"}
         return {"status": "pass", "detail": "ok"}
 
-    monkeypatch.setattr(lcm_tools, "check_external_content_fts_integrity", fake_fts_integrity)
+    monkeypatch.setattr(trove_tools, "check_external_content_fts_integrity", fake_fts_integrity)
 
-    doctor = json.loads(lcm_tools.lcm_doctor({}, engine=engine))
+    doctor = json.loads(trove_tools.trove_doctor({}, engine=engine))
     messages_check = next(check for check in doctor["checks"] if check["check"] == "messages_fts_integrity")
     guidance = {item["check"]: item for item in doctor["guidance"]}
 
@@ -1111,13 +1111,13 @@ def test_lcm_doctor_json_preserves_unchecked_fts_detail_for_guidance(engine, mon
     assert guidance["messages_fts_integrity"]["action"] == "inspect"
     assert guidance["messages_fts_integrity"]["warning_only"] is True
     assert "read-write SQLite access" in guidance["messages_fts_integrity"]["operator_action"]
-    assert "/lcm doctor repair" not in guidance["messages_fts_integrity"]["operator_action"]
+    assert "/trove doctor repair" not in guidance["messages_fts_integrity"]["operator_action"]
 
 
-def test_lcm_doctor_surfaces_background_fts_integrity_failed_flag(engine, monkeypatch):
+def test_trove_doctor_surfaces_background_fts_integrity_failed_flag(engine, monkeypatch):
     """A background integrity scan's persisted corruption flag (issue #6) must
-    surface in `/lcm doctor`, even when this run's live deep check reports clean."""
-    from hermes_lcm import db_bootstrap
+    surface in `/trove doctor`, even when this run's live deep check reports clean."""
+    from hermes_trove import db_bootstrap
 
     db_bootstrap._record_integrity_failed(
         engine._store._conn,
@@ -1133,17 +1133,17 @@ def test_lcm_doctor_surfaces_background_fts_integrity_failed_flag(engine, monkey
         lambda _conn, _spec: {"status": "pass", "detail": "ok"},
     )
 
-    text_result = handle_lcm_command("doctor", engine)
+    text_result = handle_trove_command("doctor", engine)
 
     assert "status: issues-found" in text_result
     assert "issues: " in text_result and "messages_fts" in text_result
     assert "background integrity scan flagged corruption" in text_result
-    assert "/lcm doctor repair apply" in text_result
+    assert "/trove doctor repair apply" in text_result
 
 
-def test_lcm_doctor_repair_reports_fts_drift_without_mutating(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm_repair_drift.db"))
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+def test_trove_doctor_repair_reports_fts_drift_without_mutating(tmp_path):
+    config = TROVEConfig(database_path=str(tmp_path / "trove_repair_drift.db"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._session_id = "live-session"
     engine._session_platform = "telegram"
     engine._conversation_id = "live-session"
@@ -1162,9 +1162,9 @@ def test_lcm_doctor_repair_reports_fts_drift_without_mutating(tmp_path):
     engine._store._conn.execute("DROP TRIGGER nodes_fts_insert")
     engine._store._conn.commit()
 
-    result = handle_lcm_command("doctor repair", engine)
+    result = handle_trove_command("doctor repair", engine)
 
-    assert "LCM doctor repair" in result
+    assert "TROVE doctor repair" in result
     assert "status: repair-needed" in result
     assert "messages_fts: repair-needed" in result
     assert "nodes_fts: repair-needed" in result
@@ -1178,9 +1178,9 @@ def test_lcm_doctor_repair_reports_fts_drift_without_mutating(tmp_path):
     assert remaining_triggers == set()
 
 
-def test_lcm_doctor_repair_reports_same_count_deep_fts_drift(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm_repair_deep_drift.db"))
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+def test_trove_doctor_repair_reports_same_count_deep_fts_drift(tmp_path):
+    config = TROVEConfig(database_path=str(tmp_path / "trove_repair_deep_drift.db"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._session_id = "live-session"
     engine._session_platform = "telegram"
     engine._conversation_id = "live-session"
@@ -1192,19 +1192,19 @@ def test_lcm_doctor_repair_reports_same_count_deep_fts_drift(tmp_path):
     )
     engine._store._conn.commit()
 
-    result = handle_lcm_command("doctor repair", engine)
+    result = handle_trove_command("doctor repair", engine)
 
-    assert "LCM doctor repair" in result
+    assert "TROVE doctor repair" in result
     assert "status: repair-needed" in result
     assert "messages_fts: repair-needed" in result
     assert "messages_fts_integrity_status: fail" in result
-    assert "note: use `/lcm doctor repair apply`" in result
+    assert "note: use `/trove doctor repair apply`" in result
 
 
-def test_lcm_doctor_repair_dry_run_works_with_read_only_database(tmp_path):
-    db_path = tmp_path / "lcm_repair_readonly.db"
-    config = LCMConfig(database_path=str(db_path))
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+def test_trove_doctor_repair_dry_run_works_with_read_only_database(tmp_path):
+    db_path = tmp_path / "trove_repair_readonly.db"
+    config = TROVEConfig(database_path=str(db_path))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._session_id = "live-session"
     engine._session_platform = "telegram"
     engine._conversation_id = "live-session"
@@ -1236,11 +1236,11 @@ def test_lcm_doctor_repair_dry_run_works_with_read_only_database(tmp_path):
         _store = FakeStore()
 
     try:
-        result = handle_lcm_command("doctor repair", FakeEngine())
+        result = handle_trove_command("doctor repair", FakeEngine())
     finally:
         ro_conn.close()
 
-    assert "LCM doctor repair" in result
+    assert "TROVE doctor repair" in result
     assert "status: ok" in result
     assert "messages_fts: ok" in result
     assert "nodes_fts: ok" in result
@@ -1248,9 +1248,9 @@ def test_lcm_doctor_repair_dry_run_works_with_read_only_database(tmp_path):
     assert "note: read-only scan only — no FTS tables were repaired" in result
 
 
-def test_lcm_doctor_repair_apply_is_backup_first_and_rebuilds_fts(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm_repair_apply.db"))
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+def test_trove_doctor_repair_apply_is_backup_first_and_rebuilds_fts(tmp_path):
+    config = TROVEConfig(database_path=str(tmp_path / "trove_repair_apply.db"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._session_id = "live-session"
     engine._session_platform = "telegram"
     engine._conversation_id = "live-session"
@@ -1269,9 +1269,9 @@ def test_lcm_doctor_repair_apply_is_backup_first_and_rebuilds_fts(tmp_path):
     engine._store._conn.execute("DELETE FROM nodes_fts")
     engine._store._conn.commit()
 
-    result = handle_lcm_command("doctor repair apply", engine)
+    result = handle_trove_command("doctor repair apply", engine)
 
-    assert "LCM doctor repair apply" in result
+    assert "TROVE doctor repair apply" in result
     assert "status: ok" in result
     backup_line = next(line for line in result.splitlines() if line.startswith("backup_path: "))
     backup_path = Path(backup_line.split(": ", 1)[1])
@@ -1284,9 +1284,9 @@ def test_lcm_doctor_repair_apply_is_backup_first_and_rebuilds_fts(tmp_path):
     assert len(engine._dag.search("summary", session_id="live-session")) == 1
 
 
-def test_lcm_doctor_retention_reports_old_heavy_sessions(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm_retention.db"))
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+def test_trove_doctor_retention_reports_old_heavy_sessions(tmp_path):
+    config = TROVEConfig(database_path=str(tmp_path / "trove_retention.db"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._session_id = "live-session"
     engine._session_platform = "telegram"
     engine._conversation_id = "live-session"
@@ -1310,9 +1310,9 @@ def test_lcm_doctor_retention_reports_old_heavy_sessions(tmp_path):
         latest_at=1.0,
     ))
 
-    result = handle_lcm_command("doctor retention", engine)
+    result = handle_trove_command("doctor retention", engine)
 
-    assert "LCM doctor retention" in result
+    assert "TROVE doctor retention" in result
     assert "status: analysis-ready" in result
     assert "sessions_analyzed: 1" in result
     assert "stale_sessions_30d: 0" in result
@@ -1326,9 +1326,9 @@ def test_lcm_doctor_retention_reports_old_heavy_sessions(tmp_path):
     assert "note: read-only analysis only — no rows were deleted" in result
 
 
-def test_lcm_doctor_retention_counts_summary_only_sessions(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm_retention_summary_only.db"))
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+def test_trove_doctor_retention_counts_summary_only_sessions(tmp_path):
+    config = TROVEConfig(database_path=str(tmp_path / "trove_retention_summary_only.db"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._session_id = "live-session"
     engine._session_platform = "telegram"
     engine._conversation_id = "live-session"
@@ -1347,7 +1347,7 @@ def test_lcm_doctor_retention_counts_summary_only_sessions(tmp_path):
         latest_at=1.0,
     ))
 
-    result = handle_lcm_command("doctor retention", engine)
+    result = handle_trove_command("doctor retention", engine)
 
     assert "sessions_analyzed: 0" in result
     assert "stale_sessions_30d: 0" in result
@@ -1356,9 +1356,9 @@ def test_lcm_doctor_retention_counts_summary_only_sessions(tmp_path):
     assert "result: no stored sessions found for retention analysis" in result
 
 
-def test_lcm_doctor_retention_keeps_stale_sessions_visible_when_list_is_truncated(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm_retention_many.db"))
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+def test_trove_doctor_retention_keeps_stale_sessions_visible_when_list_is_truncated(tmp_path):
+    config = TROVEConfig(database_path=str(tmp_path / "trove_retention_many.db"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._session_id = "live-session"
     engine._session_platform = "telegram"
     engine._conversation_id = "live-session"
@@ -1372,7 +1372,7 @@ def test_lcm_doctor_retention_keeps_stale_sessions_visible_when_list_is_truncate
     engine._store._conn.execute("UPDATE messages SET timestamp = ? WHERE store_id = ?", (1.0, stale_id))
     engine._store._conn.commit()
 
-    result = handle_lcm_command("doctor retention", engine)
+    result = handle_trove_command("doctor retention", engine)
 
     assert "stale_sessions_30d: 0" in result
     assert "sessions_analyzed: 0" in result
@@ -1380,83 +1380,83 @@ def test_lcm_doctor_retention_keeps_stale_sessions_visible_when_list_is_truncate
     assert "result: no stored sessions found for retention analysis" in result
 
 
-def test_lcm_doctor_clean_reports_pattern_matched_junk_candidates(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm_clean.db"),
+def test_trove_doctor_clean_reports_pattern_matched_junk_candidates(tmp_path):
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove_clean.db"),
         ignore_session_patterns=["cron*"],
         ignore_session_patterns_source="env",
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._store.append("cron_20260414", {"role": "user", "content": "scheduled report"}, token_estimate=12)
     engine._store.append("normal_session", {"role": "user", "content": "real conversation"}, token_estimate=20)
 
-    result = handle_lcm_command("doctor clean", engine)
+    result = handle_trove_command("doctor clean", engine)
 
-    assert "LCM doctor clean" in result
+    assert "TROVE doctor clean" in result
     assert "status: candidates-found" in result
     assert "ignored_pattern_matches: 1" in result
     assert "cron_20260414" in result
     assert "normal_session" not in result
 
 
-def test_lcm_doctor_clean_prefers_ignore_over_stateless_when_both_match(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm_overlap.db"),
+def test_trove_doctor_clean_prefers_ignore_over_stateless_when_both_match(tmp_path):
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove_overlap.db"),
         ignore_session_patterns=["cron*"],
         stateless_session_patterns=["cron*"],
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._store.append("cron_20260414", {"role": "user", "content": "scheduled report"}, token_estimate=12)
 
-    result = handle_lcm_command("doctor clean", engine)
+    result = handle_trove_command("doctor clean", engine)
 
     assert "ignored_pattern_matches: 1" in result
     assert "stateless_pattern_matches: 0" in result
     assert "class=ignored-pattern" in result
 
 
-def test_lcm_doctor_clean_returns_error_on_schema_problem(engine):
+def test_trove_doctor_clean_returns_error_on_schema_problem(engine):
     engine._store._conn = _FakeConn()
 
-    result = handle_lcm_command("doctor clean", engine)
+    result = handle_trove_command("doctor clean", engine)
 
-    assert "LCM doctor clean" in result
+    assert "TROVE doctor clean" in result
     assert "status: error" in result
     assert "malformed schema" in result
 
 
-def test_lcm_backup_creates_sqlite_snapshot(engine):
+def test_trove_backup_creates_sqlite_snapshot(engine):
     engine._store.append(engine._session_id, {"role": "user", "content": "hello backup"}, token_estimate=11)
 
-    result = handle_lcm_command("backup", engine)
+    result = handle_trove_command("backup", engine)
 
-    assert "LCM backup" in result
+    assert "TROVE backup" in result
     backup_line = next(line for line in result.splitlines() if line.startswith("backup_path: "))
     backup_path = Path(backup_line.split(": ", 1)[1])
     assert backup_path.exists()
     assert backup_path.stat().st_size > 0
 
 
-def test_lcm_backup_returns_error_when_sqlite_backup_fails(engine, monkeypatch):
+def test_trove_backup_returns_error_when_sqlite_backup_fails(engine, monkeypatch):
     def boom(_path):
         raise sqlite3.OperationalError("disk I/O error")
 
     monkeypatch.setattr(command_mod.sqlite3, "connect", boom)
 
-    result = handle_lcm_command("backup", engine)
+    result = handle_trove_command("backup", engine)
 
-    assert "LCM backup" in result
+    assert "TROVE backup" in result
     assert "status: error" in result
     assert "disk I/O error" in result
 
 
-def test_lcm_doctor_clean_apply_is_backup_first_and_deletes_safe_candidates(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm_clean_apply.db"),
+def test_trove_doctor_clean_apply_is_backup_first_and_deletes_safe_candidates(tmp_path):
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove_clean_apply.db"),
         ignore_session_patterns=["cron*"],
         doctor_clean_apply_enabled=True,
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._session_id = "live-session"
     engine._session_platform = "telegram"
     engine._conversation_id = "live-session"
@@ -1477,9 +1477,9 @@ def test_lcm_doctor_clean_apply_is_backup_first_and_deletes_safe_candidates(tmp_
     engine._lifecycle.bind_session("cron_20260414")
     engine._lifecycle.finalize_session("cron_20260414", "cron_20260414", frontier_store_id=1)
 
-    result = handle_lcm_command("doctor clean apply", engine)
+    result = handle_trove_command("doctor clean apply", engine)
 
-    assert "LCM doctor clean apply" in result
+    assert "TROVE doctor clean apply" in result
     assert "status: ok" in result
     backup_line = next(line for line in result.splitlines() if line.startswith("backup_path: "))
     backup_path = Path(backup_line.split(": ", 1)[1])
@@ -1490,13 +1490,13 @@ def test_lcm_doctor_clean_apply_is_backup_first_and_deletes_safe_candidates(tmp_
     assert len(engine._store.get_range("normal_session")) == 1
 
 
-def test_lcm_doctor_clean_apply_aborts_if_backup_fails(tmp_path, monkeypatch):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm_clean_apply_fail.db"),
+def test_trove_doctor_clean_apply_aborts_if_backup_fails(tmp_path, monkeypatch):
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove_clean_apply_fail.db"),
         ignore_session_patterns=["cron*"],
         doctor_clean_apply_enabled=True,
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._session_id = "live-session"
     engine._session_platform = "telegram"
     engine._conversation_id = "live-session"
@@ -1508,21 +1508,21 @@ def test_lcm_doctor_clean_apply_aborts_if_backup_fails(tmp_path, monkeypatch):
 
     monkeypatch.setattr(command_mod.sqlite3, "connect", boom)
 
-    result = handle_lcm_command("doctor clean apply", engine)
+    result = handle_trove_command("doctor clean apply", engine)
 
-    assert "LCM doctor clean apply" in result
+    assert "TROVE doctor clean apply" in result
     assert "status: error" in result
     assert "backup failed" in result.lower()
     assert len(engine._store.get_range("cron_20260414")) == 1
 
 
-def test_lcm_doctor_clean_apply_rolls_back_if_delete_fails_after_backup(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm_clean_apply_rollback.db"),
+def test_trove_doctor_clean_apply_rolls_back_if_delete_fails_after_backup(tmp_path):
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove_clean_apply_rollback.db"),
         ignore_session_patterns=["cron*"],
         doctor_clean_apply_enabled=True,
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._session_id = "live-session"
     engine._session_platform = "telegram"
     engine._conversation_id = "live-session"
@@ -1553,9 +1553,9 @@ def test_lcm_doctor_clean_apply_rolls_back_if_delete_fails_after_backup(tmp_path
     )
     engine._store._conn.commit()
 
-    result = handle_lcm_command("doctor clean apply", engine)
+    result = handle_trove_command("doctor clean apply", engine)
 
-    assert "LCM doctor clean apply" in result
+    assert "TROVE doctor clean apply" in result
     assert "status: error" in result
     assert "node delete failed" in result
     assert "cleanup apply rolled back" in result
@@ -1581,15 +1581,15 @@ def test_clean_apply_stages_250001_sessions_and_bounds_node_purge_batches(tmp_pa
         );
         CREATE INDEX idx_nodes_session_node
             ON summary_nodes(session_id, node_id);
-        CREATE TABLE lcm_lifecycle_state(
+        CREATE TABLE trove_lifecycle_state(
             conversation_id TEXT PRIMARY KEY,
             current_session_id TEXT,
             last_finalized_session_id TEXT
         );
-        CREATE INDEX idx_lcm_lifecycle_current_session
-            ON lcm_lifecycle_state(current_session_id);
-        CREATE INDEX idx_lcm_lifecycle_last_finalized_session
-            ON lcm_lifecycle_state(last_finalized_session_id);
+        CREATE INDEX idx_trove_lifecycle_current_session
+            ON trove_lifecycle_state(current_session_id);
+        CREATE INDEX idx_trove_lifecycle_last_finalized_session
+            ON trove_lifecycle_state(last_finalized_session_id);
         """
     )
     conn.executemany(
@@ -1601,10 +1601,10 @@ def test_clean_apply_stages_250001_sessions_and_bounds_node_purge_batches(tmp_pa
         ((index + 1, f"session-{index % 3}") for index in range(600)),
     )
     conn.execute(
-        "INSERT INTO lcm_lifecycle_state VALUES('delete-me', 'session-0', 'session-1')"
+        "INSERT INTO trove_lifecycle_state VALUES('delete-me', 'session-0', 'session-1')"
     )
     conn.execute(
-        "INSERT INTO lcm_lifecycle_state VALUES('skip-me', 'session-0', 'outside')"
+        "INSERT INTO trove_lifecycle_state VALUES('skip-me', 'session-0', 'outside')"
     )
     conn.commit()
     batches: list[list[int]] = []
@@ -1636,35 +1636,35 @@ def test_clean_apply_stages_250001_sessions_and_bounds_node_purge_batches(tmp_pa
         conn.close()
 
 
-def test_lcm_doctor_clean_apply_denied_by_default(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm_clean_apply_denied.db"),
+def test_trove_doctor_clean_apply_denied_by_default(tmp_path):
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove_clean_apply_denied.db"),
         ignore_session_patterns=["cron*"],
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._store.append("cron_20260414", {"role": "user", "content": "scheduled report"}, token_estimate=12)
 
-    result = handle_lcm_command("doctor clean apply", engine)
+    result = handle_trove_command("doctor clean apply", engine)
 
-    assert "LCM doctor clean apply" in result
+    assert "TROVE doctor clean apply" in result
     assert "status: denied" in result
     assert "disabled by default" in result
     assert len(engine._store.get_range("cron_20260414")) == 1
 
 
-def test_lcm_doctor_clean_lifecycle_reports_empty_candidates(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm_clean_lifecycle.db"),
+def test_trove_doctor_clean_lifecycle_reports_empty_candidates(tmp_path):
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove_clean_lifecycle.db"),
         empty_lifecycle_gc_enabled=True,
         empty_lifecycle_gc_threshold=1,
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._lifecycle.bind_session("orphan-1")
     engine._lifecycle.bind_session("orphan-2")
 
-    result = handle_lcm_command("doctor clean lifecycle", engine)
+    result = handle_trove_command("doctor clean lifecycle", engine)
 
-    assert "LCM doctor clean lifecycle" in result
+    assert "TROVE doctor clean lifecycle" in result
     assert "status: candidates-found" in result
     assert "empty_rows: 2" in result
     assert "empty_current: 2" in result
@@ -1673,23 +1673,23 @@ def test_lcm_doctor_clean_lifecycle_reports_empty_candidates(tmp_path):
     assert "no rows were deleted" in result
 
 
-def test_lcm_doctor_clean_lifecycle_apply_is_backup_first_and_deletes_safe_candidates(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm_clean_lifecycle_apply.db"),
+def test_trove_doctor_clean_lifecycle_apply_is_backup_first_and_deletes_safe_candidates(tmp_path):
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove_clean_lifecycle_apply.db"),
         empty_lifecycle_gc_enabled=True,
         empty_lifecycle_gc_threshold=1,
         doctor_clean_apply_enabled=True,
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._session_id = "live-session"
     engine._conversation_id = "live-session"
     engine._lifecycle.bind_session("live-session")
     engine._lifecycle.bind_session("orphan-1")
     engine._lifecycle.bind_session("orphan-2")
 
-    result = handle_lcm_command("doctor clean lifecycle apply", engine)
+    result = handle_trove_command("doctor clean lifecycle apply", engine)
 
-    assert "LCM doctor clean lifecycle apply" in result
+    assert "TROVE doctor clean lifecycle apply" in result
     assert "status: ok" in result
     assert "lifecycle_rows_deleted: 2" in result
     assert "lifecycle_rows_remaining: 1" in result
@@ -1701,18 +1701,18 @@ def test_lcm_doctor_clean_lifecycle_apply_is_backup_first_and_deletes_safe_candi
     assert remaining.current_session_id == "live-session"
 
 
-def test_lcm_doctor_clean_lifecycle_apply_denied_by_default(tmp_path):
-    config = LCMConfig(
-        database_path=str(tmp_path / "lcm_clean_lifecycle_apply_denied.db"),
+def test_trove_doctor_clean_lifecycle_apply_denied_by_default(tmp_path):
+    config = TROVEConfig(
+        database_path=str(tmp_path / "trove_clean_lifecycle_apply_denied.db"),
         empty_lifecycle_gc_enabled=True,
         empty_lifecycle_gc_threshold=1,
     )
-    engine = LCMEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
+    engine = TROVEEngine(config=config, hermes_home=str(tmp_path / "hermes_home"))
     engine._lifecycle.bind_session("orphan-1")
 
-    result = handle_lcm_command("doctor clean lifecycle apply", engine)
+    result = handle_trove_command("doctor clean lifecycle apply", engine)
 
-    assert "LCM doctor clean lifecycle apply" in result
+    assert "TROVE doctor clean lifecycle apply" in result
     assert "status: denied" in result
     assert "disabled by default" in result
     assert engine._lifecycle.row_count() == 1
@@ -1733,13 +1733,13 @@ class _FakeConn:
         raise sqlite3.OperationalError("malformed schema")
 
 
-def test_lcm_doctor_reports_issues_instead_of_raising_on_schema_errors(engine):
+def test_trove_doctor_reports_issues_instead_of_raising_on_schema_errors(engine):
     engine._store._conn = _FakeConn()
     engine._dag._conn = _FakeConn()
 
-    result = handle_lcm_command("doctor", engine)
+    result = handle_trove_command("doctor", engine)
 
-    assert "LCM doctor" in result
+    assert "TROVE doctor" in result
     assert "status: issues-found" in result
     assert "malformed schema" in result
     assert "issues:" in result
@@ -1753,7 +1753,7 @@ def test_register_skips_slash_command_when_host_context_has_no_register_command(
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_home"))
 
     spec = importlib.util.spec_from_file_location(
-        "hermes_lcm_init_runtime",
+        "hermes_trove_init_runtime",
         str(Path(__file__).resolve().parent.parent / "__init__.py"),
         submodule_search_locations=[str(Path(__file__).resolve().parent.parent)],
     )
@@ -1778,12 +1778,12 @@ def test_register_skips_slash_command_when_host_context_has_no_register_command(
     assert ctx.engine is not None
 
 
-def test_register_skips_lcm_slash_command_by_default(tmp_path, monkeypatch):
+def test_register_skips_trove_slash_command_by_default(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_home"))
-    monkeypatch.delenv("LCM_ENABLE_SLASH_COMMAND", raising=False)
+    monkeypatch.delenv("TROVE_ENABLE_SLASH_COMMAND", raising=False)
 
     spec = importlib.util.spec_from_file_location(
-        "hermes_lcm_init_runtime_disabled",
+        "hermes_trove_init_runtime_disabled",
         str(Path(__file__).resolve().parent.parent / "__init__.py"),
         submodule_search_locations=[str(Path(__file__).resolve().parent.parent)],
     )
@@ -1810,15 +1810,15 @@ def test_register_skips_lcm_slash_command_by_default(tmp_path, monkeypatch):
     module.register(ctx)
 
     assert ctx.engine is not None
-    assert "lcm" not in ctx.commands
+    assert "trove" not in ctx.commands
 
 
-def test_register_allows_lcm_slash_command_when_explicitly_enabled(tmp_path, monkeypatch):
+def test_register_allows_trove_slash_command_when_explicitly_enabled(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_home"))
-    monkeypatch.setenv("LCM_ENABLE_SLASH_COMMAND", "1")
+    monkeypatch.setenv("TROVE_ENABLE_SLASH_COMMAND", "1")
 
     spec = importlib.util.spec_from_file_location(
-        "hermes_lcm_init_runtime_enabled",
+        "hermes_trove_init_runtime_enabled",
         str(Path(__file__).resolve().parent.parent / "__init__.py"),
         submodule_search_locations=[str(Path(__file__).resolve().parent.parent)],
     )
@@ -1845,4 +1845,4 @@ def test_register_allows_lcm_slash_command_when_explicitly_enabled(tmp_path, mon
     module.register(ctx)
 
     assert ctx.engine is not None
-    assert "lcm" in ctx.commands
+    assert "trove" in ctx.commands

@@ -4,13 +4,13 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from hermes_lcm import tools as lcm_tools
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.engine import LCMEngine
+from hermes_trove import tools as trove_tools
+from hermes_trove.config import TROVEConfig
+from hermes_trove.engine import TROVEEngine
 
 
 class _FakeAgent:
-    def __init__(self, engine: LCMEngine, session_id: str, parent_session_id: str = ""):
+    def __init__(self, engine: TROVEEngine, session_id: str, parent_session_id: str = ""):
         self.engine = engine
         self.session_id = session_id
         self._parent_session_id = parent_session_id
@@ -34,7 +34,7 @@ class _FakeAgent:
     def handle_tool_call_after_background_marker(self, history):
         self._memory_write_origin = "background_review"
         self._memory_write_context = "background_review"
-        return self.engine.handle_tool_call("lcm_status", {}, messages=history)
+        return self.engine.handle_tool_call("trove_status", {}, messages=history)
 
     def preflight_history_after_background_marker(self, history):
         self._memory_write_origin = "background_review"
@@ -58,8 +58,8 @@ class _ForegroundAgent(_FakeAgent):
 
 
 def _engine(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm.db"))
-    return LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    config = TROVEConfig(database_path=str(tmp_path / "trove.db"))
+    return TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
 
 
 def _record_state_db_branch(tmp_path, session_id: str, parent_session_id: str) -> None:
@@ -131,7 +131,7 @@ def test_first_ingest_rechecks_background_review_marker_after_missed_bind_time(t
         assert engine._store.get_session_count("review-session") == 0
 
         # By first post-LLM ingest the host has set the background-review marker.
-        # LCM must re-check before writing the replay snapshot as a new session.
+        # TROVE must re-check before writing the replay snapshot as a new session.
         agent.ingest_history_after_background_marker(history)
 
         assert engine._store.get_session_count("review-session") == 0
@@ -168,12 +168,12 @@ def test_late_first_ingest_auxiliary_reclassification_restores_foreground_view(t
         assert engine.current_conversation_id == "conversation:foreground-session"
         assert engine.side_channel_active is True
 
-        status = json.loads(lcm_tools.lcm_status({}, engine=engine))
+        status = json.loads(trove_tools.trove_status({}, engine=engine))
         assert status["session_id"] == "foreground-session"
         assert status["session_filters"]["side_channel_active"] is True
         assert status["session_filters"]["side_channel_session_id"] == "review-session"
 
-        grep = json.loads(lcm_tools.lcm_grep({"query": "operator"}, engine=engine))
+        grep = json.loads(trove_tools.trove_grep({"query": "operator"}, engine=engine))
         assert grep["session_scope"] == "current"
         assert [hit["session_id"] for hit in grep["results"]] == ["foreground-session"]
     finally:
@@ -192,7 +192,7 @@ def test_late_tool_call_first_write_auxiliary_reclassification_restores_foregrou
         )
 
         # Bind-time auxiliary detection can miss the review child before the
-        # host marks it as background_review. If the child's first LCM entry
+        # host marks it as background_review. If the child's first TROVE entry
         # point is a tool call, that path must reclassify before writing the
         # passed replay messages, just like post-LLM ingest does.
         review.start_session()
@@ -211,7 +211,7 @@ def test_late_tool_call_first_write_auxiliary_reclassification_restores_foregrou
         assert status["session_filters"]["side_channel_active"] is True
         assert status["session_filters"]["side_channel_session_id"] == "review-session"
 
-        grep = json.loads(lcm_tools.lcm_grep({"query": "tool-call"}, engine=engine))
+        grep = json.loads(trove_tools.trove_grep({"query": "tool-call"}, engine=engine))
         assert grep["results"] == []
     finally:
         engine.shutdown()
@@ -239,7 +239,7 @@ def test_late_preflight_first_write_auxiliary_reclassification_restores_foregrou
         assert engine.current_conversation_id == "conversation:foreground-session"
         assert engine.side_channel_active is True
 
-        grep = json.loads(lcm_tools.lcm_grep({"query": "preflight"}, engine=engine))
+        grep = json.loads(trove_tools.trove_grep({"query": "preflight"}, engine=engine))
         assert grep["results"] == []
     finally:
         engine.shutdown()
@@ -268,14 +268,14 @@ def test_late_compress_first_write_auxiliary_reclassification_restores_foregroun
         assert engine.current_conversation_id == "conversation:foreground-session"
         assert engine.side_channel_active is True
 
-        grep = json.loads(lcm_tools.lcm_grep({"query": "compress"}, engine=engine))
+        grep = json.loads(trove_tools.trove_grep({"query": "compress"}, engine=engine))
         assert grep["results"] == []
     finally:
         engine.shutdown()
 
 
 def test_foreground_post_turn_rebinds_after_late_auxiliary_reclassification(tmp_path):
-    lcm_plugin = _load_plugin_entrypoint_module("hermes_lcm_post_hook_rebind_regression")
+    trove_plugin = _load_plugin_entrypoint_module("hermes_trove_post_hook_rebind_regression")
     engine = _engine(tmp_path)
     foreground = _ForegroundAgent(engine, "foreground-session")
     review = _FakeAgent(engine, "review-session", parent_session_id="foreground-session")
@@ -298,7 +298,7 @@ def test_foreground_post_turn_rebinds_after_late_auxiliary_reclassification(tmp_
         # turn. The hook must compare against the bound ingest session, not the
         # operator-facing current_session_id, before deciding whether to rebind.
         engine._clear_thread_context_stateless()
-        lcm_plugin._ensure_engine_bound_to_session(
+        trove_plugin._ensure_engine_bound_to_session(
             engine,
             foreground.session_id,
             platform="cli",
@@ -430,7 +430,7 @@ def test_tool_call_foreground_ingest_clears_late_auxiliary_restore_candidate(tmp
 
         second_foreground.start_session()
         engine.handle_tool_call(
-            "lcm_status",
+            "trove_status",
             {},
             messages=[{"role": "user", "content": "second foreground tool turn"}],
         )

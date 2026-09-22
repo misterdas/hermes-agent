@@ -30,7 +30,7 @@ from typing import Any, Iterator
 
 
 PLUGIN_DIR = Path(__file__).resolve().parents[1]
-PACKAGE_NAME = "hermes_lcm"
+PACKAGE_NAME = "hermes_trove"
 BACKFILL_OPERATION = "historical_tool_output_externalization"
 BACKFILL_PROVENANCE_KEY = "historical_backfill_provenance"
 
@@ -46,21 +46,21 @@ def _ensure_local_package_importable() -> None:
 
 _ensure_local_package_importable()
 
-from hermes_lcm.config import LCMConfig  # noqa: E402
-from hermes_lcm.db_bootstrap import refuse_schema_version_too_new  # noqa: E402
-from hermes_lcm.externalize import (  # noqa: E402
+from hermes_trove.config import TROVEConfig  # noqa: E402
+from hermes_trove.db_bootstrap import refuse_schema_version_too_new  # noqa: E402
+from hermes_trove.externalize import (  # noqa: E402
     _replace_externalized_payload,
     find_externalized_payload_for_message,
     get_large_output_storage_dir,
     is_externalized_placeholder,
 )
-from hermes_lcm.ingest_protection import (  # noqa: E402
+from hermes_trove.ingest_protection import (  # noqa: E402
     _contains_media_payload,
     extract_all_externalized_payload_refs,
     redact_sensitive_value,
     sensitive_pattern_status,
 )
-from hermes_lcm.tokens import count_tokens  # noqa: E402
+from hermes_trove.tokens import count_tokens  # noqa: E402
 
 
 def _sha256(content: str) -> str:
@@ -152,7 +152,7 @@ def _sidecar_matches_provenance(
     }
 
 
-def _redaction_binding(config: LCMConfig) -> dict[str, Any]:
+def _redaction_binding(config: TROVEConfig) -> dict[str, Any]:
     """Record the sensitive-pattern policy applied to persisted sidecar content."""
     status = sensitive_pattern_status(config)
     return {
@@ -161,7 +161,7 @@ def _redaction_binding(config: LCMConfig) -> dict[str, Any]:
     }
 
 
-def _redact_backfill_content(content: str, config: LCMConfig) -> str:
+def _redact_backfill_content(content: str, config: TROVEConfig) -> str:
     """Apply the currently-enabled sensitive-pattern policy exactly as live ingest
     does before a tool result is externalized, so no un-redacted secret reaches the
     new sidecar retention surface."""
@@ -644,10 +644,10 @@ def run_backfill(
     threshold_chars: int,
     apply: bool,
     max_rows: int = 0,
-    config: LCMConfig | None = None,
+    config: TROVEConfig | None = None,
 ) -> dict[str, Any]:
     """Scan historical rows and maintain a crash-recoverable ownership journal."""
-    runtime_config = copy.copy(config or LCMConfig.from_env())
+    runtime_config = copy.copy(config or TROVEConfig.from_env())
     runtime_config.large_output_externalization_enabled = True
     runtime_config.large_output_externalization_threshold_chars = max(1, threshold_chars)
     threshold_chars = max(1, threshold_chars)
@@ -970,10 +970,10 @@ def run_rollback(
     hermes_home: Path,
     source_manifest_path: Path,
     apply: bool,
-    config: LCMConfig | None = None,
+    config: TROVEConfig | None = None,
 ) -> dict[str, Any]:
     """Delete only safe, unreferenced sidecars owned by an apply manifest."""
-    runtime_config = copy.copy(config or LCMConfig.from_env())
+    runtime_config = copy.copy(config or TROVEConfig.from_env())
     with _read_only_connection(database_path) as connection:
         storage_dir = get_large_output_storage_dir(
             runtime_config,
@@ -1092,9 +1092,9 @@ def run_rollback(
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--database", help="LCM SQLite path; defaults to LCM_DATABASE_PATH or HERMES_HOME/lcm.db")
+    parser.add_argument("--database", help="TROVE SQLite path; defaults to TROVE_DATABASE_PATH or HERMES_HOME/trove.db")
     parser.add_argument("--hermes-home", help="Hermes profile home; defaults to HERMES_HOME or ~/.hermes")
-    parser.add_argument("--manifest", default="lcm-externalization-backfill-manifest.json")
+    parser.add_argument("--manifest", default="trove-externalization-backfill-manifest.json")
     parser.add_argument("--threshold-chars", type=int)
     parser.add_argument("--max-rows", type=int, default=0, help="0 scans all historical tool rows")
     parser.add_argument("--rollback", help="Applied manifest to roll back safely")
@@ -1104,11 +1104,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv if argv is not None else sys.argv[1:])
-    config = LCMConfig.from_env()
+    config = TROVEConfig.from_env()
     hermes_home = Path(args.hermes_home or os.environ.get("HERMES_HOME") or "~/.hermes").expanduser().resolve()
-    database_path = Path(args.database or config.database_path or hermes_home / "lcm.db").expanduser().resolve()
+    database_path = Path(args.database or config.database_path or hermes_home / "trove.db").expanduser().resolve()
     if not database_path.is_file():
-        raise SystemExit("LCM database does not exist")
+        raise SystemExit("TROVE database does not exist")
 
     try:
         if args.rollback:

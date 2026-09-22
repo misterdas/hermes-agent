@@ -7,7 +7,7 @@
 ## Verdict
 
 GENUINE REGRESSION, FIXED. Before the fix, the stress CLI exited 1 even though
-`lcm_grep` returned the requested canary rows. The final smoke test exits 0.
+`trove_grep` returned the requested canary rows. The final smoke test exits 0.
 
 ## Mechanism
 
@@ -26,7 +26,7 @@ that string check false. The smoke run therefore reports:
 
 This was a release-check CLI defect, not a retrieval miss and not a test
 environment assumption. `benchmarking/stress.py` now strips the FTS markers
-before every containment/scope assertion and reads all supported `lcm_grep`
+before every containment/scope assertion and reads all supported `trove_grep`
 result containers (`results`, `matches`, and `data`).
 
 ## Minimal repro
@@ -37,7 +37,7 @@ in the session-notes recipe, then run from the repository root:
 ```sh
 PYTHONPATH="$HERMES_CI_REPRO_ROOT/agent-stub" \
 "$HERMES_CI_REPRO_ROOT/venv-ci-repro/bin/python" \
-scripts/lcm_stress_check.py \
+scripts/trove_stress_check.py \
   --output .artifacts/stress-cli-repro \
   --tier smoke \
   --json

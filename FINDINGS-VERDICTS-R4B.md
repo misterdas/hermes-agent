@@ -1,12 +1,12 @@
 # Round 4B findings verdicts
 
-PR `100yenadmin/hermes-lcm#175` @ `fece680d5f016b2a22cefb69e7b634a88e4f70d2`.
+PR `100yenadmin/hermes-trove#175` @ `fece680d5f016b2a22cefb69e7b634a88e4f70d2`.
 The spec's single-comment URL returned 404; all listed bodies were fetched by the canonical `pulls/comments/<id>` route.
 Comment `3671346839` is the already-fixed R4 profile-continuity item; the five R4B items follow.
 
 | Item | Verdict | Disposition |
 |---|---|---|
-| 1 query objects | CONFIRMED-FIXED | Reject extra `lcm_query*` indexes/triggers; both probes classify genuinely newer. Trajectory already rejects both extra object types. |
+| 1 query objects | CONFIRMED-FIXED | Reject extra `trove_query*` indexes/triggers; both probes classify genuinely newer. Trajectory already rejects both extra object types. |
 | 2 probe ledger | CONFIRMED-FIXED | Emit the probe's calls/tokens before any document request; callback can stop spend immediately. |
 | 3 scan budget | CONFIRMED-FIXED | Config promises a hard scan budget; unlimited enumeration had no deadline. Start at operation entry and interrupt summary/chunk candidate reads. |
 | 4 H3 golden gate | CONFIRMED-FIXED | Print failure and return 1 before ground truth, sweep, latency work, or artifact writing. |

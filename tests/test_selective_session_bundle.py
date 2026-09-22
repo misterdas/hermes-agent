@@ -5,16 +5,16 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.selective_recall import (
+from hermes_trove.config import TROVEConfig
+from hermes_trove.selective_recall import (
     build_selective_session_bundle,
     route_selective_recall,
 )
-from hermes_lcm.store import MessageStore
+from hermes_trove.store import MessageStore
 
 
 def _engine(tmp_path):
-    config = LCMConfig(database_path=str(tmp_path / "lcm.db"))
+    config = TROVEConfig(database_path=str(tmp_path / "trove.db"))
     store = MessageStore(config.database_path, ingest_protection_config=config)
     return SimpleNamespace(
         _config=config,
@@ -35,7 +35,7 @@ def _ref(store_id, content, *, start=0, end=None, **extra):
     if end is None:
         end = len(content)
     return {
-        "exact_ref": f"lcm:{store_id}:{start}-{end}",
+        "exact_ref": f"trove:{store_id}:{start}-{end}",
         "quote": content[start:end],
         **extra,
     }
@@ -91,7 +91,7 @@ def test_bounded_bundle_expands_adjacent_exact_turn_with_source_date(tmp_path):
     assert result["status"] == "augmented"
     assert result["route"] == "session_bundle"
     assert result["reason_code"] == "novel_adjacent_exact_evidence"
-    assert f"lcm:{answer_id}:0-{len(answer_text)}" in result["novel_exact_refs"]
+    assert f"trove:{answer_id}:0-{len(answer_text)}" in result["novel_exact_refs"]
     assert answer_text in result["context"]
     assert "2024-05-03" in result["context"]
     assert result["metrics"]["session_loads"] == 1
@@ -118,7 +118,7 @@ def test_bundle_loads_a_bounded_turn_before_a_late_matched_anchor(tmp_path):
         engine._store.close()
 
     assert result["status"] == "augmented"
-    assert f"lcm:{fact_id}:0-{len(fact)}" in result["novel_exact_refs"]
+    assert f"trove:{fact_id}:0-{len(fact)}" in result["novel_exact_refs"]
     assert fact in result["context"]
 
 

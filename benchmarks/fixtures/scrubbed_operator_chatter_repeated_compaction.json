@@ -15,7 +15,7 @@
   "messages": [
     {
       "role": "system",
-      "content": "You are a scrubbed LCM benchmark agent replaying a chatty operations lane."
+      "content": "You are a scrubbed TROVE benchmark agent replaying a chatty operations lane."
     },
     {
       "role": "user",

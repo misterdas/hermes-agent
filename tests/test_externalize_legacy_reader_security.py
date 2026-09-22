@@ -12,8 +12,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import hermes_lcm.externalize as externalize_module
-from hermes_lcm.externalize import (
+import hermes_trove.externalize as externalize_module
+from hermes_trove.externalize import (
     externalized_tool_result_has_persisted_output_marker,
     reassign_externalized_payloads,
 )
@@ -690,7 +690,7 @@ def _assert_payload_does_not_enable_durable_reconcile_match(
         64,
         raising=False,
     )
-    reconciler = importlib.import_module("hermes_lcm.reconcile").ReconcileMixin()
+    reconciler = importlib.import_module("hermes_trove.reconcile").ReconcileMixin()
     reconciler._config = config
     reconciler._hermes_home = ""
     monkeypatch.setattr(

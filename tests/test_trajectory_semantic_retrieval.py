@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from hermes_lcm.trajectory_store import (
+from hermes_trove.trajectory_store import (
     CorpusIdentity,
     TrajectorySource,
     TrajectoryState,
@@ -95,7 +95,7 @@ def _build_store(tmp_path: Path, provider: FakeEmbeddingProvider | None = None):
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     store = TrajectoryStore(
-        tmp_path / "lcm.db",
+        tmp_path / "trove.db",
         _identity(),
         asset_root=asset_root,
         embedding_provider=provider,
@@ -129,7 +129,7 @@ def test_semantic_index_is_same_db_idempotent_and_backup_safe(tmp_path: Path):
     assert second["status"] == "current"
     assert provider.document_calls == 1
     assert store.connection.execute(
-        "SELECT COUNT(*) FROM lcm_trajectory_embeddings"
+        "SELECT COUNT(*) FROM trove_trajectory_embeddings"
     ).fetchone()[0] == 2
     assert store.manifest()["semantic_index"]["document_count"] == 2
 
@@ -447,7 +447,7 @@ def test_semantic_documents_use_protected_rows_not_raw_secrets(tmp_path: Path):
     store.finalize(["target"])
     store.build_semantic_index()
     assert secret not in "\n".join(provider.documents)
-    assert "[LCM sensitive redaction:" in "\n".join(provider.documents)
+    assert "[TROVE sensitive redaction:" in "\n".join(provider.documents)
 
 
 def test_semantic_index_rejects_changed_or_nonfinite_dimensions(tmp_path: Path):

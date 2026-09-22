@@ -1,18 +1,18 @@
-"""Ignored-active-replay placeholder ledger for the LCM engine (WS5 seam).
+"""Ignored-active-replay placeholder ledger for the TROVE engine (WS5 seam).
 
 The ``PlaceholderLedgerMixin`` holds the bookkeeping for ignored-active-replay
 placeholders and dependent-reply records: session-scoped metadata-key builders,
 generated-placeholder hash/count/ordinal load+persist, active-replay digest
 budgets, dependent-reply fingerprints/records, and the placeholder application
-pass. These methods were lifted verbatim out of ``LCMEngine`` and continue to
-run bound to the engine instance (``self`` is the ``LCMEngine``), so they read
+pass. These methods were lifted verbatim out of ``TROVEEngine`` and continue to
+run bound to the engine instance (``self`` is the ``TROVEEngine``), so they read
 and write the engine's shared runtime state (``_store``, ``_session_id``, the
 two ``_generated_ignored_active_replay_placeholder_*`` sets, the per-turn
 ``_current_compress_store_ids_by_message_id`` cache) and call back into engine
 helpers (``_get_store_id_map_for_messages``, ``_matches_ignore_message_patterns``,
 ``_stable_tool_calls_identity``, ``_message_replay_identity``,
 ``_copy_active_replay_messages_preserving_generated_ids``) through normal
-attribute lookup. ``LCMEngine`` mixes this in, so no call site changes.
+attribute lookup. ``TROVEEngine`` mixes this in, so no call site changes.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ class PlaceholderLedgerMixin:
             return False
         return bool(
             re.fullmatch(
-                r"\[LCM active replay placeholder: assistant output quarantined; "
+                r"\[TROVE active replay placeholder: assistant output quarantined; "
                 r"kind=quarantined_assistant_output; "
                 r"reason=[A-Za-z0-9_.:/-]+; "
                 r"scope=ignored_message_pattern; field=content; "
@@ -54,7 +54,7 @@ class PlaceholderLedgerMixin:
     def _ignored_active_replay_placeholder(content: str) -> str:
         digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
         return (
-            "[LCM active replay placeholder: message ignored; "
+            "[TROVE active replay placeholder: message ignored; "
             "kind=ignored_message; "
             "scope=ignored_message_pattern; field=content; "
             f"chars={len(content)}; bytes={len(content.encode('utf-8'))}; "
@@ -63,7 +63,7 @@ class PlaceholderLedgerMixin:
 
     def _is_ignored_active_replay_placeholder(self, msg: Dict[str, Any], text: str) -> bool:
         match = re.fullmatch(
-                r"\[LCM active replay placeholder: message ignored; "
+                r"\[TROVE active replay placeholder: message ignored; "
                 r"kind=ignored_message; "
                 r"scope=ignored_message_pattern; field=content; "
                 r"chars=\d+; bytes=\d+; "
@@ -155,7 +155,7 @@ class PlaceholderLedgerMixin:
                 identity = f"{source_session_id}\0{int(store_id)}"
                 active_dependent_store_digests.add(hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16])
         except Exception:
-            logger.debug("LCM active dependent marker scan failed", exc_info=True)
+            logger.debug("TROVE active dependent marker scan failed", exc_info=True)
 
         pending_records = [
             {"content": record["content"]}
@@ -186,7 +186,7 @@ class PlaceholderLedgerMixin:
                             seen.add(digest)
             return ordered
         except Exception:
-            logger.debug("LCM scoped hash metadata load failed", exc_info=True)
+            logger.debug("TROVE scoped hash metadata load failed", exc_info=True)
         return []
 
     def _remember_hash_for_metadata_keys(self, digest: str, keys: list[str]) -> list[str]:
@@ -202,7 +202,7 @@ class PlaceholderLedgerMixin:
             payload = json.dumps(ordered_hashes)
             self._store.write_metadata_json(keys, payload)
         except Exception:
-            logger.debug("LCM scoped hash metadata write failed", exc_info=True)
+            logger.debug("TROVE scoped hash metadata write failed", exc_info=True)
         return ordered_hashes
 
     def _load_generated_ignored_placeholder_hashes(self) -> set[str]:
@@ -234,7 +234,7 @@ class PlaceholderLedgerMixin:
                         continue
                     counts[digest] = max(counts.get(digest, 0), parsed_count)
         except Exception:
-            logger.debug("LCM ignored placeholder count metadata load failed", exc_info=True)
+            logger.debug("TROVE ignored placeholder count metadata load failed", exc_info=True)
         return counts
 
     def _write_generated_ignored_placeholder_hash_counts(
@@ -262,7 +262,7 @@ class PlaceholderLedgerMixin:
             # the stored value already matches; this runs on every ingest.
             self._store.write_metadata_json(count_keys, serialized, skip_unchanged=True)
         except Exception:
-            logger.debug("LCM ignored placeholder count metadata write failed", exc_info=True)
+            logger.debug("TROVE ignored placeholder count metadata write failed", exc_info=True)
 
     def _load_generated_ignored_placeholder_hash_ordinals(
         self,
@@ -290,7 +290,7 @@ class PlaceholderLedgerMixin:
                         if parsed > 0:
                             bucket.add(parsed)
         except Exception:
-            logger.debug("LCM ignored placeholder ordinal metadata load failed", exc_info=True)
+            logger.debug("TROVE ignored placeholder ordinal metadata load failed", exc_info=True)
         return ordinals
 
     def _write_generated_ignored_placeholder_hash_ordinals(
@@ -323,7 +323,7 @@ class PlaceholderLedgerMixin:
             # writer above for rationale.
             self._store.write_metadata_json(ordinal_keys, serialized, skip_unchanged=True)
         except Exception:
-            logger.debug("LCM ignored placeholder ordinal metadata write failed", exc_info=True)
+            logger.debug("TROVE ignored placeholder ordinal metadata write failed", exc_info=True)
 
     def _active_replay_generated_placeholder_digest_budget(self) -> dict[str, int]:
         return self._generated_placeholder_digest_budget_for_active_replay(
@@ -480,7 +480,7 @@ class PlaceholderLedgerMixin:
                     records.append(record)
             return records[-512:]
         except Exception:
-            logger.debug("LCM ignored-dependent reply metadata load failed", exc_info=True)
+            logger.debug("TROVE ignored-dependent reply metadata load failed", exc_info=True)
         return []
 
     def _write_generated_ignored_dependent_reply_records(
@@ -514,7 +514,7 @@ class PlaceholderLedgerMixin:
             payload = json.dumps(normalized)
             self._store.write_metadata_json(keys, payload)
         except Exception:
-            logger.debug("LCM ignored-dependent reply metadata write failed", exc_info=True)
+            logger.debug("TROVE ignored-dependent reply metadata write failed", exc_info=True)
 
     def _load_generated_ignored_dependent_reply_hashes(self) -> set[str]:
         return {

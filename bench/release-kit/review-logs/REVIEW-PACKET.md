@@ -11,7 +11,7 @@ Two fixes on `fix/phase1b-scan-and-query` (diff = `git diff e99f342..HEAD`, read
    entry points (store.py messages, dag.py summaries); LIKE fallback only for CJK/emoji/empty-after-sanitize.
 2. `f960d9f` (#167): the 25k-most-recent vector scan window replaced by a batched FULL scan
    (recall_scan_rows = batch size; running top-k across batches; new recall_scan_max_rows (0=unlimited) and
-   recall_scan_budget_s (0.0=no stop); degraded/degraded_reason only on actual truncation; lcm_grep path
+   recall_scan_budget_s (0.0=no stop); degraded/degraded_reason only on actual truncation; trove_grep path
    byte-identical by default).
 
 ## Context you should trust

@@ -1,4 +1,4 @@
-"""Token counting utilities for LCM.
+"""Token counting utilities for TROVE.
 
 Uses tiktoken when available, falls back to char-based estimate.
 """
@@ -80,7 +80,7 @@ def _get_encoder():
             return _encoder
         if _encoder_thread is None:
             _encoder_thread = threading.Thread(
-                target=_encoder_loader, name="lcm-tiktoken-load", daemon=True
+                target=_encoder_loader, name="trove-tiktoken-load", daemon=True
             )
             _encoder_thread.start()
             first = True

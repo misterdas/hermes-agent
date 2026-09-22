@@ -3,10 +3,10 @@
   "contract_version": "1.0.4",
   "boundary": "host-owned",
   "imported_api_validation": "observed-coverage-only",
-  "description": "Hermes-LCM is a source-installed Hermes Agent plugin. Hermes Agent owns the Python environment and dependency resolution; the plugin declares the host and optional feature imports it consumes without creating a second package installer or lock.",
+  "description": "Hermes-TROVE is a source-installed Hermes Agent plugin. Hermes Agent owns the Python environment and dependency resolution; the plugin declares the host and optional feature imports it consumes without creating a second package installer or lock.",
   "ownership": {
     "dependency_resolver": "Hermes Agent host environment",
-    "update_owner": "Hermes-LCM maintainers",
+    "update_owner": "Hermes-TROVE maintainers",
     "update_trigger": "Review and increment this contract when the imported-API assurance policy, a scanned runtime import, supported Python or Hermes Agent version, or required imported API changes."
   },
   "supported_versions": {
@@ -17,7 +17,7 @@
       "3.14"
     ],
     "hermes_agent": ">=0.16,<1",
-    "optional_dependency_policy": "The supported version is the version resolved by a supported Hermes Agent host when the listed imported API is present. Hermes-LCM does not independently pin or install optional packages."
+    "optional_dependency_policy": "The supported version is the version resolved by a supported Hermes Agent host when the listed imported API is present. Hermes-TROVE does not independently pin or install optional packages."
   },
   "runtime_scan": {
     "globs": [
@@ -26,7 +26,7 @@
       "scripts/**/*.py"
     ],
     "local_imports": [
-      "hermes_lcm",
+      "hermes_trove",
       "benchmarking"
     ],
     "excluded": [

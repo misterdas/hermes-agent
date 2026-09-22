@@ -17,7 +17,7 @@ from typing import Any, Mapping, Sequence
 
 
 SELECTIVE_RECALL_VERSION = "selective-recall-v1"
-_EXACT_REF_RE = re.compile(r"^lcm:(?P<store_id>[1-9]\d*):(?P<start>\d+)-(?P<end>\d+)$")
+_EXACT_REF_RE = re.compile(r"^trove:(?P<store_id>[1-9]\d*):(?P<start>\d+)-(?P<end>\d+)$")
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -137,7 +137,7 @@ def _parse_ref(raw: Any, engine: Any) -> dict[str, Any] | None:
         end = min(len(content), start + len(quote)) if quote else len(content)
         if end <= start:
             return None
-        exact_ref = f"lcm:{store_id}:{start}-{end}"
+        exact_ref = f"trove:{store_id}:{start}-{end}"
         match = _EXACT_REF_RE.fullmatch(exact_ref)
     assert match is not None
     store_id = int(match.group("store_id"))
@@ -188,7 +188,7 @@ def _base_result(
         },
         "trace": {"context_sha256": None, "truncated": False},
         "provenance": {
-            "storage": "same_lcm_db",
+            "storage": "same_trove_db",
             "selector_calls": 0,
             "provider_calls": 0,
             "source_time": "observed_at_or_explicit_adapter_date_or_unknown",
@@ -311,7 +311,7 @@ def build_selective_session_bundle(
                 store_id = int(row["store_id"])
                 if _is_covered(store_id, 0, end, baseline):
                     continue
-                exact_ref = f"lcm:{store_id}:0-{end}"
+                exact_ref = f"trove:{store_id}:0-{end}"
                 if exact_ref in seen_refs:
                     continue
                 date, date_source = _source_date(engine, row)
@@ -345,7 +345,7 @@ def build_selective_session_bundle(
         return result
 
     header = (
-        "[Hermes-LCM selective session evidence; partial and non-exhaustive. "
+        "[Hermes-TROVE selective session evidence; partial and non-exhaustive. "
         "Use only cited exact spans.]"
     )
     blocks = [header]

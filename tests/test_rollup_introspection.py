@@ -7,26 +7,26 @@ from datetime import datetime, timezone
 
 import pytest
 
-import hermes_lcm.command as command_module
-import hermes_lcm.engine as engine_module
-import hermes_lcm.rollup_builder as builder_module
-from hermes_lcm import tools as lcm_tools
-from hermes_lcm.command import handle_lcm_command
-from hermes_lcm.config import LCMConfig
-from hermes_lcm.dag import SummaryNode
-from hermes_lcm.engine import LCMEngine
-from hermes_lcm.rollup_store import RollupStore
-from hermes_lcm.tokens import count_tokens
+import hermes_trove.command as command_module
+import hermes_trove.engine as engine_module
+import hermes_trove.rollup_builder as builder_module
+from hermes_trove import tools as trove_tools
+from hermes_trove.command import handle_trove_command
+from hermes_trove.config import TROVEConfig
+from hermes_trove.dag import SummaryNode
+from hermes_trove.engine import TROVEEngine
+from hermes_trove.rollup_store import RollupStore
+from hermes_trove.tokens import count_tokens
 
 
 @pytest.fixture
 def engine(tmp_path):
-    config = LCMConfig(
+    config = TROVEConfig(
         database_path=str(tmp_path / "rollup-introspection.db"),
         temporal_rollups_enabled=True,
         rollup_builds_per_pass=2,
     )
-    instance = LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    instance = TROVEEngine(config=config, hermes_home=str(tmp_path / "home"))
     instance.on_session_start("rollup-session", conversation_id="rollup-conversation")
     assert instance.drain_rollup_maintenance(timeout=5.0)
     try:
@@ -56,27 +56,27 @@ def _assert_zero_shape(block, *, enabled):
     }
 
 
-def test_lcm_inspect_rollup_block_is_well_formed_when_enabled_and_empty(engine):
-    block = json.loads(lcm_tools.lcm_inspect({}, engine=engine))["temporal_rollups"]
+def test_trove_inspect_rollup_block_is_well_formed_when_enabled_and_empty(engine):
+    block = json.loads(trove_tools.trove_inspect({}, engine=engine))["temporal_rollups"]
 
     _assert_zero_shape(block, enabled=True)
 
 
-def test_lcm_inspect_rollup_block_is_zeroed_when_feature_is_off(engine):
+def test_trove_inspect_rollup_block_is_zeroed_when_feature_is_off(engine):
     engine._config.temporal_rollups_enabled = False
 
-    block = json.loads(lcm_tools.lcm_inspect({}, engine=engine))["temporal_rollups"]
+    block = json.loads(trove_tools.trove_inspect({}, engine=engine))["temporal_rollups"]
 
     _assert_zero_shape(block, enabled=False)
 
 
-def test_lcm_inspect_reports_counts_cursor_stale_age_and_last_error(engine):
+def test_trove_inspect_reports_counts_cursor_stale_age_and_last_error(engine):
     store = RollupStore(engine._dag.db_path)
     try:
         _ready(store, "day", "2026-07-15", engine.current_session_id)
         _ready(store, "week", "2026-07-13", engine.current_session_id)
         store.connection.execute(
-            "UPDATE lcm_rollups SET status = 'stale' WHERE period_kind = 'week'"
+            "UPDATE trove_rollups SET status = 'stale' WHERE period_kind = 'week'"
         )
         failed_token = store.upsert_building(
             "month", "2026-07-01", engine.current_session_id
@@ -85,7 +85,7 @@ def test_lcm_inspect_reports_counts_cursor_stale_age_and_last_error(engine):
         store.set_cursor("day", "2026-07-15", engine.current_session_id, built_at="2026-07-15T12:00:00+00:00")
         store.connection.commit()
 
-        block = json.loads(lcm_tools.lcm_inspect({}, engine=engine))["temporal_rollups"]
+        block = json.loads(trove_tools.trove_inspect({}, engine=engine))["temporal_rollups"]
 
         assert block["counts"]["day"]["ready"] == 1
         assert block["counts"]["week"]["stale"] == 1
@@ -105,11 +105,11 @@ def test_inspect_and_rollups_status_never_call_llm(engine, monkeypatch):
         lambda *_args, **_kwargs: pytest.fail("status called the summarizer"),
     )
 
-    inspect = json.loads(lcm_tools.lcm_inspect({}, engine=engine))
-    result = handle_lcm_command("rollups", engine)
+    inspect = json.loads(trove_tools.trove_inspect({}, engine=engine))
+    result = handle_trove_command("rollups", engine)
 
     assert inspect["temporal_rollups"]["enabled"] is True
-    assert "LCM temporal rollups" in result
+    assert "TROVE temporal rollups" in result
     assert "period | ready | stale | building | failed" in result
     assert "day | 0 | 0 | 0 | 0" in result
     assert "last_error: (none)" in result
@@ -142,7 +142,7 @@ def test_rollups_rebuild_marks_all_targets_stale_and_builds_bounded(engine, monk
         ):
             rollup_id = _ready(store, kind, start, scope)
             store.connection.execute(
-                "INSERT OR IGNORE INTO lcm_rollup_sources(rollup_id, node_id) VALUES(?, ?)",
+                "INSERT OR IGNORE INTO trove_rollup_sources(rollup_id, node_id) VALUES(?, ?)",
                 (rollup_id, node_id),
             )
         store.connection.commit()
@@ -153,7 +153,7 @@ def test_rollups_rebuild_marks_all_targets_stale_and_builds_bounded(engine, monk
             lambda text, **_kwargs: (calls.append(text) or "rebuilt summary", 1),
         )
 
-        result = handle_lcm_command("rollups rebuild all 2026-07-15", engine)
+        result = handle_trove_command("rollups rebuild all 2026-07-15", engine)
 
         statuses = [
             store.get_rollup(kind, start, scope)["status"]
@@ -200,7 +200,7 @@ def test_rollups_rebuild_refuses_while_background_maintenance_is_active(
                 "busy operator rebuild touched SQLite before acquiring its lease"
             ),
         )
-        result = handle_lcm_command("rollups rebuild day 2026-07-15", engine)
+        result = handle_trove_command("rollups rebuild day 2026-07-15", engine)
 
         assert "status: busy" in result
         assert "background temporal rollup maintenance is active" in result
@@ -222,7 +222,7 @@ def test_rollups_rebuild_releases_operator_lease_when_store_open_fails(
 
     monkeypatch.setattr(command_module, "RollupStore", fail_store_open)
 
-    result = handle_lcm_command("rollups rebuild day 2026-07-15", engine)
+    result = handle_trove_command("rollups rebuild day 2026-07-15", engine)
 
     assert "status: error" in result
     assert "forced store-open failure" in result
@@ -245,7 +245,7 @@ def test_rollups_rebuild_releases_operator_lease_when_store_close_fails(
     monkeypatch.setattr(command_module, "RollupStore", CloseFailRollupStore)
 
     with pytest.raises(RuntimeError, match="forced store-close failure"):
-        handle_lcm_command("rollups rebuild day 2026-07-15", engine)
+        handle_trove_command("rollups rebuild day 2026-07-15", engine)
 
     assert engine_module._ROLLUP_MAINTENANCE_SCHEDULER.try_acquire_exclusive(key)
     engine_module._ROLLUP_MAINTENANCE_SCHEDULER.release_exclusive(key)
@@ -278,7 +278,7 @@ def test_rollups_rebuild_all_durably_seeds_unattempted_targets(engine, monkeypat
         lambda _text, **_kwargs: ("rebuilt", 1),
     )
 
-    result = handle_lcm_command("rollups rebuild all 2026-07-15", engine)
+    result = handle_trove_command("rollups rebuild all 2026-07-15", engine)
 
     store = RollupStore(engine._dag.db_path)
     try:
@@ -323,7 +323,7 @@ def test_rollups_rebuild_attempted_failure_is_not_reported_complete(engine, monk
 
     monkeypatch.setattr(builder_module, "summarize_with_escalation", boom)
 
-    result = handle_lcm_command("rollups rebuild day 2026-07-15", engine)
+    result = handle_trove_command("rollups rebuild day 2026-07-15", engine)
 
     assert "status: complete" not in result
     assert "status: partial" in result
@@ -331,7 +331,7 @@ def test_rollups_rebuild_attempted_failure_is_not_reported_complete(engine, monk
 
 
 def test_rollups_rebuild_attempted_no_source_is_not_reported_complete(engine):
-    result = handle_lcm_command("rollups rebuild day 2026-07-15", engine)
+    result = handle_trove_command("rollups rebuild day 2026-07-15", engine)
 
     assert "status: complete" not in result
     assert "status: partial" in result
@@ -356,7 +356,7 @@ def test_rollups_rebuild_attempted_incomplete_aggregate_is_deferred(engine):
         )
     )
 
-    result = handle_lcm_command("rollups rebuild week 2026-07-13", engine)
+    result = handle_trove_command("rollups rebuild week 2026-07-13", engine)
 
     assert "status: complete" not in result
     assert "status: partial" in result
@@ -373,8 +373,8 @@ def test_rollup_operator_surfaces_bound_adversarial_error_text(engine):
     finally:
         store.close()
 
-    slash = handle_lcm_command("rollups", engine)
-    inspect_raw = lcm_tools.lcm_inspect({"limit": 1}, engine=engine)
+    slash = handle_trove_command("rollups", engine)
+    inspect_raw = trove_tools.trove_inspect({"limit": 1}, engine=engine)
     inspect = json.loads(inspect_raw)
 
     assert len(slash) <= 20_000
@@ -392,14 +392,14 @@ def test_rollups_rebuild_multi_target_seed_is_atomic(engine, monkeypatch):
     # seeding fails mid-batch, NO target may be left half-seeded (no missing
     # month with no row). Force the batch seed to fail and assert nothing seeded.
     scope = engine.current_session_id
-    import hermes_lcm.rollup_store as rollup_store_module
+    import hermes_trove.rollup_store as rollup_store_module
 
     def boom(_self, _targets):
         raise sqlite3.OperationalError("seed boom")
 
     monkeypatch.setattr(rollup_store_module.RollupStore, "upsert_stale_many", boom)
 
-    result = handle_lcm_command("rollups rebuild all 2026-07-15", engine)
+    result = handle_trove_command("rollups rebuild all 2026-07-15", engine)
 
     assert "status: error" in result
     store = RollupStore(engine._dag.db_path)
@@ -422,7 +422,7 @@ def test_rollups_rebuild_respects_disabled_flag(engine, monkeypatch):
         lambda *_args, **_kwargs: pytest.fail("disabled rebuild called a builder"),
     )
 
-    result = handle_lcm_command("rollups rebuild day 2026-07-15", engine)
+    result = handle_trove_command("rollups rebuild day 2026-07-15", engine)
 
     assert "status: disabled" in result
     assert "temporal rollups are disabled" in result
