@@ -6,9 +6,9 @@ Use read-only product tools before changing configuration or running an apply pa
 
 1. `hermes plugins`: confirm `hermes-trove` is enabled and the selected context engine is `trove`.
 2. Send one normal message if the session has not been bound since restart.
-3. `trove_status`: inspect runtime identity, database path, context pressure, summary/store counts, filters, and lifecycle state.
-4. `trove_inspect`: inspect current-session lineage, frontiers, fresh tail, externalized-ref readability, and skip/no-op reasons without retrieving content.
-5. `trove_doctor`: run database, FTS, lifecycle, configuration, and context-pressure diagnostics.
+3. **Programmatic access**: `trove_status`/`trove_inspect`/`trove_doctor` are Python functions in `/home/ubuntu/hermes-trove/tools.py`, NOT CLI commands. They require a `TROVEEngine` instance passed as `engine=` kwarg via `importlib.util`. See SKILL.md for the full pattern.
+4. If `TROVEEngine()` raises `database disk image is malformed`, follow the corruption recovery procedure in SKILL.md before attempting any diagnostics.
+5. `trove_doctor`: run database, FTS, lifecycle, configuration, and context-pressure diagnostics (returns `overall: healthy` on success).
 
 If optional slash commands are enabled, `/trove status` and `/trove doctor` expose the corresponding operator views. To enable: set `TROVE_ENABLE_SLASH_COMMAND=1` in the environment. Without it, the `/trove` slash commands are silently not registered.
 

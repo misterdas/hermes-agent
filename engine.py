@@ -1734,21 +1734,61 @@ class TROVEEngine(CompactionMixin, ResetStateMixin, ReconcileMixin, AuxiliarySes
             return
         if self._session_id and messages:
             with self._sanitation_claim_lock:
-                try:
-                    self._remember_trove_normal_message_prefix(
-                        self._session_id,
-                        messages,
-                        conversation_id=self._conversation_id,
-                    )
-                    self._ingest_messages(messages)
-                    self._record_ingest_success()
-                    self._clear_foreground_rebind_candidate_if_bound_session_confirmed()
-                    logger.debug(
-                        "Per-turn ingest OK: session=%s msgs=%d cursor=%d",
-                        self._session_id, len(messages), self._ingest_cursor,
-                    )
-                except Exception as e:
-                    self._record_ingest_failure("per-turn ingest()", e)
+                self._remember_trove_normal_message_prefix(
+                    self._session_id,
+                    messages,
+                    conversation_id=self._conversation_id,
+                )
+                max_ingest_attempts = 3
+                for attempt in range(max_ingest_attempts):
+                    try:
+                        with _temporary_sqlite_busy_timeout(
+                            [
+                                getattr(self._store, "_conn", None),
+                                getattr(self._lifecycle, "_conn", None),
+                            ],
+                            _SESSION_END_BUSY_TIMEOUT_MS,
+                        ):
+                            self._ingest_messages(messages)
+                        self._record_ingest_success()
+                        self._clear_foreground_rebind_candidate_if_bound_session_confirmed()
+                        logger.debug(
+                            "Per-turn ingest OK: session=%s msgs=%d cursor=%d",
+                            self._session_id, len(messages), self._ingest_cursor,
+                        )
+                        return
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as e:
+                        if attempt < max_ingest_attempts - 1 and self._is_retry_worthy_ingest_error(e):
+                            backoff = 0.05 * (2 ** attempt)
+                            logger.warning(
+                                "TROVE per-turn ingest retrying (attempt %d/%d, backoff=%.2fs): %s",
+                                attempt + 1, max_ingest_attempts, backoff, e,
+                            )
+                            time.sleep(backoff)
+                            continue
+                        self._record_ingest_failure("per-turn ingest()", e)
+                        return
+
+    def _is_retry_worthy_ingest_error(self, exc: Exception) -> bool:
+        """Return True when an ingest error is likely transient and retriable.
+
+        Catches disk I/O errors, OS-level failures, and timeouts that can
+        occur during heavy concurrent I/O on slow or cloud-backed storage.
+        """
+        if isinstance(exc, TimeoutError):
+            return True
+        if isinstance(exc, sqlite3.OperationalError):
+            message = str(exc).lower()
+            if any(marker in message for marker in ("disk i/o", "i/o error", "interrupted", "timeout")):
+                return True
+            if _is_sqlite_locked_error(exc):
+                return True
+        if isinstance(exc, (OSError, IOError)):
+            return True
+        message = str(exc).lower()
+        return any(marker in message for marker in ("disk i/o", "i/o error", "interrupted", "timeout"))
 
     def _is_retry_worthy_leaf_summary_error(self, exc: Exception) -> bool:
         if isinstance(exc, TimeoutError):

@@ -36,6 +36,44 @@ Working rules:
 - Use `trove_compile_evidence` when a historical answer needs several named facets, exact operands, conflict handling, or latest-state selection; treat its semantic proposal as untrusted until the product returns validated evidence.
 - Keep default-off assertion, query-view, adaptive-retrieval, and destructive operator paths default-off unless the user explicitly asks to enable them.
 
+## Accessing trove tools programmatically
+
+`trove_status`, `trove_inspect`, and `trove_doctor` are **NOT hermes CLI subcommands**. They are Python functions in `/home/ubuntu/hermes-trove/tools.py` that require a `TROVEEngine` instance passed as `engine=` kwarg:
+
+```python
+import importlib.util, sys, types
+pkg = types.ModuleType('hermes_trove')
+pkg.__path__ = ['/home/ubuntu/hermes-trove']
+sys.modules['hermes_trove'] = pkg
+spec = importlib.util.spec_from_file_location('hermes_trove.engine', '/home/ubuntu/hermes-trove/engine.py')
+eng_mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(eng_mod)
+spec2 = importlib.util.spec_from_file_location('hermes_trove.tools', '/home/ubuntu/hermes-trove/tools.py')
+tools_mod = importlib.util.module_from_spec(spec2); spec2.loader.exec_module(tools_mod)
+engine = eng_mod.TROVEEngine()
+result = tools_mod.trove_doctor({}, engine=engine)
+```
+
+Relative imports in the trove package require this `importlib.util` pattern — direct `from tools import trove_doctor` fails with `ImportError: attempted relative import`.
+
+## Database corruption recovery
+
+If `TROVEEngine()` raises `database disk image is malformed`, the messages table is corrupted. The engine cannot initialize, so no trove tools can be called until the database is rebuilt.
+
+Recovery procedure:
+
+1. **Assess what survived**: metadata, lifecycle state, and migration state tables may be readable even when messages are corrupted. Query `sqlite_master` directly with `PRAGMA writable_schema=ON` to confirm schema integrity.
+2. **Check for rotate backup**: look at `/home/ubuntu/.hermes/backups/trove/`. Note: rotate backups may not exist even when status reports a `rotate_backup_path` — verify the file actually exists before relying on it.
+3. **Rebuild from scratch** (last resort):
+   ```bash
+   rm /home/ubuntu/.hermes/trove.db /home/ubuntu/.hermes/trove.db-shm /home/ubuntu/.hermes/trove.db-wal
+   ```
+   Then initialize a fresh `TROVEEngine()` in Python — it creates a new empty database with the full schema (schema v5, all tables, FTS indexes). Verify with `trove_doctor` → `overall: healthy`.
+4. **Message history is lost** on rebuild. The fresh db has 0 messages, 0 summary nodes, 0 lifecycle rows.
+
+**Do NOT** attempt `sqlite3 .recover` or `sqlite_dbpage` virtual table for severe corruption — `.recover` produces near-empty output and `sqlite_dbpage` is not compiled into this SQLite build. Low-level page scanning also fails because the corruption is in the B-tree structure itself, not individual pages.
+
+**Partial recovery is possible**: metadata, lifecycle, and migration tables sometimes survive message corruption. Extract them before rebuilding if historical session metadata is needed.
+
 ## Critical Bug Workarounds (verified in production)
 
 These bugs have been identified and fixed in the upstream repo but may persist in older versions:

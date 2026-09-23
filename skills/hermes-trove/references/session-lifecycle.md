@@ -17,6 +17,8 @@ Do not promise that `/new` deletes historical TROVE data. Earlier rows remain in
 
 Run normal compaction before rotate when older material must be represented in summary nodes. Even without a summary, pre-tail raw rows remain recoverable through `trove_load_session` and `trove_expand`.
 
+**Backup verification**: after rotate, confirm the backup actually exists at `/home/ubuntu/.hermes/backups/trove/`. Rotate backups may not be created even when `trove_status` reports a `rotate_backup_path`. Always verify with `ls -la` before trusting the backup system.
+
 Rotate refuses ignored or stateless sessions. Repeating an already-satisfied rotate reports a no-op and preserves the previous known-good rolling backup.
 
 Use a separate session when the user wants a new active conversational boundary. Use rotate when the problem is active transcript/frontier size without changing identity.
